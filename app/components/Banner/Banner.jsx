@@ -22,8 +22,6 @@ function Banner() {
             <div className="relative z-10 max-w-7xl mx-auto flex flex-col-reverse lg:flex-row items-center justify-between min-h-screen px-6 md:px-12">
                 {/* Text content */}
                 <div className="w-full lg:w-1/2 text-center lg:text-left pb-12 lg:pb-0">
-                    
-
                     <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-white leading-none mb-6">
                         <span className="block">FAST</span>
                         <span className="block text-yellow-300 drop-shadow-lg">FOOD</span>
@@ -33,7 +31,7 @@ function Banner() {
                     <p className="text-white/90 text-xl md:text-2xl mb-8 leading-relaxed font-medium">
                         Craving something delicious? We deliver your favorite meals
                         <span className="text-yellow-300 font-bold"> hot & fresh </span>
-                        right to your door in under 30 minutes!
+                        right to your door under 30 minutes!
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
@@ -70,7 +68,7 @@ function Banner() {
                 </div>
 
                 {/* Visual content */}
-                <div className="w-full lg:w-1/2 relative mb-12 lg:mb-0">
+                <div className="w-full lg:w-1/2 relative mb-12 lg:mb-0 translate-y-12 sm:translate-y-0 transition-transform duration-300">
                     <div className="relative z-20">
                         <div className="relative mx-auto w-80 h-80 md:w-96 md:h-96 lg:w-[500px] lg:h-[500px]">
                             {/* Burger illustration using CSS */}
