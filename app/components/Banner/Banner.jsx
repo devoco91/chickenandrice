@@ -34,21 +34,7 @@ function Banner() {
                         right to your door under 30 minutes!
                     </p>
 
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                        <button className="group bg-yellow-400 hover:bg-yellow-300 text-red-900 font-bold py-4 px-8 rounded-full text-lg shadow-2xl transform hover:scale-105 transition-all duration-300 hover:shadow-yellow-400/50">
-                            <span className="flex items-center justify-center gap-2">
-                                ORDER NOW
-                                <span className="group-hover:translate-x-1 transition-transform">🍔</span>
-                            </span>
-                        </button>
-
-                        <button className="group bg-transparent border-3 border-white text-white hover:bg-white hover:text-red-600 font-bold py-4 px-8 rounded-full text-lg shadow-xl transform hover:scale-105 transition-all duration-300">
-                            <span className="flex items-center justify-center gap-2">
-                                VIEW MENU
-                                <span className="group-hover:rotate-12 transition-transform">📱</span>
-                            </span>
-                        </button>
-                    </div>
+                    
 
                     {/* Quick stats */}
                     <div className="flex justify-center lg:justify-start gap-8 mt-12 text-white">
