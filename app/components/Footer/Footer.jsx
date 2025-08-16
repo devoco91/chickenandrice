@@ -89,7 +89,7 @@ function Footer() {
             
             <div className='text-center md:text-right'>
               <p className='text-gray-600 text-sm flex items-center justify-center gap-1'>
-                Designed by Vault software compant limited
+                Designed by Vault software company limited
               </p>
             </div>
           </div>
