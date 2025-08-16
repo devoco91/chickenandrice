@@ -89,7 +89,7 @@ function Footer() {
             
             <div className='text-center md:text-right'>
               <p className='text-gray-600 text-sm flex items-center justify-center gap-1'>
-                Made with <span className='text-red-500'>❤️</span> in Lagos, Nigeria
+                Designed by Vault software compant limited
               </p>
             </div>
           </div>
