@@ -1,9 +1,20 @@
-'use client'
+'use client';
+
+import { useEffect } from 'react';
 import { Provider } from 'react-redux';
-import { store } from './store'; 
+import { PersistGate } from 'redux-persist/integration/react';
+import { store, persistor } from './store';  
 
-const ReduxProvider = ({ children }) => {
-  return <Provider store={store}>{children}</Provider>;
-};
+export default function ReduxProvider({ children }) {
+  useEffect(() => {
+    persistor.purge();
+  }, []);
 
-export default ReduxProvider;
+  return (
+    <Provider store={store}>
+      <PersistGate loading={null} persistor={persistor}>
+        {children}
+      </PersistGate>
+    </Provider>
+  );
+}

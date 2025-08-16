@@ -9,7 +9,7 @@ export default function NavbarLight() {
   const cartItems = useSelector(state => state.cart.cartItem)
   return (
     <nav className="fixed top-0 left-0 w-full z-50 mb-10 bg-white bg-opacity-90 backdrop-blur-sm shadow-md">
-      <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+      <div className="max-w-7xl mx-auto px-6 md:px-12 py-4 flex justify-between items-center">
         {/* Logo */}
         <Link href="/" className="hover:opacity-80 transition-opacity duration-200">
           <img src="/logo.png" alt="Logo" className="h-10 w-auto" />
