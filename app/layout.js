@@ -12,11 +12,39 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const metadata = {
-  title: "chickenandrice",
+  metadataBase: new URL(appUrl),
+  title: {
+    default: "chickenandrice",
+    template: "%s | chickenandrice",
+  },
   description: "Best Naija Jollof fried & coconut rice",
   icons: {
-    icon: "/favicon.ico?v=123", // force reload
+    icon: "/favicon.ico?v=123",
+  },
+  openGraph: {
+    title: "chickenandrice",
+    description: "Best Naija Jollof fried & coconut rice",
+    url: appUrl,
+    siteName: "chickenandrice",
+    images: [
+      {
+        url: "/og-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Delicious Naija Jollof Rice",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "chickenandrice",
+    description: "Best Naija Jollof fried & coconut rice",
+    images: ["/og-image.jpg"],
   },
 };
 
