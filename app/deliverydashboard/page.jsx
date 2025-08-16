@@ -23,6 +23,8 @@ import {
     Settings
 } from 'lucide-react';
 
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 const DeliveryDashboard = () => {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState('overview');
@@ -49,18 +51,18 @@ const DeliveryDashboard = () => {
                     return;
                 }
 
-                const userResponse = await axios.get('http://localhost:5000/api/delivery/dashboard', {
+                const userResponse = await axios.get(`${API_BASE}/api/delivery/dashboard`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setUserInfo(userResponse.data.deliveryman);
 
-                const deliveriesResponse = await axios.get('http://localhost:5000/api/delivery/deliveries', {
+                const deliveriesResponse = await axios.get(`${API_BASE}/api/delivery/deliveries`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setDeliveries(deliveriesResponse.data.deliveries || []);
 
               
-                const statsResponse = await axios.get('http://localhost:5000/api/delivery/stats', {
+                const statsResponse = await axios.get(`${API_BASE}/api/delivery/stats`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setStats(statsResponse.data || stats);
@@ -98,7 +100,7 @@ const DeliveryDashboard = () => {
     const updateDeliveryStatus = async (id, newStatus) => {
         try {
             const token = localStorage.getItem('token');
-            await axios.patch(`http://localhost:5000/api/delivery/deliveries/${id}/status`,
+            await axios.patch(`${API_BASE}/api/delivery/deliveries/${id}/status`,
                 { status: newStatus },
                 { headers: { Authorization: `Bearer ${token}` } }
             );

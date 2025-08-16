@@ -5,6 +5,8 @@ import { useSelector } from 'react-redux'
 import { useRouter } from 'next/navigation'
 import NavbarDark from '../components/Navbar/NavbarDark'
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
 const CheckoutPage = () => {
   const router = useRouter()
 
@@ -60,15 +62,14 @@ const CheckoutPage = () => {
       houseNumber: formData.houseNumber,
       street: formData.street,
       landmark: formData.landmark,
-        total: totalPrice,   
+      total: totalPrice,   
       specialNotes: formData.notes,
     }
 
-    // payload for debugging 
     console.log('Order Payload:', orderPayload)
 
     try {
-      const response = await fetch('http://localhost:5000/api/orders', {
+      const response = await fetch(`${API_BASE}/api/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

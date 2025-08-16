@@ -15,6 +15,8 @@ import {
   addItemCart,
 } from './../../store/cartSlice';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
 const CartPage = () => {
   const dispatch = useDispatch();
   const cartItems = useSelector((state) => state.cart.cartItem);
@@ -35,7 +37,7 @@ const CartPage = () => {
 
     const fetchSuggestedItems = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/foods/sides-drinks');
+        const res = await fetch(`${API_BASE}/api/foods/sides-drinks`);
         const data = await res.json();
         setSuggestedItems(data);
       } catch (err) {
@@ -154,6 +156,7 @@ const CartPage = () => {
       </>
     );
   }
+
 
   return (
     <>

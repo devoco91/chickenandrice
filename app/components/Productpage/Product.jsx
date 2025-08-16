@@ -9,7 +9,7 @@ import {
 import { ShoppingCart, Plus, Minus, Star } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-const BACKEND_URL = 'http://localhost:5000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 const FastFoodProducts = () => {
   const dispatch = useDispatch();
@@ -42,9 +42,8 @@ const FastFoodProducts = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/foods');
+        const res = await fetch(`${API_BASE}/api/foods`);
         const data = await res.json();
-
 
         const filtered = data.filter(
           (item) => !['Side', 'Drink'].includes(item.category)
@@ -61,7 +60,7 @@ const FastFoodProducts = () => {
 
   const getImageUrl = (image) => {
     if (!image) return '';
-    return image.startsWith('http') ? image : `${BACKEND_URL}${image}`;
+    return image.startsWith('http') ? image : `${API_BASE}${image}`;
   };
 
   if (loading) {
@@ -74,7 +73,8 @@ const FastFoodProducts = () => {
       </div>
     );
   }
-//  Filter popular products 
+
+  //  Filter popular products 
   const popularProducts = products.filter((p) => p.isPopular);
 
   return (
@@ -226,4 +226,3 @@ const FastFoodProducts = () => {
 };
 
 export default FastFoodProducts;
-

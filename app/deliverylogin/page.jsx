@@ -4,6 +4,9 @@ import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { User, Lock, Mail, Truck, Eye, EyeOff } from 'lucide-react';
 
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+
 const DeliveryLoginPage = () => {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -19,7 +22,7 @@ const DeliveryLoginPage = () => {
 
     try {
       setIsLoading(true);
-      const res = await axios.post('http://localhost:5000/api/delivery/login', {
+      const res = await axios.post(`${API_BASE}/api/delivery/login`, {
         email,
         password
       });

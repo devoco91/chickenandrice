@@ -1,7 +1,10 @@
 'use client'
 import React, { useState } from 'react';
 import { User, Lock, Mail, Phone, Eye, EyeOff, MapPin, Calendar } from 'lucide-react';
+  
 
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 const DeliverySignupPage = () => {
   const [formData, setFormData] = useState({
     fullName: '',
@@ -47,7 +50,7 @@ const DeliverySignupPage = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:5000/api/delivery/signup", {
+      const res = await fetch(`${API_BASE}/api/delivery/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

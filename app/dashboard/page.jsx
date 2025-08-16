@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from "react";
 
-const API_BASE = "http://localhost:5000"; 
+const API_BASE = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:5000";
+
 
 export default function AdminDashboard() {
   const [foods, setFoods] = useState([]);

@@ -5,7 +5,7 @@ import {
   Navigation, Truck
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
 export default function DeliveryCenter() {
   const [orders, setOrders] = useState([]);
