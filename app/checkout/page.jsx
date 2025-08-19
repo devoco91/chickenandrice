@@ -1,15 +1,15 @@
 'use client'
 
 import React, { useState } from 'react'
-import { useSelector } from 'react-redux'
+import { useSelector, useDispatch } from 'react-redux'
 import { useRouter } from 'next/navigation'
 import NavbarDark from '../components/Navbar/NavbarDark'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+import { clearCart } from '../store/cartSlice'
+import { clearOrderDetails } from '../store/orderSlice'
 
 const CheckoutPage = () => {
   const router = useRouter()
-
+  const dispatch = useDispatch()
   const cartItems = useSelector((state) => state.cart.cartItem || [])
 
   const [formData, setFormData] = useState({
@@ -25,6 +25,12 @@ const CheckoutPage = () => {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
 
+  // ✅ Calculate totals directly from cart
+  const subtotal = cartItems.reduce((total, item) => total + item.price * item.quantity, 0)
+  const deliveryFee = 500
+  const tax = subtotal * 0.02
+  const total = subtotal + deliveryFee + tax
+
   const isFormValid =
     formData.name.trim() !== '' &&
     formData.phone.trim() !== '' &&
@@ -32,11 +38,6 @@ const CheckoutPage = () => {
     formData.street.trim() !== '' &&
     formData.landmark.trim() !== '' &&
     cartItems.length > 0
-
-  const totalPrice = cartItems.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
-  )
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -54,32 +55,33 @@ const CheckoutPage = () => {
       items: cartItems.map((item) => ({
         foodId: item._id,
         quantity: item.quantity,
-        name: item.name,       
+        name: item.name,
         price: item.price,
       })),
-      customerName: formData.name,
-      phone: formData.phone,
-      houseNumber: formData.houseNumber,
-      street: formData.street,
-      landmark: formData.landmark,
-      total: totalPrice,   
-      specialNotes: formData.notes,
+      customer: {
+        name: formData.name,
+        phone: formData.phone,
+        address: `${formData.houseNumber}, ${formData.street}, Near ${formData.landmark}`,
+        notes: formData.notes,
+      },
+      paymentSummary: {
+        subtotal,
+        deliveryFee,
+        tax,
+        total,
+      },
     }
 
-    console.log('Order Payload:', orderPayload)
-
     try {
-      const response = await fetch(`${API_BASE}/api/orders`, {
+      const response = await fetch('/api/orders', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderPayload),
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(errorText || 'Failed to submit order.')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || 'Failed to submit order.')
       }
 
       setSuccess(true)
@@ -91,6 +93,10 @@ const CheckoutPage = () => {
         landmark: '',
         notes: '',
       })
+
+      // Clear cart and order after successful submission
+      dispatch(clearCart())
+      dispatch(clearOrderDetails())
 
       router.push('/payment')
     } catch (err) {
@@ -172,15 +178,22 @@ const CheckoutPage = () => {
             disabled={loading}
           />
 
-          <div className="text-lg font-semibold">Total: ₦{totalPrice.toFixed(2)}</div>
+          {/* Show calculated totals */}
+          <div className="space-y-1 text-gray-800 font-semibold">
+            <p>Subtotal: ₦{subtotal.toLocaleString()}</p>
+            <p>Delivery Fee: ₦{deliveryFee.toLocaleString()}</p>
+            <p>Tax: ₦{tax.toLocaleString()}</p>
+            <p className="text-lg font-bold">Total: ₦{total.toLocaleString()}</p>
+          </div>
 
           <button
             type="submit"
             disabled={!isFormValid || loading}
-            className={`block w-full text-center ${isFormValid && !loading
+            className={`block w-full text-center ${
+              isFormValid && !loading
                 ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-gray-400 cursor-not-allowed'
-              } text-white py-3 rounded-lg font-semibold transition-colors`}
+            } text-white py-3 rounded-lg font-semibold transition-colors`}
           >
             {loading ? 'Submitting...' : 'Submit Order'}
           </button>

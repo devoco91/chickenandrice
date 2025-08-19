@@ -1,11 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
-import {
-  MapPin, Phone, Clock, Package, User,
-  Navigation, Truck
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { MapPin, Phone, Clock, Package, User, Navigation, Truck } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+const API_BASE = '/api'; // ✅ Next.js rewrites → correct backend
 
 export default function DeliveryCenter() {
   const [orders, setOrders] = useState([]);
@@ -13,91 +10,121 @@ export default function DeliveryCenter() {
   const [filterStatus, setFilterStatus] = useState('pending');
   const [assigningId, setAssigningId] = useState(null);
   const [selectedDeliveryman, setSelectedDeliveryman] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchOrders();
-    fetchDeliverymen();
+  // ---- helpers ----
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+  const authHeaders = () => {
+    const token = getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
-    const interval = setInterval(fetchOrders, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  const safeFetch = async (url, options = {}) => {
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+    if (res.status === 401) {
+      // token missing/invalid
+      alert('Your session expired. Please log in again.');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('token');
+        window.location.href = '/login'; // 🔁 change if your dispatcher login is different
+      }
+      throw new Error('Unauthorized');
+    }
+    if (!res.ok) {
+      const msg = (await res.text()) || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+    const ct = res.headers.get('content-type') || '';
+    return ct.includes('application/json') ? res.json() : {};
+  };
 
-  
+  // ---- data fetchers ----
   const fetchOrders = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/orders`);
-      if (res.ok) {
-        const data = await res.json();
-        setOrders(data);
-      } else {
-        console.error('Failed to fetch orders');
-      }
+      const data = await safeFetch(`${API_BASE}/orders`, { headers: authHeaders() });
+      // backend returns an array of orders
+      setOrders(Array.isArray(data) ? data : data.orders || []);
     } catch (err) {
-      console.error('❌ Error fetching orders:', err);
+      console.error('❌ Failed to fetch orders:', err);
+      setError(err.message || 'Failed to fetch orders');
     }
   };
 
   const fetchDeliverymen = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/deliverymen?online=true`);
-      if (res.ok) {
-        const data = await res.json();
-        setDeliverymen(data);
-      } else {
-        console.error('Failed to fetch deliverymen');
-      }
+      // backend route returns { deliverymen: [...] }
+      const data = await safeFetch(`${API_BASE}/delivery`, { headers: authHeaders() });
+      setDeliverymen(Array.isArray(data) ? data : data.deliverymen || []);
     } catch (err) {
-      console.error('❌ Error fetching deliverymen:', err);
+      console.error('❌ Failed to fetch deliverymen:', err);
     }
   };
 
+  // ---- lifecycle ----
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([fetchOrders(), fetchDeliverymen()]).finally(() => setLoading(false));
 
+    const interval = setInterval(() => {
+      fetchOrders();
+      fetchDeliverymen();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ---- actions ----
   const handleAssignClick = (orderId) => {
     setAssigningId(orderId);
     setSelectedDeliveryman('');
-    fetchDeliverymen();
   };
 
-
-  const updateStatus = async (id, status) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/orders/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error('Failed to update status');
-      setOrders(prev => prev.map(ord => ord._id === id ? { ...ord, status } : ord));
-    } catch (err) {
-      console.error('❌ Error updating status:', err);
-    }
-  };
-
-
-  const updateDeliveryman = async (id, deliverymanId) => {
+  const updateDeliveryman = async (orderId, deliverymanId) => {
     if (!deliverymanId) {
       alert('Please select a deliveryman');
       return;
     }
-
     try {
-      const res = await fetch(`${API_BASE}/api/orders/${id}`, {
+      const updated = await safeFetch(`${API_BASE}/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignedTo: deliverymanId }),
+        headers: { ...authHeaders() },
+        body: JSON.stringify({ assignedTo: deliverymanId }), // backend will set status → "assigned"
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to assign deliveryman');
-      setOrders(prev => prev.map(ord => ord._id === id ? data : ord));
+
+      setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
       setAssigningId(null);
       setSelectedDeliveryman('');
     } catch (err) {
-      alert('❌ Error assigning deliveryman: ' + err.message);
-      console.error(err);
+      console.error('❌ Error assigning deliveryman:', err);
+      alert(err.message || 'Failed to assign deliveryman');
     }
   };
 
-  const filteredOrders = orders.filter(order => order.status === filterStatus);
+  const updateStatus = async (orderId, status) => {
+    try {
+      const updated = await safeFetch(`${API_BASE}/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { ...authHeaders() },
+        body: JSON.stringify({ status }),
+      });
+      setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
+    } catch (err) {
+      console.error('❌ Error updating status:', err);
+      alert(err.message || 'Failed to update status');
+    }
+  };
+
+  // ---- derived ----
+  const filteredOrders = useMemo(
+    () => orders.filter((o) => o.status === filterStatus),
+    [orders, filterStatus]
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4">
@@ -117,11 +144,11 @@ export default function DeliveryCenter() {
         {/* Status Filters */}
         <div className="flex justify-center mb-8">
           <div className="inline-flex bg-white rounded-2xl p-2 shadow-lg">
-            {['pending', 'in-transit', 'delivered', 'cancelled'].map(status => (
+            {['pending', 'assigned', 'in-transit', 'delivered', 'cancelled'].map((status) => (
               <button
                 key={status}
                 onClick={() => setFilterStatus(status)}
-                className={`px-6 py-3 rounded-xl font-medium transition duration-200 ${
+                className={`px-6 py-3 rounded--xl font-medium transition duration-200 ${
                   filterStatus === status
                     ? status === 'delivered'
                       ? 'bg-green-500 text-white shadow-lg scale-105'
@@ -137,8 +164,42 @@ export default function DeliveryCenter() {
           </div>
         </div>
 
-        {/* Orders List */}
-        {filteredOrders.length === 0 ? (
+        {/* Deliverymen roster (always visible) */}
+        <div className="bg-white rounded-2xl shadow mb-6 p-4">
+          <h2 className="text-lg font-semibold mb-3">Deliverymen</h2>
+          {deliverymen.length === 0 ? (
+            <p className="text-gray-500">No deliverymen found.</p>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {deliverymen.map((dm) => (
+                <div key={dm._id} className="border rounded-xl p-3 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{dm.name}</p>
+                    <p className="text-sm text-gray-600">{dm.phone || dm.email}</p>
+                  </div>
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full ${
+                      dm.isOnline ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    {dm.isOnline ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        {loading ? (
+          <div className="bg-white rounded-3xl shadow-lg p-16 text-center">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Package className="w-10 h-10 text-gray-400" />
+            </div>
+            <p className="text-gray-600">Loading...</p>
+            {error && <p className="text-red-600 mt-2">{error}</p>}
+          </div>
+        ) : filteredOrders.length === 0 ? (
           <div className="bg-white rounded-3xl shadow-lg p-16 text-center">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Package className="w-10 h-10 text-gray-400" />
@@ -148,8 +209,11 @@ export default function DeliveryCenter() {
           </div>
         ) : (
           <div className="space-y-6">
-            {filteredOrders.map(order => (
-              <div key={order._id} className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition duration-300 overflow-hidden">
+            {filteredOrders.map((order) => (
+              <div
+                key={order._id}
+                className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition duration-300 overflow-hidden"
+              >
                 {/* Order Header */}
                 <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b">
                   <div className="flex justify-between items-center">
@@ -170,6 +234,8 @@ export default function DeliveryCenter() {
                       className={`px-6 py-3 rounded-2xl font-semibold text-sm ${
                         order.status === 'pending'
                           ? 'bg-blue-100 text-blue-700'
+                          : order.status === 'assigned'
+                          ? 'bg-indigo-100 text-indigo-700'
                           : order.status === 'in-transit'
                           ? 'bg-blue-200 text-blue-800'
                           : order.status === 'delivered'
@@ -230,10 +296,17 @@ export default function DeliveryCenter() {
                         Order Details
                       </h3>
                       <div className="space-y-3">
-                        <p><strong>Payment Mode:</strong> {order.paymentMode}</p>
-                        <p><strong>Amount:</strong> ₹{order.total}</p>
+                        <p>
+                          <strong>Payment Mode:</strong> {order.paymentMode}
+                        </p>
+                        <p>
+                          <strong>Amount:</strong> ₦{Number(order.total || 0).toLocaleString()}
+                        </p>
                         {order.assignedTo && (
-                          <p><strong>Deliveryman:</strong> {order.assignedTo.name || 'N/A'}</p>
+                          <p>
+                            <strong>Deliveryman:</strong>{' '}
+                            {order.assignedTo?.name || order.assignedToName || 'N/A'}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -246,18 +319,20 @@ export default function DeliveryCenter() {
                             <>
                               <select
                                 value={selectedDeliveryman}
-                                onChange={e => setSelectedDeliveryman(e.target.value)}
+                                onChange={(e) => setSelectedDeliveryman(e.target.value)}
                                 className="mb-4 p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                               >
                                 <option value="">Select Deliveryman</option>
                                 {deliverymen.length > 0 ? (
-                                  deliverymen.map(dm => (
+                                  deliverymen.map((dm) => (
                                     <option key={dm._id} value={dm._id}>
                                       {dm.name} {dm.isOnline ? '(Online)' : '(Offline)'}
                                     </option>
                                   ))
                                 ) : (
-                                  <option value="" disabled>No online deliverymen available</option>
+                                  <option value="" disabled>
+                                    No deliverymen available
+                                  </option>
                                 )}
                               </select>
                               <button
@@ -285,16 +360,14 @@ export default function DeliveryCenter() {
                         </>
                       )}
 
-                      {order.status === 'in-transit' && (
-                        <button
-                          onClick={() => updateStatus(order._id, 'delivered')}
-                          className="bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-700 transition"
-                        >
-                          Mark as Delivered
-                        </button>
+                      {order.status === 'assigned' && (
+                        <p className="text-gray-500 text-center">
+                          Waiting for deliveryman to start…
+                        </p>
                       )}
 
-                      {(order.status === 'pending' || order.status === 'in-transit') && (
+                      {/* If you want dispatcher to cancel pending/assigned orders, keep this: */}
+                      {(order.status === 'pending' || order.status === 'assigned') && (
                         <button
                           onClick={() => updateStatus(order._id, 'cancelled')}
                           className="mt-2 bg-red-600 text-white px-4 py-3 rounded-xl hover:bg-red-700 transition"

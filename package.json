@@ -2,13 +2,12 @@
   "name": "my-app",
   "version": "0.1.0",
   "private": true,
-"scripts": {
-  "dev": "next dev",
-  "build": "next build",
-  "start": "next start",
-  "lint": "next lint"
-},
-
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "@mapbox/mapbox-gl-geocoder": "^5.1.0",
@@ -18,7 +17,9 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^0.534.0",
     "mapbox-gl": "^3.14.0",
+    "naija-state-local-government": "^1.1.2",
     "next": "15.4.5",
+    "ngn-states-lgas": "^1.0.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-leaflet": "^5.0.0",

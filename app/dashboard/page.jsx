@@ -1,14 +1,15 @@
-'use client';
-import { useState, useEffect } from "react";
+'use client'
+import { useState, useEffect } from "react"
+import NaijaStates from "naija-state-local-government"
+import { useRouter } from "next/navigation"
 
-const API_BASE = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:5000";
+const API_BASE = "/api"
+const BACKEND_URL = "http://localhost:5000"
 
-
-export default function AdminDashboard() {
-  const [foods, setFoods] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+export default function Dashboard() {
+  const [foods, setFoods] = useState([])
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -16,107 +17,100 @@ export default function AdminDashboard() {
     category: "Main",
     isAvailable: true,
     isPopular: false,
-    image: "" 
-  });
-  const [editingFoodId, setEditingFoodId] = useState(null);
-  const [loading, setLoading] = useState(false);
+    state: "",
+    lgas: [],
+  })
+  const [editingFoodId, setEditingFoodId] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(3)
 
+  const router = useRouter()
+
+  // ===== Fetch foods =====
   const fetchFoods = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/foods`);
-      const data = await res.json();
-      setFoods(data);
-    } catch (error) {
-      console.error('Failed to fetch foods:', error);
+      const res = await fetch(`${API_BASE}/foods`)
+      if (!res.ok) throw new Error("Failed to fetch foods")
+      setFoods(await res.json())
+    } catch (err) {
+      setError(err.message)
     }
-  };
-
-  const fetchOrders = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/orders`);
-      const data = await res.json();
-      setOrders(data);
-    } catch (error) {
-      console.error('Failed to fetch orders:', error);
-    }
-  };
+  }
 
   useEffect(() => {
-    fetchFoods();
-    fetchOrders();
-  }, []);
+    fetchFoods()
+  }, [])
 
+  // ===== Input handlers =====
   const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    if (name === "imageFile") return; 
+    const { name, value, type, checked } = e.target
     setForm((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
-    }));
-  };
+    }))
+  }
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    setImageFile(file);
-    
-    
+    const file = e.target.files[0]
+    setImageFile(file)
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => setImagePreview(e.target.result);
-      reader.readAsDataURL(file);
+      const reader = new FileReader()
+      reader.onload = (e) => setImagePreview(e.target.result)
+      reader.readAsDataURL(file)
     } else {
-      setImagePreview(null);
+      setImagePreview(null)
     }
-  };
+  }
 
+  const handleLgaChange = (e) => {
+    const selected = Array.from(e.target.selectedOptions, (o) => o.value)
+    setForm((prev) => ({
+      ...prev,
+      lgas: selected,
+    }))
+  }
+
+  // ===== Submit form =====
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
 
     const url = editingFoodId
-      ? `${API_BASE}/api/foods/${editingFoodId}`
-      : `${API_BASE}/api/foods`;
+      ? `${API_BASE}/foods/${editingFoodId}`
+      : `${API_BASE}/foods`
 
-    const formData = new FormData();
-    formData.append("name", form.name);
-    formData.append("description", form.description);
-    formData.append("price", form.price);
-    formData.append("category", form.category);
-    formData.append("isAvailable", form.isAvailable);
-    formData.append("isPopular", form.isPopular);
-
-    if (form.image && form.image.trim() !== "") {
-      formData.append("image", form.image.trim());
-    }
-
-    if (imageFile) {
-      formData.append("imageFile", imageFile);
-    }
+    const formData = new FormData()
+    Object.entries(form).forEach(([key, val]) => {
+      if (Array.isArray(val)) {
+        formData.append(key, JSON.stringify(val))
+      } else {
+        formData.append(key, val)
+      }
+    })
+    if (imageFile) formData.append("imageFile", imageFile)
 
     try {
-      const response = await fetch(url, {
+      const res = await fetch(url, {
         method: editingFoodId ? "PUT" : "POST",
         body: formData,
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      console.log('Success:', result);
-      
-      resetForm();
-      fetchFoods();
-      alert(editingFoodId ? 'Food updated successfully!' : 'Food added successfully!');
-    } catch (error) {
-      console.error('Error:', error);
-      alert(`Failed to save food item: ${error.message}`);
+      })
+      if (!res.ok) throw new Error("Failed to save food")
+      await res.json()
+      fetchFoods()
+      setSuccess(editingFoodId ? "Food updated!" : "Food added!")
+      resetForm()
+    } catch (err) {
+      setError(err.message)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const resetForm = () => {
     setForm({
@@ -126,12 +120,14 @@ export default function AdminDashboard() {
       category: "Main",
       isAvailable: true,
       isPopular: false,
-      image: ""
-    });
-    setImageFile(null);
-    setImagePreview(null);
-    setEditingFoodId(null);
-  };
+      state: "",
+      lgas: [],
+    })
+    setImageFile(null)
+    setImagePreview(null)
+    setEditingFoodId(null)
+    setShowForm(false)
+  }
 
   const handleEdit = (food) => {
     setForm({
@@ -141,261 +137,202 @@ export default function AdminDashboard() {
       category: food.category,
       isAvailable: food.isAvailable,
       isPopular: food.isPopular || false,
-      image: food.image || ""
-    });
-    setImageFile(null);
-    setImagePreview(null);
-    setEditingFoodId(food._id);
-  };
+      state: food.state || "",
+      lgas: food.lgas || [],
+    })
+    setImageFile(null)
+    setImagePreview(food.image ? `${BACKEND_URL}${food.image}` : null)
+    setEditingFoodId(food._id)
+    setShowForm(true)
+  }
 
   const handleDeleteFood = async (id) => {
-    if (!confirm("Are you sure you want to delete this food?")) return;
-    
+    if (!confirm("Delete this food?")) return
     try {
-      const response = await fetch(`${API_BASE}/api/foods/${id}`, { method: "DELETE" });
-      if (!response.ok) throw new Error('Failed to delete');
-      
-      fetchFoods();
-      alert('Food deleted successfully!');
-    } catch (error) {
-      console.error('Delete error:', error);
-      alert('Failed to delete food item');
+      await fetch(`${API_BASE}/foods/${id}`, { method: "DELETE" })
+      fetchFoods()
+    } catch (err) {
+      setError(err.message)
     }
-  };
+  }
 
-  const updateOrderStatus = async (id, newStatus) => {
-    try {
-      await fetch(`${API_BASE}/api/orders/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      fetchOrders();
-    } catch (error) {
-      console.error('Order update error:', error);
-    }
-  };
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return null
+    if (imagePath.startsWith("http")) return imagePath
+    return `${BACKEND_URL}${imagePath.startsWith("/") ? imagePath : `/${imagePath}`}`
+  }
 
-  const deleteOrder = async (id) => {
-    if (!confirm("Delete this order?")) return;
-    try {
-      await fetch(`${API_BASE}/api/orders/${id}`, { method: "DELETE" });
-      fetchOrders();
-    } catch (error) {
-      console.error('Order delete error:', error);
-    }
-  };
+  const states = NaijaStates.states()
+  const lgas = form.state ? NaijaStates.lgas(form.state).lgas : []
 
-  const getImageUrl = (imageUrl) => {
-    if (!imageUrl) return null;
-    
-    if (imageUrl.startsWith('http')) return imageUrl;
-    
-    if (imageUrl.startsWith('/uploads/')) return `${API_BASE}${imageUrl}`;
-
-    return `${API_BASE}${imageUrl}`;
-  };
+  // Pagination helpers
+  const indexOfLast = currentPage * rowsPerPage
+  const indexOfFirst = indexOfLast - rowsPerPage
+  const currentFoods = foods.slice(indexOfFirst, indexOfLast)
+  const totalPages = Math.ceil(foods.length / rowsPerPage)
 
   return (
-    <div className="min-h-screen bg-red-50 p-8 text-gray-900">
-      <h1 className="text-4xl font-bold mb-6 text-red-700">Admin Dashboard</h1>
+    <div className="min-h-screen bg-red-50 p-6 text-gray-900">
+      <h1 className="text-3xl font-bold mb-6 text-red-700">Dashboard</h1>
 
-      {/* Food Management */}
-      <section className="mb-12">
-        <h2 className="text-2xl font-semibold mb-4 text-red-600">Manage Foods</h2>
-        <form onSubmit={handleSubmit} className="mb-6 space-y-4 max-w-xl bg-white p-6 rounded shadow">
-          <input
-            name="name"
-            placeholder="Food Name"
-            value={form.name}
-            onChange={handleInputChange}
-            className="w-full border border-gray-300 rounded px-3 py-2"
-            required
-          />
-          <textarea
-            name="description"
-            placeholder="Description"
-            value={form.description}
-            onChange={handleInputChange}
-            className="w-full border border-gray-300 rounded px-3 py-2"
-            rows="3"
-          />
-          <input
-            name="price"
-            type="number"
-            step="0.01"
-            placeholder="Price"
-            value={form.price}
-            onChange={handleInputChange}
-            className="w-full border border-gray-300 rounded px-3 py-2"
-            required
-          />
-          <select
-            name="category"
-            value={form.category}
-            onChange={handleInputChange}
-            className="w-full border border-gray-300 rounded px-3 py-2"
-          >
+      {success && <div className="mb-4 p-3 bg-green-100 text-green-800 rounded">{success}</div>}
+      {error && <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">{error}</div>}
+
+      {!showForm && (
+        <button
+          onClick={() => setShowForm(true)}
+          className="mb-6 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          ➕ Add Food
+        </button>
+      )}
+
+      {showForm && (
+        <form
+          onSubmit={handleSubmit}
+          className="mb-8 bg-white p-6 shadow rounded-lg max-w-lg mx-auto space-y-3"
+        >
+          <h2 className="text-xl font-semibold mb-2 text-center">
+            {editingFoodId ? "Edit Food" : "Add Food"}
+          </h2>
+
+          <input type="text" name="name" value={form.name} onChange={handleInputChange}
+            placeholder="Food Name" required className="w-full border p-2 rounded" />
+
+          <input type="number" name="price" value={form.price} onChange={handleInputChange}
+            placeholder="Price" required className="w-full border p-2 rounded" />
+
+          <select name="category" value={form.category} onChange={handleInputChange}
+            className="w-full border p-2 rounded">
             <option>Main</option>
-            <option>Side</option>
-            <option>Drink</option>
+            <option>Drinks</option>
             <option>Dessert</option>
           </select>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Image URL (optional)
-            </label>
-            <input
-              name="image"
-              placeholder="https://example.com/image.jpg"
-              value={form.image}
-              onChange={handleInputChange}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-            />
-          </div>
+          <textarea name="description" value={form.description} onChange={handleInputChange}
+            placeholder="Description" className="w-full border p-2 rounded" />
 
-          {/* File upload */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Or Upload Image File
-            </label>
-            <input
-              type="file"
-              name="imageFile"
-              accept="image/*"
-              onChange={handleFileChange}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-            />
-          </div>
-          
-          {/* Image Preview */}
-          {(imagePreview || (form.image && !imageFile)) && (
-            <div className="mt-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Image Preview:
-              </label>
-              <img
-                src={imagePreview || getImageUrl(form.image)}
-                alt="Preview"
-                className="w-32 h-32 object-cover rounded border"
-                onError={(e) => {
-                  e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik04NCA0NEg0NEE0IDQgMCAwIDAgNDAgNDhWODBBNCA0IDAgMCAwIDQ0IDg0SDg0QTQgNCAwIDAgMCA4OCA4MFY0OEE0IDQgMCAwIDAgODQgNDRaTTU2IDY4QTQgNCAwIDEgMSA2MCA2NEE0IDQgMCAwIDEgNTYgNjhaTTgyIDc2SDQ2TDU2IDY2TDYwIDcwTDcwIDYwTDgyIDcyVjc2WiIgZmlsbD0iIzlDQTNBRiIvPgo8L3N2Zz4K';
-                }}
-              />
-              {imageFile && (
-                <p className="text-sm text-gray-600 mt-1">File: {imageFile.name}</p>
-              )}
-            </div>
+          <select
+            name="state"
+            value={form.state}
+            onChange={handleInputChange}
+            className="w-full border p-2 rounded"
+          >
+            <option value="">-- Select State --</option>
+            {states.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          {form.state && (
+            <select
+              multiple
+              value={form.lgas}
+              onChange={handleLgaChange}
+              className="w-full border p-2 rounded h-32"
+            >
+              {lgas.map((lga) => (
+                <option key={lga} value={lga}>{lga}</option>
+              ))}
+            </select>
           )}
 
-          {/* Toggles */}
-          <div className="flex space-x-6">
-            <label className="inline-flex items-center space-x-2">
-              <input
-                name="isAvailable"
-                type="checkbox"
-                checked={form.isAvailable}
-                onChange={handleInputChange}
-                className="form-checkbox text-red-600"
-              />
-              <span>Available</span>
-            </label>
+          <label className="flex items-center space-x-2">
+            <input type="checkbox" name="isAvailable" checked={form.isAvailable} onChange={handleInputChange} />
+            <span>Available</span>
+          </label>
 
-            <label className="inline-flex items-center space-x-2">
-              <input
-                name="isPopular"
-                type="checkbox"
-                checked={form.isPopular}
-                onChange={handleInputChange}
-                className="form-checkbox text-red-600"
-              />
-              <span>Popular</span>
-            </label>
-          </div>
+          <label className="flex items-center space-x-2">
+            <input type="checkbox" name="isPopular" checked={form.isPopular} onChange={handleInputChange} />
+            <span>Popular</span>
+          </label>
 
-          {/* Submit */}
-          <div className="flex space-x-4">
+          <input type="file" accept="image/*" onChange={handleFileChange} />
+          {imagePreview && <img src={imagePreview} className="w-24 h-24 object-cover rounded mx-auto" />}
+
+          <div className="flex justify-center gap-2">
             <button
               type="submit"
               disabled={loading}
-              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition disabled:opacity-50"
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
             >
-              {loading ? 'Saving...' : (editingFoodId ? "Update Food" : "Add Food")}
+              {loading ? "Saving..." : editingFoodId ? "Update" : "Add"}
             </button>
-            {editingFoodId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition"
-              >
-                Cancel
-              </button>
-            )}
+            <button type="button" onClick={resetForm}
+              className="px-4 py-2 bg-gray-400 text-white rounded">Cancel</button>
           </div>
         </form>
+      )}
 
-        {/* Food Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {foods.map((food) => (
-            <div key={food._id} className="bg-white p-4 rounded shadow hover:shadow-md transition">
-              {food.image && (
-                <div className="relative mb-3">
-                  <img
-                    src={getImageUrl(food.image)}
-                    alt={food.name}
-                    className="w-full h-40 object-cover rounded"
-                    onError={(e) => {
-                      e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE2MCIgdmlld0JveD0iMCAwIDMyMCAxNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTYwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xODAgODBIMTQwQTEwIDEwIDAgMCAwIDEzMCA5MFYxMjBBMTAgMTAgMCAwIDAgMTQwIDEzMEgxODBBMTAgMTAgMCAwIDAgMTkwIDEyMFY5MEExMCAxMCAwIDAgMCAxODAgODBaTTE1MCAxMTBBMTAgMTAgMCAxIDEgMTYwIDEwMEExMCAxMCAwIDAgMSAxNTAgMTEwWk0xODUgMTI1SDE0NUwxNTUgMTE1TDE2MCAzTDE3MCA5NUwxODUgMTEwVjEyNVoiIGZpbGw9IiM5Q0EzQUYiLz4KPC9zdmc+';
-                      e.target.classList.add('opacity-50');
-                    }}
-                  />
-                  {food.isPopular && (
-                    <span className="absolute top-2 right-2 px-2 py-1 text-xs font-semibold bg-yellow-400 text-black rounded-full">
-                      Popular
-                    </span>
-                  )}
-                </div>
-              )}
-              <h3 className="text-lg font-bold text-red-700 mb-1">{food.name}</h3>
-              <p className="text-gray-700 mb-2 text-sm">{food.description}</p>
-              <div className="flex justify-between items-center mb-2">
-                <p className="font-semibold text-lg">₦{food.price}</p>
-                <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                  {food.category}
-                </span>
-              </div>
-              <p
-                className={`mb-3 font-semibold text-sm ${
-                  food.isAvailable ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                {food.isAvailable ? "✅ Available" : "❌ Unavailable"}
-              </p>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => handleEdit(food)}
-                  className="flex-1 bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700 transition text-sm"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDeleteFood(food._id)}
-                  className="flex-1 bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition text-sm"
-                >
-                  Delete
-                </button>
-              </div>
+      {/* Foods grid */}
+      <h2 className="text-xl font-semibold mb-4">Foods</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        {currentFoods.map((food) => (
+          <div key={food._id} className="border rounded-lg p-4 bg-white shadow h-full flex flex-col">
+            {food.image && (
+              <img src={getImageUrl(food.image)} alt={food.name}
+                className="w-full h-40 object-cover rounded mb-2" />
+            )}
+            <h3 className="font-bold">{food.name}</h3>
+            <p className="text-sm text-gray-600 flex-grow">{food.description}</p>
+            <p className="text-red-600 font-semibold">₦{food.price}</p>
+            {food.state && <p className="text-xs mt-1">📍 {food.state} ({food.lgas?.join(", ")})</p>}
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => handleEdit(food)} className="flex-1 px-2 py-1 bg-blue-500 text-white rounded">Edit</button>
+              <button onClick={() => handleDeleteFood(food._id)} className="flex-1 px-2 py-1 bg-red-500 text-white rounded">Delete</button>
             </div>
-          ))}
-        </div>
-        
-        {foods.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            No foods found. Add some food items to get started!
           </div>
-        )}
-      </section>
+        ))}
+      </div>
+
+      {/* Pagination controls */}
+      <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50"
+          >
+            Prev
+          </button>
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label>Rows per page:</label>
+          <select
+            value={rowsPerPage}
+            onChange={(e) => {
+              setRowsPerPage(Number(e.target.value))
+              setCurrentPage(1)
+            }}
+            className="border p-1 rounded"
+          >
+            <option value={3}>3</option>
+            <option value={6}>6</option>
+            <option value={9}>9</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Manage Orders button */}
+      <div className="mt-6 text-center">
+        <button
+          onClick={() => router.push("/dispatchCenter")}
+          className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        >
+          Manage Orders
+        </button>
+      </div>
     </div>
-  );
+  )
 }

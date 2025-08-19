@@ -9,32 +9,44 @@ import {
 import { ShoppingCart, Plus, Minus, Star } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE = "/api";
+const BACKEND_URL = "http://localhost:5000";
 
 const FastFoodProducts = () => {
   const dispatch = useDispatch();
   const router = useRouter();
 
   const cartItems = useSelector((state) => state.cart.cartItem);
-  const locationConfirmed = useSelector((state) => state.location.isConfirmed);
+  const location = useSelector((state) => state.location);
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // ✅ Pagination states
+  const [allPage, setAllPage] = useState(1);
+  const [popularPage, setPopularPage] = useState(1);
+  const itemsPerPage = 8; // change how many items per page
 
   const getQuantity = (id) => {
     const item = cartItems.find((i) => i._id === id);
     return item ? item.quantity : 0;
   };
 
-  const handleAddToCart = (product) => {
-    if (!locationConfirmed || locationConfirmed === false) {
-      localStorage.setItem('pendingProduct', JSON.stringify(product));
-      router.push('/location');
-      return;
-    }
+const handleAddToCart = (product) => {
+  if (!location.isConfirmed) {
+    localStorage.setItem("pendingProduct", JSON.stringify(product));
+    router.push(`/select-location?mealId=${product._id}`);
+    return;
+  }
 
-    dispatch(addItemCart(product));
+  // Ensure cart always stores the full image URL
+  const cartProduct = {
+    ...product,
+    image: getImageUrl(product.image), // <-- this ensures image loads in CartPage
   };
+
+  dispatch(addItemCart(cartProduct));
+};
 
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
   const handleDecrement = (id) => dispatch(decrementQuantity(id));
@@ -42,7 +54,12 @@ const FastFoodProducts = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/foods`);
+        let url = `${API_BASE}/foods`;
+        if (location?.isConfirmed && location?.state && location?.lga) {
+          url = `${API_BASE}/foods?state=${location.state}&lga=${location.lga}`;
+        }
+
+        const res = await fetch(url);
         const data = await res.json();
 
         const filtered = data.filter(
@@ -56,11 +73,13 @@ const FastFoodProducts = () => {
       }
     };
     fetchProducts();
-  }, []);
+  }, [location]);
 
+  // ✅ Fixed getImageUrl with backend support
   const getImageUrl = (image) => {
     if (!image) return '';
-    return image.startsWith('http') ? image : `${API_BASE}${image}`;
+    if (image.startsWith('http')) return image;
+    return `${BACKEND_URL}${image.startsWith('/') ? image : `/${image}`}`;
   };
 
   if (loading) {
@@ -74,8 +93,14 @@ const FastFoodProducts = () => {
     );
   }
 
-  //  Filter popular products 
   const popularProducts = products.filter((p) => p.isPopular);
+
+  // ✅ Paginate products
+  const paginatedAll = products.slice((allPage - 1) * itemsPerPage, allPage * itemsPerPage);
+  const paginatedPopular = popularProducts.slice((popularPage - 1) * itemsPerPage, popularPage * itemsPerPage);
+
+  const totalAllPages = Math.ceil(products.length / itemsPerPage);
+  const totalPopularPages = Math.ceil(popularProducts.length / itemsPerPage);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-gray-50 to-green-50 pt-20">
@@ -89,10 +114,13 @@ const FastFoodProducts = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {popularProducts.map((product) => {
+            {paginatedPopular.map((product) => {
               const quantity = getQuantity(product._id);
               return (
-                <div key={product._id} className="bg-white rounded-2xl shadow-lg hover:shadow-2xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300 border border-green-100">
+                <div
+                  key={product._id}
+                  className="bg-white rounded-2xl shadow-lg hover:shadow-2xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300 border border-green-100"
+                >
                   <div className="relative group">
                     <img
                       src={getImageUrl(product.image)}
@@ -117,14 +145,22 @@ const FastFoodProducts = () => {
                   </div>
 
                   <div className="p-6">
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">{product.name}</h3>
-                    <p className="text-gray-600 text-sm mb-4 line-clamp-2">{product.description}</p>
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">
+                      {product.name}
+                    </h3>
+                    <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                      {product.description}
+                    </p>
 
                     <div className="flex items-center justify-between mb-4">
-                      <span className="text-2xl font-bold text-green-600">₦{product.price}</span>
+                      <span className="text-2xl font-bold text-green-600">
+                        ₦{product.price}
+                      </span>
                       <div className="flex items-center gap-1">
                         <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="text-sm text-gray-600 font-medium">{product.rating || '4.5'}</span>
+                        <span className="text-sm text-gray-600 font-medium">
+                          {product.rating || '4.5'}
+                        </span>
                       </div>
                     </div>
 
@@ -136,7 +172,9 @@ const FastFoodProducts = () => {
                         >
                           <Minus className="w-4 h-4" />
                         </button>
-                        <span className="text-xl font-bold text-green-700 min-w-[2rem] text-center">{quantity}</span>
+                        <span className="text-xl font-bold text-green-700 min-w-[2rem] text-center">
+                          {quantity}
+                        </span>
                         <button
                           onClick={() => handleIncrement(product._id)}
                           className="p-3 bg-green-600 hover:bg-green-700 text-white rounded-full transform hover:scale-110 transition-all duration-200 shadow-md"
@@ -150,6 +188,27 @@ const FastFoodProducts = () => {
               );
             })}
           </div>
+
+          {/* Pagination Popular */}
+          {totalPopularPages > 1 && (
+            <div className="flex justify-center mt-8 gap-4">
+              <button
+                onClick={() => setPopularPage((p) => Math.max(1, p - 1))}
+                disabled={popularPage === 1}
+                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <span className="px-4 py-2">{popularPage} / {totalPopularPages}</span>
+              <button
+                onClick={() => setPopularPage((p) => Math.min(totalPopularPages, p + 1))}
+                disabled={popularPage === totalPopularPages}
+                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </section>
 
         {/* All Items */}
@@ -160,10 +219,13 @@ const FastFoodProducts = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {products.map((product) => {
+            {paginatedAll.map((product) => {
               const quantity = getQuantity(product._id);
               return (
-                <div key={product._id} className="bg-white rounded-xl shadow-md hover:shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300 border border-gray-100">
+                <div
+                  key={product._id}
+                  className="bg-white rounded-xl shadow-md hover:shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300 border border-gray-100"
+                >
                   <div className="relative group">
                     <img
                       src={getImageUrl(product.image)}
@@ -183,11 +245,17 @@ const FastFoodProducts = () => {
                   </div>
 
                   <div className="p-4">
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">{product.name}</h3>
-                    <p className="text-gray-600 text-sm mb-3 line-clamp-2">{product.description}</p>
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">
+                      {product.name}
+                    </h3>
+                    <p className="text-gray-600 text-sm mb-3 line-clamp-2">
+                      {product.description}
+                    </p>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-lg font-bold text-green-600">₦{product.price}</span>
+                      <span className="text-lg font-bold text-green-600">
+                        ₦{product.price}
+                      </span>
 
                       {quantity > 0 ? (
                         <div className="flex items-center gap-2 bg-green-50 rounded-lg p-1">
@@ -197,7 +265,9 @@ const FastFoodProducts = () => {
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="font-bold text-green-700 min-w-[1.5rem] text-center">{quantity}</span>
+                          <span className="font-bold text-green-700 min-w-[1.5rem] text-center">
+                            {quantity}
+                          </span>
                           <button
                             onClick={() => handleIncrement(product._id)}
                             className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-full transform hover:scale-110 transition-all duration-200"
@@ -219,6 +289,27 @@ const FastFoodProducts = () => {
               );
             })}
           </div>
+
+          {/* Pagination All */}
+          {totalAllPages > 1 && (
+            <div className="flex justify-center mt-8 gap-4">
+              <button
+                onClick={() => setAllPage((p) => Math.max(1, p - 1))}
+                disabled={allPage === 1}
+                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <span className="px-4 py-2">{allPage} / {totalAllPages}</span>
+              <button
+                onClick={() => setAllPage((p) => Math.min(totalAllPages, p + 1))}
+                disabled={allPage === totalAllPages}
+                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </div>
