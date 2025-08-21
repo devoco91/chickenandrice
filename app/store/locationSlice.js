@@ -21,14 +21,8 @@ const locationSlice = createSlice({
       state.state = "";
       state.lga = "";
     },
-    setLocationFromStorage(state, action) {
-      state.isConfirmed = true;
-      state.state = action.payload.state;
-      state.lga = action.payload.lga;
-    },
   },
 });
 
-export const { setLocation, resetLocation, setLocationFromStorage } =
-  locationSlice.actions;
+export const { setLocation, resetLocation } = locationSlice.actions;
 export default locationSlice.reducer;

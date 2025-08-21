@@ -2,15 +2,15 @@
 const nextConfig = {
   async rewrites() {
     return [
-      // Local development → backend expects /api/*
+      // Local development
       {
         source: "/api/:path*",
         destination: "http://localhost:5000/api/:path*",
       },
-      // Production → backend expects /*
+      // Production
       {
         source: "/api/:path*",
-        destination: "https://fastfolderbackend.fly.dev/:path*",
+        destination: "https://fastfolderbackend.fly.dev/api/:path*", // ✅ keep /api
       },
     ];
   },

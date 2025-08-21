@@ -1,13 +1,10 @@
-'use client';
-import React, { useState, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import {
-  addItemCart,
-  incrementQuantity,
-  decrementQuantity
-} from './../../store/cartSlice';
-import { ShoppingCart, Plus, Minus, Star } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+"use client";
+import React, { useState, useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { incrementQuantity, decrementQuantity } from "./../../store/cartSlice";
+import { setMeals } from "./../../store/mealsSlice";
+import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const API_BASE = "/api";
 const BACKEND_URL = "http://localhost:5000";
@@ -18,35 +15,30 @@ const FastFoodProducts = () => {
 
   const cartItems = useSelector((state) => state.cart.cartItem);
   const location = useSelector((state) => state.location);
+  const mealsFromStore = useSelector((state) => state.meals.meals);
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Pagination states
   const [allPage, setAllPage] = useState(1);
   const [popularPage, setPopularPage] = useState(1);
-  const itemsPerPage = 8; // change how many items per page
+  const itemsPerPage = 8;
 
   const getQuantity = (id) => {
     const item = cartItems.find((i) => i._id === id);
     return item ? item.quantity : 0;
   };
 
-const handleAddToCart = (product) => {
-  if (!location.isConfirmed) {
-    localStorage.setItem("pendingProduct", JSON.stringify(product));
+  // 🚨 Always redirect to select-location, never add directly
+  const handleAddToCart = (product) => {
+    const cartProduct = {
+      ...product,
+      image: getImageUrl(product.image),
+    };
+
+    localStorage.setItem("pendingProduct", JSON.stringify(cartProduct));
     router.push(`/select-location?mealId=${product._id}`);
-    return;
-  }
-
-  // Ensure cart always stores the full image URL
-  const cartProduct = {
-    ...product,
-    image: getImageUrl(product.image), // <-- this ensures image loads in CartPage
   };
-
-  dispatch(addItemCart(cartProduct));
-};
 
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
   const handleDecrement = (id) => dispatch(decrementQuantity(id));
@@ -54,6 +46,11 @@ const handleAddToCart = (product) => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
+        if (mealsFromStore.length > 0) {
+          setProducts(mealsFromStore);
+          return;
+        }
+
         let url = `${API_BASE}/foods`;
         if (location?.isConfirmed && location?.state && location?.lga) {
           url = `${API_BASE}/foods?state=${location.state}&lga=${location.lga}`;
@@ -63,42 +60,37 @@ const handleAddToCart = (product) => {
         const data = await res.json();
 
         const filtered = data.filter(
-          (item) => !['Side', 'Drink'].includes(item.category)
+          (item) => !["Side", "Drink"].includes(item.category)
         );
+
         setProducts(filtered);
+        dispatch(setMeals(filtered));
       } catch (err) {
-        console.error('Failed to fetch products:', err);
+        console.error("Failed to fetch products:", err);
       } finally {
         setLoading(false);
       }
     };
     fetchProducts();
-  }, [location]);
+  }, [location, mealsFromStore, dispatch]);
 
-  // ✅ Fixed getImageUrl with backend support
   const getImageUrl = (image) => {
-    if (!image) return '';
-    if (image.startsWith('http')) return image;
-    return `${BACKEND_URL}${image.startsWith('/') ? image : `/${image}`}`;
+    if (!image) return "";
+    if (image.startsWith("http")) return image;
+    return `${BACKEND_URL}${image.startsWith("/") ? image : `/${image}`}`;
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-xl text-gray-600">Loading delicious menu...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <p className="text-xl">Loading menu...</p>
       </div>
     );
   }
 
   const popularProducts = products.filter((p) => p.isPopular);
-
-  // ✅ Paginate products
   const paginatedAll = products.slice((allPage - 1) * itemsPerPage, allPage * itemsPerPage);
   const paginatedPopular = popularProducts.slice((popularPage - 1) * itemsPerPage, popularPage * itemsPerPage);
-
   const totalAllPages = Math.ceil(products.length / itemsPerPage);
   const totalPopularPages = Math.ceil(popularProducts.length / itemsPerPage);
 
@@ -109,207 +101,98 @@ const handleAddToCart = (product) => {
         {/* Popular Items */}
         <section className="mb-16">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-1 h-8 bg-green-600 rounded-full"></div>
-            <h2 className="text-3xl font-bold text-gray-900">🔥 Popular Items</h2>
+            <h2 className="text-3xl font-bold">🔥 Popular Items</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {paginatedPopular.map((product) => {
               const quantity = getQuantity(product._id);
               return (
-                <div
-                  key={product._id}
-                  className="bg-white rounded-2xl shadow-lg hover:shadow-2xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300 border border-green-100"
-                >
-                  <div className="relative group">
-                    <img
-                      src={getImageUrl(product.image)}
-                      alt={product.name}
-                      className="w-full h-56 object-cover transition-transform duration-300 group-hover:scale-110"
-                    />
-                    <div className="absolute top-4 right-4">
-                      <div className="bg-green-600 text-white px-3 py-1 rounded-full text-sm font-semibold">
-                        Popular
-                      </div>
-                    </div>
-                    {quantity === 0 && (
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                        <button
-                          onClick={() => handleAddToCart(product)}
-                          className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-semibold transform hover:scale-105 transition-all duration-200 shadow-lg"
-                        >
-                          Add to Cart
-                        </button>
-                      </div>
-                    )}
+                <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
+                  <img src={getImageUrl(product.image)} alt={product.name} className="w-full h-48 object-cover rounded-lg" />
+                  <h3 className="text-lg font-bold mt-2">{product.name}</h3>
+                  <p className="text-gray-600 text-sm">{product.description}</p>
+                  <p className="font-bold text-green-600">₦{product.price}</p>
+
+                  {/* ⭐ Rating */}
+                  <div className="flex items-center text-yellow-500 mt-2">
+                    {[1,2,3,4].map(i => (
+                      <Star key={i} className="w-5 h-5 fill-yellow-500" />
+                    ))}
+                    <Star className="w-5 h-5 fill-yellow-500" style={{ clipPath: "inset(0 50% 0 0)" }} />
                   </div>
 
-                  <div className="p-6">
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">
-                      {product.name}
-                    </h3>
-                    <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                      {product.description}
-                    </p>
-
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-2xl font-bold text-green-600">
-                        ₦{product.price}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="text-sm text-gray-600 font-medium">
-                          {product.rating || '4.5'}
-                        </span>
-                      </div>
+                  {quantity > 0 ? (
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={() => handleDecrement(product._id)}
+                        className="bg-gray-200 px-3 py-1 rounded"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span>{quantity}</span>
+                      <button
+                        onClick={() => handleIncrement(product._id)}
+                        className="bg-gray-200 px-3 py-1 rounded"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
                     </div>
-
-                    {quantity > 0 && (
-                      <div className="flex items-center justify-center gap-4 bg-green-50 rounded-xl py-3">
-                        <button
-                          onClick={() => handleDecrement(product._id)}
-                          className="p-3 bg-green-600 hover:bg-green-700 text-white rounded-full transform hover:scale-110 transition-all duration-200 shadow-md"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="text-xl font-bold text-green-700 min-w-[2rem] text-center">
-                          {quantity}
-                        </span>
-                        <button
-                          onClick={() => handleIncrement(product._id)}
-                          className="p-3 bg-green-600 hover:bg-green-700 text-white rounded-full transform hover:scale-110 transition-all duration-200 shadow-md"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  ) : (
+                    <button
+                      onClick={() => handleAddToCart(product)}
+                      className="mt-3 bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"
+                    >
+                      <ShoppingCart className="w-4 h-4" /> Add to Cart
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
-
-          {/* Pagination Popular */}
-          {totalPopularPages > 1 && (
-            <div className="flex justify-center mt-8 gap-4">
-              <button
-                onClick={() => setPopularPage((p) => Math.max(1, p - 1))}
-                disabled={popularPage === 1}
-                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-              >
-                Prev
-              </button>
-              <span className="px-4 py-2">{popularPage} / {totalPopularPages}</span>
-              <button
-                onClick={() => setPopularPage((p) => Math.min(totalPopularPages, p + 1))}
-                disabled={popularPage === totalPopularPages}
-                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          )}
         </section>
 
         {/* All Items */}
-        <section className="mb-12">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-1 h-8 bg-green-600 rounded-full"></div>
-            <h2 className="text-3xl font-bold text-gray-900">All Items</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <section>
+          <h2 className="text-3xl font-bold mb-6">All Items</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {paginatedAll.map((product) => {
               const quantity = getQuantity(product._id);
               return (
-                <div
-                  key={product._id}
-                  className="bg-white rounded-xl shadow-md hover:shadow-xl overflow-hidden transform hover:scale-[1.02] transition-all duration-300 border border-gray-100"
-                >
-                  <div className="relative group">
-                    <img
-                      src={getImageUrl(product.image)}
-                      alt={product.name}
-                      className="w-full h-48 object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    {quantity === 0 && (
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                        <button
-                          onClick={() => handleAddToCart(product)}
-                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transform hover:scale-105 transition-all duration-200"
-                        >
-                          Add to Cart
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
+                  <img src={getImageUrl(product.image)} alt={product.name} className="w-full h-48 object-cover rounded-lg" />
+                  <h3 className="text-lg font-bold mt-2">{product.name}</h3>
+                  <p className="text-gray-600 text-sm">{product.description}</p>
+                  <p className="font-bold text-green-600">₦{product.price}</p>
 
-                  <div className="p-4">
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">
-                      {product.name}
-                    </h3>
-                    <p className="text-gray-600 text-sm mb-3 line-clamp-2">
-                      {product.description}
-                    </p>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-lg font-bold text-green-600">
-                        ₦{product.price}
-                      </span>
-
-                      {quantity > 0 ? (
-                        <div className="flex items-center gap-2 bg-green-50 rounded-lg p-1">
-                          <button
-                            onClick={() => handleDecrement(product._id)}
-                            className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-full transform hover:scale-110 transition-all duration-200"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="font-bold text-green-700 min-w-[1.5rem] text-center">
-                            {quantity}
-                          </span>
-                          <button
-                            onClick={() => handleIncrement(product._id)}
-                            className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-full transform hover:scale-110 transition-all duration-200"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleAddToCart(product)}
-                          className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-full transform hover:scale-110 transition-all duration-200 shadow-md"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      )}
+                  {quantity > 0 ? (
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={() => handleDecrement(product._id)}
+                        className="bg-gray-200 px-3 py-1 rounded"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span>{quantity}</span>
+                      <button
+                        onClick={() => handleIncrement(product._id)}
+                        className="bg-gray-200 px-3 py-1 rounded"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
                     </div>
-                  </div>
+                  ) : (
+                    <button
+                      onClick={() => handleAddToCart(product)}
+                      className="mt-3 bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"
+                    >
+                      <ShoppingCart className="w-4 h-4" /> Add to Cart
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
-
-          {/* Pagination All */}
-          {totalAllPages > 1 && (
-            <div className="flex justify-center mt-8 gap-4">
-              <button
-                onClick={() => setAllPage((p) => Math.max(1, p - 1))}
-                disabled={allPage === 1}
-                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-              >
-                Prev
-              </button>
-              <span className="px-4 py-2">{allPage} / {totalAllPages}</span>
-              <button
-                onClick={() => setAllPage((p) => Math.min(totalAllPages, p + 1))}
-                disabled={allPage === totalAllPages}
-                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          )}
         </section>
       </div>
     </div>

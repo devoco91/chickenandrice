@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDispatch, useSelector } from 'react-redux'
 import { clearCart } from '../store/cartSlice'
+import { clearOrderDetails } from '../store/orderSlice'
 import NavbarDark from '../components/Navbar/NavbarDark'
 
 const PaymentPage = () => {
@@ -12,10 +13,7 @@ const PaymentPage = () => {
   const [isPaying, setIsPaying] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
 
-  const cartTotal = useSelector((state) => {
-    const items = state.cart?.items || [] 
-    return items.reduce((total, item) => total + item.price * item.quantity, 0)
-  })
+  const total = useSelector((state) => state.order.total || 0)
 
   useEffect(() => {
     setIsMounted(true)
@@ -27,11 +25,12 @@ const PaymentPage = () => {
 
     setTimeout(() => {
       dispatch(clearCart())
+      dispatch(clearOrderDetails())
       router.push('/success')
     }, 1500)
   }
 
-  if (!isMounted) return null 
+  if (!isMounted) return null
 
   return (
     <>
@@ -42,7 +41,7 @@ const PaymentPage = () => {
         <p className="mb-4 text-gray-700">
           Total to pay:{' '}
           <span className="font-bold text-red-600">
-            ₦{cartTotal.toFixed(2)}
+            ₦{total.toFixed(2)}
           </span>
         </p>
 

@@ -1,8 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDispatch } from "react-redux";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setLocation } from "../store/locationSlice";
+import { setMeals } from "../store/mealsSlice";
+import { addItemCart } from "../store/cartSlice";
 import LocationSelector from "../components/LocationSelector/LocationSelector";
 
 export default function SelectLocationPage() {
@@ -12,8 +14,39 @@ export default function SelectLocationPage() {
 
   const mealId = searchParams.get("mealId");
   const [location, setLocationState] = useState({ state: "", lga: "" });
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
-  const [suggestions, setSuggestions] = useState([]);
+  const [alternatives, setAlternatives] = useState([]);
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    let timer;
+    if (countdown > 0) {
+      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+    } else if (countdown === 0 && status) {
+      router.push("/");
+    }
+    return () => clearTimeout(timer);
+  }, [countdown, status, router]);
+
+  const handlePendingProduct = async () => {
+    if (typeof window === "undefined") return;
+    const pending = localStorage.getItem("pendingProduct");
+    if (pending) {
+      const parsed = JSON.parse(pending);
+      dispatch(addItemCart(parsed)); // ✅ Add only after location is confirmed
+      localStorage.removeItem("pendingProduct");
+    }
+  };
+
+  const checkMealAvailability = async () => {
+    const res = await fetch(
+      `/api/check-meal/${mealId}?state=${location.state}&lga=${location.lga}`,
+      { headers: { "Content-Type": "application/json" } }
+    );
+    if (!res.ok) throw new Error("Failed to check availability");
+    return res.json();
+  };
 
   const handleConfirm = async () => {
     if (!location.state || !location.lga) {
@@ -22,39 +55,34 @@ export default function SelectLocationPage() {
     }
 
     try {
-      const res = await fetch(
-        `/api/check-meal/${mealId}?state=${location.state}&lga=${location.lga}`
-      );
+      setLoading(true);
+      const data = await checkMealAvailability();
 
-      if (!res.ok) throw new Error("Failed to check availability");
-
-      const data = await res.json();
+      dispatch(setLocation({ ...location, isConfirmed: true }));
 
       if (data.available) {
-        dispatch(setLocation(location));
-
-        const pending = localStorage.getItem("pendingProduct");
-        if (pending) {
-          await fetch("/api/cart", {
-            method: "POST",
-            body: JSON.stringify(JSON.parse(pending)),
-            headers: { "Content-Type": "application/json" },
-          });
-          localStorage.removeItem("pendingProduct");
-        }
-
+        await handlePendingProduct();
+        dispatch(setMeals(data.meals || []));
         setStatus("available");
-        setSuggestions([]);
-        setTimeout(() => router.push("/"), 2000);
+        setCountdown(3);
       } else if (data.alternatives?.length > 0) {
-        setStatus("not-available");
-        setSuggestions(data.alternatives);
+        dispatch(setMeals(data.alternatives));
+        setAlternatives(data.alternatives);
+        await handlePendingProduct();
+        setStatus("alternatives");
+        setCountdown(3);
       } else {
+        dispatch(setMeals([]));
+        await handlePendingProduct();
         setStatus("none");
+        setCountdown(3);
       }
     } catch (err) {
       console.error("Error checking availability:", err);
       setStatus("error");
+      setCountdown(3);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -64,41 +92,62 @@ export default function SelectLocationPage() {
 
       <button
         onClick={handleConfirm}
-        className="mt-6 w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
+        disabled={loading}
+        className={`mt-6 w-full px-4 py-2 rounded-lg transition ${
+          loading
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-red-600 text-white hover:bg-red-700"
+        }`}
       >
-        Check Availability
+        {loading ? "Checking..." : "Check Availability"}
       </button>
 
-      {status === "available" && (
-        <div className="mt-4 text-green-600">
-          ✅ This meal is available in your location! Added to cart.
-        </div>
-      )}
+      {status && (
+        <div className="mt-6">
+          {status === "available" && (
+            <p className="text-green-600">
+              ✅ This meal is available in your location! Redirecting to homepage...
+            </p>
+          )}
 
-      {status === "not-available" && (
-        <div className="mt-4">
-          ❌ This meal is not available. Here are some meals in your area:
-          <ul className="list-disc ml-6 mt-2">
-            {suggestions.map((meal) => (
-              <li key={meal._id}>{meal.name} – ₦{meal.price}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+          {status === "alternatives" && (
+            <div className="text-yellow-600">
+              ❌ Not available, but here are some other meals near you. Redirecting...
+              <ul className="list-disc ml-6 mt-2">
+                {alternatives.map((meal) => (
+                  <li key={meal._id}>
+                    {meal.name} – ₦{meal.price}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-      {status === "none" && (
-        <div className="mt-4 text-red-600">
-          ❌ No meals available in your area. Please go back to{" "}
-          <a href="/" className="underline text-blue-600">
-            homepage
-          </a>
-          .
-        </div>
-      )}
+          {status === "none" && (
+            <p className="text-red-600">
+              ❌ No meals in your location. Redirecting to homepage...
+            </p>
+          )}
 
-      {status === "error" && (
-        <div className="mt-4 text-red-600">
-          ⚠️ Error checking availability. Try again later.
+          {status === "error" && (
+            <p className="text-red-600">
+              ⚠️ Error checking availability. Redirecting...
+            </p>
+          )}
+
+          {countdown > 0 && (
+            <div className="mt-4">
+              <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-2 bg-blue-600 transition-all duration-1000"
+                  style={{ width: `${(countdown / 3) * 100}%` }}
+                ></div>
+              </div>
+              <p className="text-sm text-gray-600 mt-2">
+                Redirecting in {countdown} seconds...
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

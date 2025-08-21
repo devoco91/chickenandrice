@@ -5,7 +5,6 @@ import { useSelector, useDispatch } from 'react-redux'
 import { useRouter } from 'next/navigation'
 import NavbarDark from '../components/Navbar/NavbarDark'
 import { clearCart } from '../store/cartSlice'
-import { clearOrderDetails } from '../store/orderSlice'
 
 const CheckoutPage = () => {
   const router = useRouter()
@@ -25,7 +24,6 @@ const CheckoutPage = () => {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
 
-  // ✅ Calculate totals directly from cart
   const subtotal = cartItems.reduce((total, item) => total + item.price * item.quantity, 0)
   const deliveryFee = 500
   const tax = subtotal * 0.02
@@ -58,12 +56,12 @@ const CheckoutPage = () => {
         name: item.name,
         price: item.price,
       })),
-      customer: {
-        name: formData.name,
-        phone: formData.phone,
-        address: `${formData.houseNumber}, ${formData.street}, Near ${formData.landmark}`,
-        notes: formData.notes,
-      },
+      customerName: formData.name,
+      phone: formData.phone,
+      houseNumber: formData.houseNumber,
+      street: formData.street,
+      landmark: formData.landmark,
+      notes: formData.notes,
       paymentSummary: {
         subtotal,
         deliveryFee,
@@ -79,9 +77,10 @@ const CheckoutPage = () => {
         body: JSON.stringify(orderPayload),
       })
 
+      const data = await response.json().catch(() => ({}))
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || 'Failed to submit order.')
+        throw new Error(data.error || data.message || `Failed to submit order (status ${response.status}).`)
       }
 
       setSuccess(true)
@@ -94,9 +93,8 @@ const CheckoutPage = () => {
         notes: '',
       })
 
-      // Clear cart and order after successful submission
+      // ✅ only clear cart, keep order totals for payment page
       dispatch(clearCart())
-      dispatch(clearOrderDetails())
 
       router.push('/payment')
     } catch (err) {
@@ -178,7 +176,6 @@ const CheckoutPage = () => {
             disabled={loading}
           />
 
-          {/* Show calculated totals */}
           <div className="space-y-1 text-gray-800 font-semibold">
             <p>Subtotal: ₦{subtotal.toLocaleString()}</p>
             <p>Delivery Fee: ₦{deliveryFee.toLocaleString()}</p>

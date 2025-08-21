@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import Cookies from 'js-cookie';
 import { Lock, Mail, Truck, Eye, EyeOff } from 'lucide-react';
 
 const DeliveryLoginPage = () => {
@@ -13,23 +14,46 @@ const DeliveryLoginPage = () => {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      alert('Please fill in all fields');
+      alert("Please fill in all fields");
       return;
     }
 
     try {
       setIsLoading(true);
+      console.log("🔵 Attempting login with:", { email, password });
 
-      // ✅ Always call /api — Next.js rewrites handle backend mapping
-      const res = await axios.post(`/api/delivery/login`, {
-        email,
-        password,
-      });
+      // ✅ Decide which endpoint to hit
+      const isAdmin = email.includes("admin") || email.endsWith("@admin.com");
+      const endpoint = isAdmin ? "/api/admin/login" : "/api/delivery/login";
 
-      localStorage.setItem('token', res.data.token);
-      router.push('/deliverydashboard');
+      // ✅ Attempt login
+      const res = await axios.post(endpoint, { email, password });
+      console.log("🟢 Full login response:", res.data);
+
+      const token = res.data?.token;
+      const role = res.data?.user?.role;
+      console.log("🟣 Role received from backend:", role);
+
+      if (!token || !role) {
+        throw new Error("Login response missing token or role");
+      }
+
+      // ✅ Save token (both cookie + localStorage)
+      Cookies.set("token", token, { expires: 7 });
+      localStorage.setItem("token", token);
+
+      // ✅ Redirect based on role (middleware will also protect routes)
+      if (role === "admin") {
+        router.push("/dispatchCenter");
+      } else if (role === "deliveryman") {
+        router.push("/deliverydashboard");
+      } else {
+        throw new Error("Unknown role: " + role);
+      }
+
     } catch (err) {
-      alert(err.response?.data?.message || 'Login failed');
+      console.error("❌ Login error:", err);
+      alert(err.response?.data?.message || "Login failed");
     } finally {
       setIsLoading(false);
     }
@@ -49,9 +73,7 @@ const DeliveryLoginPage = () => {
             <Truck className="text-white w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Welcome Back</h1>
-          <p className="text-gray-600 mt-2">
-            Sign in to access your delivery dashboard
-          </p>
+          <p className="text-gray-600 mt-2">Sign in to access your dashboard</p>
         </div>
 
         <form
@@ -102,11 +124,7 @@ const DeliveryLoginPage = () => {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
               >
-                {showPassword ? (
-                  <EyeOff className="w-5 h-5" />
-                ) : (
-                  <Eye className="w-5 h-5" />
-                )}
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
           </div>
@@ -114,26 +132,11 @@ const DeliveryLoginPage = () => {
           {/* Remember Me + Forgot Password */}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label
-                htmlFor="remember-me"
-                className="ml-2 block text-sm text-gray-700"
-              >
-                Remember me
-              </label>
+              <input id="remember-me" name="remember-me" type="checkbox" className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">Remember me</label>
             </div>
             <div className="text-sm">
-              <a
-                href="#"
-                className="text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Forgot password?
-              </a>
+              <a href="#" className="text-blue-600 hover:text-blue-700 font-medium">Forgot password?</a>
             </div>
           </div>
 
@@ -148,9 +151,7 @@ const DeliveryLoginPage = () => {
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                 Signing in...
               </div>
-            ) : (
-              'Sign In'
-            )}
+            ) : 'Sign In'}
           </button>
         </form>
 
@@ -158,10 +159,7 @@ const DeliveryLoginPage = () => {
         <div className="mt-8 text-center">
           <p className="text-gray-600">
             Don't have an account?{' '}
-            <a
-              href="/signup"
-              className="text-blue-600 font-semibold hover:text-blue-700 transition-colors"
-            >
+            <a href="/signup" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">
               Sign up here
             </a>
           </p>

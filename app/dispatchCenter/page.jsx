@@ -1,8 +1,9 @@
+
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { MapPin, Phone, Clock, Package, User, Navigation, Truck } from 'lucide-react';
 
-const API_BASE = '/api'; // ✅ Next.js rewrites → correct backend
+const API_BASE = '/api';
 
 export default function DeliveryCenter() {
   const [orders, setOrders] = useState([]);
@@ -13,7 +14,6 @@ export default function DeliveryCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // ---- helpers ----
   const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
   const authHeaders = () => {
     const token = getToken();
@@ -29,11 +29,10 @@ export default function DeliveryCenter() {
       },
     });
     if (res.status === 401) {
-      // token missing/invalid
       alert('Your session expired. Please log in again.');
       if (typeof window !== 'undefined') {
         localStorage.removeItem('token');
-        window.location.href = '/login'; // 🔁 change if your dispatcher login is different
+        window.location.href = '/deliverylogin';
       }
       throw new Error('Unauthorized');
     }
@@ -45,12 +44,11 @@ export default function DeliveryCenter() {
     return ct.includes('application/json') ? res.json() : {};
   };
 
-  // ---- data fetchers ----
   const fetchOrders = async () => {
     try {
       const data = await safeFetch(`${API_BASE}/orders`, { headers: authHeaders() });
-      // backend returns an array of orders
-      setOrders(Array.isArray(data) ? data : data.orders || []);
+      console.log('📦 Orders API response:', data);
+      setOrders(Array.isArray(data) ? data : data.orders || data.data || []);
     } catch (err) {
       console.error('❌ Failed to fetch orders:', err);
       setError(err.message || 'Failed to fetch orders');
@@ -59,15 +57,14 @@ export default function DeliveryCenter() {
 
   const fetchDeliverymen = async () => {
     try {
-      // backend route returns { deliverymen: [...] }
       const data = await safeFetch(`${API_BASE}/delivery`, { headers: authHeaders() });
-      setDeliverymen(Array.isArray(data) ? data : data.deliverymen || []);
+      console.log('👷 Deliverymen API response:', data);
+      setDeliverymen(Array.isArray(data) ? data : data.deliverymen || data.data || []);
     } catch (err) {
       console.error('❌ Failed to fetch deliverymen:', err);
     }
   };
 
-  // ---- lifecycle ----
   useEffect(() => {
     setLoading(true);
     Promise.all([fetchOrders(), fetchDeliverymen()]).finally(() => setLoading(false));
@@ -79,7 +76,6 @@ export default function DeliveryCenter() {
     return () => clearInterval(interval);
   }, []);
 
-  // ---- actions ----
   const handleAssignClick = (orderId) => {
     setAssigningId(orderId);
     setSelectedDeliveryman('');
@@ -94,9 +90,9 @@ export default function DeliveryCenter() {
       const updated = await safeFetch(`${API_BASE}/orders/${orderId}`, {
         method: 'PUT',
         headers: { ...authHeaders() },
-        body: JSON.stringify({ assignedTo: deliverymanId }), // backend will set status → "assigned"
+        body: JSON.stringify({ assignedTo: deliverymanId, status: 'assigned' }), // ✅ Assigned only
       });
-
+      console.log('✅ Order updated with deliveryman:', updated);
       setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
       setAssigningId(null);
       setSelectedDeliveryman('');
@@ -113,6 +109,7 @@ export default function DeliveryCenter() {
         headers: { ...authHeaders() },
         body: JSON.stringify({ status }),
       });
+      console.log('🔄 Order status updated:', updated);
       setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
     } catch (err) {
       console.error('❌ Error updating status:', err);
@@ -120,16 +117,14 @@ export default function DeliveryCenter() {
     }
   };
 
-  // ---- derived ----
-  const filteredOrders = useMemo(
-    () => orders.filter((o) => o.status === filterStatus),
-    [orders, filterStatus]
-  );
+  const filteredOrders = useMemo(() => {
+    if (filterStatus === 'all') return orders;
+    return orders.filter((o) => o.status === filterStatus);
+  }, [orders, filterStatus]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 bg-white px-8 py-4 rounded-2xl shadow-lg">
             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-green-500 rounded-xl flex items-center justify-center">
@@ -141,10 +136,10 @@ export default function DeliveryCenter() {
           </div>
         </div>
 
-        {/* Status Filters */}
+        {/* Filter Tabs */}
         <div className="flex justify-center mb-8">
           <div className="inline-flex bg-white rounded-2xl p-2 shadow-lg">
-            {['pending', 'assigned', 'in-transit', 'delivered', 'cancelled'].map((status) => (
+            {['all','pending','assigned','in-transit','delivered','cancelled'].map((status) => (
               <button
                 key={status}
                 onClick={() => setFilterStatus(status)}
@@ -164,7 +159,7 @@ export default function DeliveryCenter() {
           </div>
         </div>
 
-        {/* Deliverymen roster (always visible) */}
+        {/* Deliverymen List */}
         <div className="bg-white rounded-2xl shadow mb-6 p-4">
           <h2 className="text-lg font-semibold mb-3">Deliverymen</h2>
           {deliverymen.length === 0 ? (
@@ -190,7 +185,7 @@ export default function DeliveryCenter() {
           )}
         </div>
 
-        {/* Content */}
+        {/* Orders */}
         {loading ? (
           <div className="bg-white rounded-3xl shadow-lg p-16 text-center">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -210,11 +205,7 @@ export default function DeliveryCenter() {
         ) : (
           <div className="space-y-6">
             {filteredOrders.map((order) => (
-              <div
-                key={order._id}
-                className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition duration-300 overflow-hidden"
-              >
-                {/* Order Header */}
+              <div key={order._id} className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition duration-300 overflow-hidden">
                 <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b">
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-4">
@@ -224,10 +215,7 @@ export default function DeliveryCenter() {
                       <p className="text-gray-600 flex items-center gap-2">
                         <Clock className="w-4 h-4" />
                         {new Date(order.createdAt).toLocaleDateString('en-GB')} at{' '}
-                        {new Date(order.createdAt).toLocaleTimeString('en-GB', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {new Date(order.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                     <div
@@ -248,10 +236,9 @@ export default function DeliveryCenter() {
                   </div>
                 </div>
 
-                {/* Order Details */}
                 <div className="p-8">
                   <div className="grid lg:grid-cols-3 gap-8">
-                    {/* Customer Info */}
+                    {/* Customer Details */}
                     <div className="bg-gray-50 rounded-2xl p-6">
                       <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                         <User className="w-5 h-5 text-blue-600" />
@@ -274,9 +261,7 @@ export default function DeliveryCenter() {
                           <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
                             <MapPin className="w-4 h-4 text-red-600" />
                           </div>
-                          <span>
-                            {order.houseNumber}, {order.street}
-                          </span>
+                          <span>{order.houseNumber}, {order.street}</span>
                         </div>
                         {order.landmark && (
                           <div className="flex items-start gap-3">
@@ -296,17 +281,10 @@ export default function DeliveryCenter() {
                         Order Details
                       </h3>
                       <div className="space-y-3">
-                        <p>
-                          <strong>Payment Mode:</strong> {order.paymentMode}
-                        </p>
-                        <p>
-                          <strong>Amount:</strong> ₦{Number(order.total || 0).toLocaleString()}
-                        </p>
+                        <p><strong>Payment Mode:</strong> {order.paymentMode}</p>
+                        <p><strong>Amount:</strong> ₦{Number(order.total || 0).toLocaleString()}</p>
                         {order.assignedTo && (
-                          <p>
-                            <strong>Deliveryman:</strong>{' '}
-                            {order.assignedTo?.name || order.assignedToName || 'N/A'}
-                          </p>
+                          <p><strong>Deliveryman:</strong> {order.assignedTo?.name || order.assignedToName || 'N/A'}</p>
                         )}
                       </div>
                     </div>
@@ -323,21 +301,21 @@ export default function DeliveryCenter() {
                                 className="mb-4 p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                               >
                                 <option value="">Select Deliveryman</option>
-                                {deliverymen.length > 0 ? (
-                                  deliverymen.map((dm) => (
-                                    <option key={dm._id} value={dm._id}>
-                                      {dm.name} {dm.isOnline ? '(Online)' : '(Offline)'}
-                                    </option>
-                                  ))
+                                {deliverymen.filter((dm) => dm.isOnline).length > 0 ? (
+                                  deliverymen
+                                    .filter((dm) => dm.isOnline)
+                                    .map((dm) => (
+                                      <option key={dm._id} value={dm._id}>
+                                        {dm.name} (Online)
+                                      </option>
+                                    ))
                                 ) : (
-                                  <option value="" disabled>
-                                    No deliverymen available
-                                  </option>
+                                  <option value="" disabled>No deliverymen online</option>
                                 )}
                               </select>
                               <button
                                 onClick={() => updateDeliveryman(order._id, selectedDeliveryman)}
-                                disabled={!selectedDeliveryman || deliverymen.length === 0}
+                                disabled={!selectedDeliveryman || deliverymen.filter((dm) => dm.isOnline).length === 0}
                                 className="bg-blue-600 text-white px-4 py-3 rounded-xl hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
                               >
                                 Assign
@@ -362,11 +340,10 @@ export default function DeliveryCenter() {
 
                       {order.status === 'assigned' && (
                         <p className="text-gray-500 text-center">
-                          Waiting for deliveryman to start…
+                          Waiting for {order.assignedTo?.name || 'deliveryman'} to start…
                         </p>
                       )}
 
-                      {/* If you want dispatcher to cancel pending/assigned orders, keep this: */}
                       {(order.status === 'pending' || order.status === 'assigned') && (
                         <button
                           onClick={() => updateStatus(order._id, 'cancelled')}
