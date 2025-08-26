@@ -17,7 +17,7 @@ export default function Dashboard() {
     category: "Main",
     isAvailable: true,
     isPopular: false,
-    state: "",
+    state: "Lagos", // locked to Lagos
     lgas: [],
   })
   const [editingFoodId, setEditingFoodId] = useState(null)
@@ -30,7 +30,6 @@ export default function Dashboard() {
 
   const router = useRouter()
 
-  // ===== Fetch foods =====
   const fetchFoods = async () => {
     try {
       const res = await fetch(`${API_BASE}/foods`)
@@ -45,7 +44,6 @@ export default function Dashboard() {
     fetchFoods()
   }, [])
 
-  // ===== Input handlers =====
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target
     setForm((prev) => ({
@@ -74,7 +72,6 @@ export default function Dashboard() {
     }))
   }
 
-  // ===== Submit form =====
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -120,7 +117,7 @@ export default function Dashboard() {
       category: "Main",
       isAvailable: true,
       isPopular: false,
-      state: "",
+      state: "Lagos", // keep Lagos
       lgas: [],
     })
     setImageFile(null)
@@ -137,7 +134,7 @@ export default function Dashboard() {
       category: food.category,
       isAvailable: food.isAvailable,
       isPopular: food.isPopular || false,
-      state: food.state || "",
+      state: "Lagos", // enforce Lagos
       lgas: food.lgas || [],
     })
     setImageFile(null)
@@ -162,10 +159,8 @@ export default function Dashboard() {
     return `${BACKEND_URL}${imagePath.startsWith("/") ? imagePath : `/${imagePath}`}`
   }
 
-  const states = NaijaStates.states()
-  const lgas = form.state ? NaijaStates.lgas(form.state).lgas : []
+  const lgas = NaijaStates.lgas("Lagos").lgas
 
-  // Pagination helpers
   const indexOfLast = currentPage * rowsPerPage
   const indexOfFirst = indexOfLast - rowsPerPage
   const currentFoods = foods.slice(indexOfFirst, indexOfLast)
@@ -212,30 +207,20 @@ export default function Dashboard() {
           <textarea name="description" value={form.description} onChange={handleInputChange}
             placeholder="Description" className="w-full border p-2 rounded" />
 
+          {/* State fixed to Lagos */}
+          <input type="text" value="Lagos" disabled className="w-full border p-2 rounded bg-gray-100" />
+
+          {/* LGA selection */}
           <select
-            name="state"
-            value={form.state}
-            onChange={handleInputChange}
-            className="w-full border p-2 rounded"
+            multiple
+            value={form.lgas}
+            onChange={handleLgaChange}
+            className="w-full border p-2 rounded h-32"
           >
-            <option value="">-- Select State --</option>
-            {states.map((s) => (
-              <option key={s} value={s}>{s}</option>
+            {lgas.map((lga) => (
+              <option key={lga} value={lga}>{lga}</option>
             ))}
           </select>
-
-          {form.state && (
-            <select
-              multiple
-              value={form.lgas}
-              onChange={handleLgaChange}
-              className="w-full border p-2 rounded h-32"
-            >
-              {lgas.map((lga) => (
-                <option key={lga} value={lga}>{lga}</option>
-              ))}
-            </select>
-          )}
 
           <label className="flex items-center space-x-2">
             <input type="checkbox" name="isAvailable" checked={form.isAvailable} onChange={handleInputChange} />

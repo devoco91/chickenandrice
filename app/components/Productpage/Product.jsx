@@ -46,12 +46,8 @@ const FastFoodProducts = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        if (mealsFromStore.length > 0) {
-          setProducts(mealsFromStore);
-          return;
-        }
-
         let url = `${API_BASE}/foods`;
+
         if (location?.isConfirmed && location?.state && location?.lga) {
           url = `${API_BASE}/foods?state=${location.state}&lga=${location.lga}`;
         }
@@ -67,11 +63,19 @@ const FastFoodProducts = () => {
         dispatch(setMeals(filtered));
       } catch (err) {
         console.error("Failed to fetch products:", err);
+        setProducts([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchProducts();
+
+    // ✅ If Redux already has meals, use them
+    if (mealsFromStore.length > 0) {
+      setProducts(mealsFromStore);
+      setLoading(false);
+    } else {
+      fetchProducts();
+    }
   }, [location, mealsFromStore, dispatch]);
 
   const getImageUrl = (image) => {
@@ -91,8 +95,6 @@ const FastFoodProducts = () => {
   const popularProducts = products.filter((p) => p.isPopular);
   const paginatedAll = products.slice((allPage - 1) * itemsPerPage, allPage * itemsPerPage);
   const paginatedPopular = popularProducts.slice((popularPage - 1) * itemsPerPage, popularPage * itemsPerPage);
-  const totalAllPages = Math.ceil(products.length / itemsPerPage);
-  const totalPopularPages = Math.ceil(popularProducts.length / itemsPerPage);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-gray-50 to-green-50 pt-20">

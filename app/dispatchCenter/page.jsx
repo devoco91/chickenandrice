@@ -1,7 +1,6 @@
-
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { MapPin, Phone, Clock, Package, User, Navigation, Truck } from 'lucide-react';
+import { MapPin, Phone, Clock, Package, User, Navigation, Truck, CheckCircle, XCircle, ArrowRightCircle } from 'lucide-react';
 
 const API_BASE = '/api';
 
@@ -90,7 +89,7 @@ export default function DeliveryCenter() {
       const updated = await safeFetch(`${API_BASE}/orders/${orderId}`, {
         method: 'PUT',
         headers: { ...authHeaders() },
-        body: JSON.stringify({ assignedTo: deliverymanId, status: 'assigned' }), // ✅ Assigned only
+        body: JSON.stringify({ assignedTo: deliverymanId, status: 'assigned' }),
       });
       console.log('✅ Order updated with deliveryman:', updated);
       setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
@@ -121,6 +120,49 @@ export default function DeliveryCenter() {
     if (filterStatus === 'all') return orders;
     return orders.filter((o) => o.status === filterStatus);
   }, [orders, filterStatus]);
+
+  const renderTimeline = (order) => {
+    const steps = [
+      { key: 'pending', label: 'Order Created', icon: <Clock className="w-4 h-4" /> },
+      { key: 'assigned', label: 'Assigned to Deliveryman', icon: <User className="w-4 h-4" /> },
+      { key: 'in-transit', label: 'In Transit', icon: <Truck className="w-4 h-4" /> },
+      { key: 'delivered', label: 'Delivered', icon: <CheckCircle className="w-4 h-4" /> },
+      { key: 'cancelled', label: 'Cancelled', icon: <XCircle className="w-4 h-4" /> },
+    ];
+
+    const currentIndex = steps.findIndex((s) => s.key === order.status);
+
+    return (
+      <div className="flex flex-col gap-2">
+        {steps.map((step, idx) => (
+          <div key={step.key} className="flex items-center gap-2">
+            <span
+              className={`p-2 rounded-full ${
+                idx <= currentIndex
+                  ? step.key === 'cancelled'
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-green-100 text-green-600'
+                  : 'bg-gray-100 text-gray-400'
+              }`}
+            >
+              {step.icon}
+            </span>
+            <span
+              className={`text-sm ${
+                idx <= currentIndex
+                  ? step.key === 'cancelled'
+                    ? 'text-red-600 font-medium'
+                    : 'text-green-700 font-medium'
+                  : 'text-gray-400'
+              }`}
+            >
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4">
@@ -274,23 +316,46 @@ export default function DeliveryCenter() {
                       </div>
                     </div>
 
-                    {/* Order Details */}
-                    <div className="bg-gray-50 rounded-2xl p-6">
-                      <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <Package className="w-5 h-5 text-blue-600" />
-                        Order Details
-                      </h3>
-                      <div className="space-y-3">
-                        <p><strong>Payment Mode:</strong> {order.paymentMode}</p>
-                        <p><strong>Amount:</strong> ₦{Number(order.total || 0).toLocaleString()}</p>
-                        {order.assignedTo && (
-                          <p><strong>Deliveryman:</strong> {order.assignedTo?.name || order.assignedToName || 'N/A'}</p>
-                        )}
-                      </div>
-                    </div>
+                   {/* Order Details */}
+<div className="bg-gray-50 rounded-2xl p-6">
+  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+    <Package className="w-5 h-5 text-blue-600" />
+    Order Details
+  </h3>
 
-                    {/* Actions */}
+  <p className="mb-2">
+  <strong>Order Name:</strong>{" "}
+  {order.name || order.orderName || order.title || order.orderId || (order.items?.[0]?.name) || "N/A"}
+</p>
+
+  {(() => {
+    const baseAmount = Number(order.total || 0);
+    const tax = baseAmount * 0.02; // 2% tax
+    const deliveryFee = 500;       // flat fee
+    const grandTotal = baseAmount + tax + deliveryFee;
+
+    return (
+      <div className="space-y-2">
+        <p><strong>Payment Mode:</strong> {order.paymentMode}</p>
+        <p><strong>Amount:</strong> ₦{baseAmount.toLocaleString()}</p>
+        <p><strong>Tax (2%):</strong> ₦{tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+        <p><strong>Delivery Fee:</strong> ₦{deliveryFee.toLocaleString()}</p>
+        <hr className="my-2" />
+        <p className="font-bold text-lg">
+          <strong>Total:</strong> ₦{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </p>
+        {order.assignedTo && (
+          <p><strong>Deliveryman:</strong> {order.assignedTo?.name || order.assignedToName || 'N/A'}</p>
+        )}
+      </div>
+    );
+  })()}
+</div>
+
+
+                    {/* Actions & Timeline */}
                     <div className="bg-gray-50 rounded-2xl p-6 flex flex-col justify-between">
+                      {/* Actions */}
                       {order.status === 'pending' && (
                         <>
                           {assigningId === order._id ? (
@@ -335,23 +400,40 @@ export default function DeliveryCenter() {
                               Assign Deliveryman
                             </button>
                           )}
+                          <button
+                            onClick={() => updateStatus(order._id, 'cancelled')}
+                            className="mt-2 bg-red-600 text-white px-4 py-3 rounded-xl hover:bg-red-700 transition"
+                          >
+                            Cancel Order
+                          </button>
                         </>
                       )}
 
                       {order.status === 'assigned' && (
-                        <p className="text-gray-500 text-center">
-                          Waiting for {order.assignedTo?.name || 'deliveryman'} to start…
-                        </p>
+                        <>
+                          <p className="text-gray-500 text-center">
+                            Waiting for {order.assignedTo?.name || order.assignedToName || 'deliveryman'} to start delivery
+                          </p>
+                          <button
+                            onClick={() => updateStatus(order._id, 'in-transit')}
+                            className="mt-2 bg-blue-600 text-white px-4 py-3 rounded-xl hover:bg-blue-700 transition"
+                          >
+                            Mark In Transit
+                          </button>
+                        </>
                       )}
 
-                      {(order.status === 'pending' || order.status === 'assigned') && (
+                      {order.status === 'in-transit' && (
                         <button
-                          onClick={() => updateStatus(order._id, 'cancelled')}
-                          className="mt-2 bg-red-600 text-white px-4 py-3 rounded-xl hover:bg-red-700 transition"
+                          onClick={() => updateStatus(order._id, 'delivered')}
+                          className="bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-700 transition"
                         >
-                          Cancel Order
+                          Mark as Delivered
                         </button>
                       )}
+
+                      {/* Timeline */}
+                      <div className="mt-6">{renderTimeline(order)}</div>
                     </div>
                   </div>
                 </div>

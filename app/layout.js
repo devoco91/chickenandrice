@@ -1,6 +1,8 @@
+// app/layout.js
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ReduxProvider from "./store/ReduxProvider";
+import Script from "next/script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -12,6 +14,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// ✅ Safe fallback if NEXT_PUBLIC_APP_URL isn’t set
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata = {
@@ -52,7 +55,14 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="antialiased">
+        {/* ✅ Redux store available everywhere */}
         <ReduxProvider>{children}</ReduxProvider>
+
+        {/* ✅ Lazy load Google Maps API */}
+        <Script
+          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
+          strategy="lazyOnload"
+        />
       </body>
     </html>
   );

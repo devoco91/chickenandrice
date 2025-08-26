@@ -1,5 +1,5 @@
-'use client';
-import React, { useState } from 'react';
+"use client";
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import Cookies from 'js-cookie';
@@ -11,6 +11,13 @@ const DeliveryLoginPage = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [savedEmails, setSavedEmails] = useState([]);
+
+  // ✅ Load saved emails on mount
+  useEffect(() => {
+    const emails = JSON.parse(localStorage.getItem("savedEmails") || "[]");
+    setSavedEmails(emails);
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -20,29 +27,30 @@ const DeliveryLoginPage = () => {
 
     try {
       setIsLoading(true);
-      console.log("🔵 Attempting login with:", { email, password });
 
-      // ✅ Decide which endpoint to hit
       const isAdmin = email.includes("admin") || email.endsWith("@admin.com");
       const endpoint = isAdmin ? "/api/admin/login" : "/api/delivery/login";
 
-      // ✅ Attempt login
       const res = await axios.post(endpoint, { email, password });
-      console.log("🟢 Full login response:", res.data);
-
       const token = res.data?.token;
       const role = res.data?.user?.role;
-      console.log("🟣 Role received from backend:", role);
 
       if (!token || !role) {
         throw new Error("Login response missing token or role");
       }
 
-      // ✅ Save token (both cookie + localStorage)
+      // ✅ Save token
       Cookies.set("token", token, { expires: 7 });
       localStorage.setItem("token", token);
 
-      // ✅ Redirect based on role (middleware will also protect routes)
+      // ✅ Save this email in localStorage if new
+      let emails = JSON.parse(localStorage.getItem("savedEmails") || "[]");
+      if (!emails.includes(email)) {
+        emails.push(email);
+        localStorage.setItem("savedEmails", JSON.stringify(emails));
+      }
+
+      // ✅ Redirect by role
       if (role === "admin") {
         router.push("/dispatchCenter");
       } else if (role === "deliveryman") {
@@ -84,7 +92,7 @@ const DeliveryLoginPage = () => {
             handleLogin();
           }}
         >
-          {/* Email Input */}
+          {/* Email Input with saved emails */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Email Address
@@ -93,13 +101,18 @@ const DeliveryLoginPage = () => {
               <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="email"
-                autoComplete="new-email"
+                list="email-options"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyPress={handleKeyPress}
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                 placeholder="Enter your email"
               />
+              <datalist id="email-options">
+                {savedEmails.map((savedEmail, index) => (
+                  <option key={index} value={savedEmail} />
+                ))}
+              </datalist>
             </div>
           </div>
 

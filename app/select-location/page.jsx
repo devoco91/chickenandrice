@@ -1,10 +1,13 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import { useDispatch } from "react-redux";
 import { useRouter, useSearchParams } from "next/navigation";
+
 import { setLocation } from "../store/locationSlice";
 import { setMeals } from "../store/mealsSlice";
 import { addItemCart } from "../store/cartSlice";
+
 import LocationSelector from "../components/LocationSelector/LocationSelector";
 
 export default function SelectLocationPage() {
@@ -13,28 +16,42 @@ export default function SelectLocationPage() {
   const searchParams = useSearchParams();
 
   const mealId = searchParams.get("mealId");
+
   const [location, setLocationState] = useState({ state: "", lga: "" });
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
   const [alternatives, setAlternatives] = useState([]);
   const [countdown, setCountdown] = useState(0);
 
+  // countdown effect (only for alternatives, none, error)
   useEffect(() => {
+    if (!status || status === "available") return; // skip case 1
+
     let timer;
     if (countdown > 0) {
-      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      timer = setTimeout(() => setCountdown((prev) => prev - 1), 1000);
     } else if (countdown === 0 && status) {
-      router.push("/");
+      handleRedirect(status);
     }
+
     return () => clearTimeout(timer);
-  }, [countdown, status, router]);
+  }, [countdown, status]);
+
+  const handleRedirect = (status) => {
+    if (status === "alternatives") {
+      router.push("/Detailspage");
+    } else {
+      router.push("/"); // none or error → homepage
+    }
+  };
 
   const handlePendingProduct = async () => {
     if (typeof window === "undefined") return;
+
     const pending = localStorage.getItem("pendingProduct");
     if (pending) {
       const parsed = JSON.parse(pending);
-      dispatch(addItemCart(parsed)); // ✅ Add only after location is confirmed
+      dispatch(addItemCart(parsed));
       localStorage.removeItem("pendingProduct");
     }
   };
@@ -44,6 +61,7 @@ export default function SelectLocationPage() {
       `/api/check-meal/${mealId}?state=${location.state}&lga=${location.lga}`,
       { headers: { "Content-Type": "application/json" } }
     );
+
     if (!res.ok) throw new Error("Failed to check availability");
     return res.json();
   };
@@ -56,31 +74,43 @@ export default function SelectLocationPage() {
 
     try {
       setLoading(true);
-      const data = await checkMealAvailability();
 
+      const data = await checkMealAvailability();
       dispatch(setLocation({ ...location, isConfirmed: true }));
 
       if (data.available) {
-        await handlePendingProduct();
+        await handlePendingProduct(); // ✅ auto add to cart
         dispatch(setMeals(data.meals || []));
         setStatus("available");
-        setCountdown(3);
       } else if (data.alternatives?.length > 0) {
         dispatch(setMeals(data.alternatives));
         setAlternatives(data.alternatives);
-        await handlePendingProduct();
         setStatus("alternatives");
-        setCountdown(3);
+        setCountdown(3); // ✅ auto redirect
       } else {
-        dispatch(setMeals([]));
-        await handlePendingProduct();
+        try {
+          const res = await fetch("/api/foods");
+          const allMeals = await res.json();
+          dispatch(setMeals(allMeals));
+        } catch (error) {
+          console.error("Failed to load all meals:", error);
+          dispatch(setMeals([]));
+        }
         setStatus("none");
-        setCountdown(3);
+        setCountdown(3); // ✅ auto redirect
       }
     } catch (err) {
       console.error("Error checking availability:", err);
+      try {
+        const res = await fetch("/api/foods");
+        const allMeals = await res.json();
+        dispatch(setMeals(allMeals));
+      } catch (error) {
+        console.error("Failed to load all meals on error:", error);
+        dispatch(setMeals([]));
+      }
       setStatus("error");
-      setCountdown(3);
+      setCountdown(3); // ✅ auto redirect
     } finally {
       setLoading(false);
     }
@@ -105,37 +135,45 @@ export default function SelectLocationPage() {
       {status && (
         <div className="mt-6">
           {status === "available" && (
-            <p className="text-green-600">
-              ✅ This meal is available in your location! Redirecting to homepage...
-            </p>
+            <div className="text-green-600">
+              <p>✅ This meal is available in your location!</p>
+              <div className="flex gap-4 mt-4">
+                <button
+                  onClick={() => router.push("/cart")}
+                  className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700"
+                >
+                  Checkout
+                </button>
+                <button
+                  onClick={() => router.push("/Detailspage")}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Continue Shopping
+                </button>
+              </div>
+            </div>
           )}
 
           {status === "alternatives" && (
             <div className="text-yellow-600">
-              ❌ Not available, but here are some other meals near you. Redirecting...
-              <ul className="list-disc ml-6 mt-2">
-                {alternatives.map((meal) => (
-                  <li key={meal._id}>
-                    {meal.name} – ₦{meal.price}
-                  </li>
-                ))}
-              </ul>
+              ❌ Not available, but here are some other meals near you.
+              Redirecting to Detailspage...
             </div>
           )}
 
           {status === "none" && (
             <p className="text-red-600">
-              ❌ No meals in your location. Redirecting to homepage...
+              ❌ No meals in your location. Redirecting to Homepage...
             </p>
           )}
 
           {status === "error" && (
             <p className="text-red-600">
-              ⚠️ Error checking availability. Redirecting...
+              ⚠️ Error checking availability. Redirecting to Homepage...
             </p>
           )}
 
-          {countdown > 0 && (
+          {status !== "available" && countdown > 0 && (
             <div className="mt-4">
               <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
                 <div
