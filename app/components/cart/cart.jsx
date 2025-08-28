@@ -14,18 +14,24 @@ import {
   addItemCart,
 } from './../../store/cartSlice';
 import { setOrderDetails } from './../../store/orderSlice';
-import { API_BASE, UPLOADS_BASE } from "../../../config";   // ✅ import backend URLs
 
 const CartPage = () => {
   const dispatch = useDispatch();
   const cartItems = useSelector((state) => state.cart.cartItem || []);
   const [suggestedItems, setSuggestedItems] = useState([]);
 
+  // ✅ Normalize image paths (works with Next.js rewrites)
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return '/placeholder.png';
+    if (imagePath.startsWith('http')) return imagePath;
+    return imagePath.startsWith('/') ? imagePath : `/uploads/${imagePath}`;
+  };
+
   // Fetch sides & drinks
   useEffect(() => {
     const fetchSuggestedItems = async () => {
       try {
-        const res = await fetch(`${API_BASE}/foods/sides-drinks`);  // ✅ use API_BASE
+        const res = await fetch(`/api/foods/sides-drinks`);
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const data = await res.json();
         setSuggestedItems(data);
@@ -69,13 +75,6 @@ const CartPage = () => {
     dispatch(addItemCart(cartItem));
   };
 
-  // ✅ Helper: return correct image URL
-  const getImageUrl = (img) => {
-    if (!img) return "/placeholder.png";
-    if (img.startsWith("http")) return img;   // already full URL
-    return `${UPLOADS_BASE}${img}`;           // prepend backend uploads path
-  };
-
   return (
     <>
       <NavbarDark />
@@ -96,7 +95,7 @@ const CartPage = () => {
                   >
                     {item.image && (
                       <img
-                        src={getImageUrl(item.image)}   // ✅ fixed image path
+                        src={getImageUrl(item.image)}
                         alt={item.name}
                         className="w-24 h-24 object-cover rounded-lg"
                         onError={(e) => (e.currentTarget.src = "/placeholder.png")}
@@ -188,7 +187,7 @@ const CartPage = () => {
                       <div className="relative overflow-hidden">
                         {item.image && (
                           <img
-                            src={getImageUrl(item.image)}   // ✅ fixed image path
+                            src={getImageUrl(item.image)}
                             alt={item.name}
                             className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
                             onError={(e) => (e.currentTarget.src = "/placeholder.png")}

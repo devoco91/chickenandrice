@@ -5,7 +5,9 @@ import { incrementQuantity, decrementQuantity } from "./../../store/cartSlice";
 import { setMeals } from "./../../store/mealsSlice";
 import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { API_BASE, UPLOADS_BASE } from "../../../config";   // ✅ central config
+import Image from "next/image"; // ✅
+
+const API_BASE = "/api"; // ✅ keep rewrite proxy
 
 const FastFoodProducts = () => {
   const dispatch = useDispatch();
@@ -39,7 +41,6 @@ const FastFoodProducts = () => {
     const fetchProducts = async () => {
       try {
         let url = `${API_BASE}/foods`;
-
         if (location?.isConfirmed && location?.state && location?.lga) {
           url = `${API_BASE}/foods?state=${location.state}&lga=${location.lga}`;
         }
@@ -81,6 +82,20 @@ const FastFoodProducts = () => {
   const paginatedAll = products.slice((allPage - 1) * itemsPerPage, allPage * itemsPerPage);
   const paginatedPopular = popularProducts.slice((popularPage - 1) * itemsPerPage, popularPage * itemsPerPage);
 
+  const FallbackImage = ({ src, alt }) => {
+    const [imgSrc, setImgSrc] = useState(src || "/fallback.jpg");
+    return (
+      <Image
+        src={imgSrc}
+        alt={alt}
+        width={500}
+        height={300}
+        className="w-full h-48 object-cover rounded-lg"
+        onError={() => setImgSrc("/fallback.jpg")}
+      />
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-gray-50 to-green-50 pt-20">
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -96,21 +111,11 @@ const FastFoodProducts = () => {
               const quantity = getQuantity(product._id);
               return (
                 <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
-                  <img
-                    src={
-                      product.image?.startsWith("http")
-                        ? product.image
-                        : `${UPLOADS_BASE}/${product.image}`
-                    }
-                    alt={product.name}
-                    className="w-full h-48 object-cover rounded-lg"
-                    onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-                  />
+                  <FallbackImage src={product.image} alt={product.name} />
                   <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                   <p className="text-gray-600 text-sm">{product.description}</p>
                   <p className="font-bold text-green-600">₦{product.price}</p>
 
-                  {/* ⭐ Rating */}
                   <div className="flex items-center text-yellow-500 mt-2">
                     {[1,2,3,4].map(i => (
                       <Star key={i} className="w-5 h-5 fill-yellow-500" />
@@ -120,17 +125,11 @@ const FastFoodProducts = () => {
 
                   {quantity > 0 ? (
                     <div className="flex items-center gap-2 mt-3">
-                      <button
-                        onClick={() => handleDecrement(product._id)}
-                        className="bg-gray-200 px-3 py-1 rounded"
-                      >
+                      <button onClick={() => handleDecrement(product._id)} className="bg-gray-200 px-3 py-1 rounded">
                         <Minus className="w-4 h-4" />
                       </button>
                       <span>{quantity}</span>
-                      <button
-                        onClick={() => handleIncrement(product._id)}
-                        className="bg-gray-200 px-3 py-1 rounded"
-                      >
+                      <button onClick={() => handleIncrement(product._id)} className="bg-gray-200 px-3 py-1 rounded">
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
@@ -156,33 +155,18 @@ const FastFoodProducts = () => {
               const quantity = getQuantity(product._id);
               return (
                 <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
-                  <img
-                    src={
-                      product.image?.startsWith("http")
-                        ? product.image
-                        : `${UPLOADS_BASE}/${product.image}`
-                    }
-                    alt={product.name}
-                    className="w-full h-48 object-cover rounded-lg"
-                    onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-                  />
+                  <FallbackImage src={product.image} alt={product.name} />
                   <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                   <p className="text-gray-600 text-sm">{product.description}</p>
                   <p className="font-bold text-green-600">₦{product.price}</p>
 
                   {quantity > 0 ? (
                     <div className="flex items-center gap-2 mt-3">
-                      <button
-                        onClick={() => handleDecrement(product._id)}
-                        className="bg-gray-200 px-3 py-1 rounded"
-                      >
+                      <button onClick={() => handleDecrement(product._id)} className="bg-gray-200 px-3 py-1 rounded">
                         <Minus className="w-4 h-4" />
                       </button>
                       <span>{quantity}</span>
-                      <button
-                        onClick={() => handleIncrement(product._id)}
-                        className="bg-gray-200 px-3 py-1 rounded"
-                      >
+                      <button onClick={() => handleIncrement(product._id)} className="bg-gray-200 px-3 py-1 rounded">
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>

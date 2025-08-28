@@ -12,7 +12,8 @@ import { resetLocation } from "./../store/locationSlice";
 import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar/Navbar";
-import { API_BASE, UPLOADS_BASE } from "../../config"; // ✅ use central config
+
+const API_BASE = "/api"; // proxy handled by next.config.js
 
 const Detailspage = () => {
   const dispatch = useDispatch();
@@ -104,6 +105,13 @@ const Detailspage = () => {
     popularPage * itemsPerPage
   );
 
+  // ✅ Use rewrites for image paths
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return "/placeholder.png";
+    if (imagePath.startsWith("http")) return imagePath;
+    return imagePath.startsWith("/") ? imagePath : `/uploads/${imagePath}`;
+  };
+
   return (
     <>
       <Navbar />
@@ -133,11 +141,7 @@ const Detailspage = () => {
                     className="bg-white rounded-xl shadow-md p-4"
                   >
                     <img
-                      src={
-                        product.image?.startsWith("http")
-                          ? product.image
-                          : `${UPLOADS_BASE}/${product.image}`
-                      }
+                      src={getImageUrl(product.image)}
                       alt={product.name}
                       className="w-full h-48 object-cover rounded-lg"
                       onError={(e) =>
@@ -150,6 +154,7 @@ const Detailspage = () => {
                     </p>
                     <p className="font-bold text-green-600">₦{product.price}</p>
 
+                    {/* ⭐ Rating */}
                     <div className="flex items-center text-yellow-500 mt-2">
                       {[1, 2, 3, 4].map((i) => (
                         <Star key={i} className="w-5 h-5 fill-yellow-500" />
@@ -202,11 +207,7 @@ const Detailspage = () => {
                     className="bg-white rounded-xl shadow-md p-4"
                   >
                     <img
-                      src={
-                        product.image?.startsWith("http")
-                          ? product.image
-                          : `${UPLOADS_BASE}/${product.image}`
-                      }
+                      src={getImageUrl(product.image)}
                       alt={product.name}
                       className="w-full h-48 object-cover rounded-lg"
                       onError={(e) =>

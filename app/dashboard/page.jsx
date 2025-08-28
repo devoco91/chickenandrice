@@ -4,8 +4,9 @@ import NaijaStates from "naija-state-local-government"
 import { useRouter } from "next/navigation"
 import PopulateForm from "../components/PopulateForm"
 import Link from 'next/link';
-import { ArrowRightCircle } from 'lucide-react';
-import { API_BASE, UPLOADS_BASE } from "../../config"   // ✅ import backend URLs
+import { MapPin, Phone, Clock, Package, User, Navigation, Truck, CheckCircle, XCircle, ArrowRightCircle } from 'lucide-react';
+
+const API_BASE = "/api"
 
 export default function Dashboard() {
   const [foods, setFoods] = useState([])
@@ -18,7 +19,7 @@ export default function Dashboard() {
     category: "Main",
     isAvailable: true,
     isPopular: false,
-    state: "Lagos",
+    state: "Lagos", // locked to Lagos
     lgas: [],
   })
   const [editingFoodId, setEditingFoodId] = useState(null)
@@ -28,11 +29,11 @@ export default function Dashboard() {
   const [showForm, setShowForm] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(3)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState(null)
 
   const router = useRouter()
 
-  // ✅ fetch foods from backend
   const fetchFoods = async () => {
     try {
       const res = await fetch(`${API_BASE}/foods`)
@@ -120,7 +121,7 @@ export default function Dashboard() {
       category: "Main",
       isAvailable: true,
       isPopular: false,
-      state: "Lagos",
+      state: "Lagos", // keep Lagos
       lgas: [],
     })
     setImageFile(null)
@@ -137,11 +138,12 @@ export default function Dashboard() {
       category: food.category,
       isAvailable: food.isAvailable,
       isPopular: food.isPopular || false,
-      state: "Lagos",
+      state: "Lagos", // enforce Lagos
       lgas: food.lgas || [],
     })
     setImageFile(null)
-    setImagePreview(food.image ? `${UPLOADS_BASE}${food.image.replace("/uploads/", "")}` : null) // ✅ fix
+    // food.image already contains "/uploads/filename"
+    setImagePreview(food.image ? food.image : null)
     setEditingFoodId(food._id)
     setShowForm(true)
   }
@@ -157,6 +159,7 @@ export default function Dashboard() {
   }
 
   const lgas = NaijaStates.lgas("Lagos").lgas
+
   const indexOfLast = currentPage * rowsPerPage
   const indexOfFirst = indexOfLast - rowsPerPage
   const currentFoods = foods.slice(indexOfFirst, indexOfLast)
@@ -166,6 +169,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-red-50 p-6 text-gray-900">
       <h1 className="text-3xl font-bold mb-6 text-red-700">Dashboard</h1>
 
+      {/* Populate button */}
       <div className="relative inline-block mb-6">
         <Link
           href="/foodpopdashboard"
@@ -175,6 +179,7 @@ export default function Dashboard() {
         </Link>
       </div>
 
+      {/* Conditionally render external PopulateForm */}
       {selectedCategory && (
         <div className="mb-6">
           <PopulateForm category={selectedCategory} />
@@ -184,6 +189,7 @@ export default function Dashboard() {
       {success && <div className="mb-4 p-3 bg-green-100 text-green-800 rounded">{success}</div>}
       {error && <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">{error}</div>}
 
+      {/* Add Food button */}
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
@@ -193,6 +199,7 @@ export default function Dashboard() {
         </button>
       )}
 
+      {/* Food form */}
       {showForm && (
         <form
           onSubmit={handleSubmit}
@@ -220,8 +227,12 @@ export default function Dashboard() {
 
           <input type="text" value="Lagos" disabled className="w-full border p-2 rounded bg-gray-100" />
 
-          <select multiple value={form.lgas} onChange={handleLgaChange}
-            className="w-full border p-2 rounded h-32">
+          <select
+            multiple
+            value={form.lgas}
+            onChange={handleLgaChange}
+            className="w-full border p-2 rounded h-32"
+          >
             {lgas.map((lga) => (
               <option key={lga} value={lga}>{lga}</option>
             ))}
@@ -247,8 +258,11 @@ export default function Dashboard() {
           )}
 
           <div className="flex justify-center gap-2">
-            <button type="submit" disabled={loading}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
               {loading ? "Saving..." : editingFoodId ? "Update" : "Add"}
             </button>
             <button type="button" onClick={resetForm}
@@ -257,13 +271,14 @@ export default function Dashboard() {
         </form>
       )}
 
+      {/* Foods grid */}
       <h2 className="text-xl font-semibold mb-4">Foods</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {currentFoods.map((food) => (
           <div key={food._id} className="border rounded-lg p-4 bg-white shadow h-full flex flex-col">
             {food.image && (
               <img
-                src={`${UPLOADS_BASE}${food.image.replace("/uploads/", "")}`}   // ✅ fix
+                src={food.image}
                 alt={food.name}
                 className="w-full h-40 object-cover rounded mb-2"
                 onError={(e) => (e.currentTarget.src = "/placeholder.png")}
@@ -281,17 +296,24 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Pagination controls */}
       <div className="flex items-center justify-between mt-4">
         <div className="flex items-center gap-2">
-          <button onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
             disabled={currentPage === 1}
-            className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50">
+            className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50"
+          >
             Prev
           </button>
-          <span>Page {currentPage} of {totalPages}</span>
-          <button onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
             disabled={currentPage === totalPages}
-            className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50">
+            className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50"
+          >
             Next
           </button>
         </div>
@@ -313,9 +335,12 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Manage Orders button */}
       <div className="mt-6 text-center">
-        <button onClick={() => router.push("/dispatchCenter")}
-          className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+        <button
+          onClick={() => router.push("/dispatchCenter")}
+          className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        >
           Manage Orders
         </button>
       </div>
