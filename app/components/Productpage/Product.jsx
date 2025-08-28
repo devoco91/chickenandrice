@@ -6,8 +6,7 @@ import { setMeals } from "./../../store/mealsSlice";
 import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-const API_BASE = "/api";
-const BACKEND_URL = "http://localhost:5000";
+const API_BASE = "/api"; // ✅ we keep this
 
 const FastFoodProducts = () => {
   const dispatch = useDispatch();
@@ -31,12 +30,7 @@ const FastFoodProducts = () => {
 
   // 🚨 Always redirect to select-location, never add directly
   const handleAddToCart = (product) => {
-    const cartProduct = {
-      ...product,
-      image: getImageUrl(product.image),
-    };
-
-    localStorage.setItem("pendingProduct", JSON.stringify(cartProduct));
+    localStorage.setItem("pendingProduct", JSON.stringify(product));
     router.push(`/select-location?mealId=${product._id}`);
   };
 
@@ -69,7 +63,6 @@ const FastFoodProducts = () => {
       }
     };
 
-    // ✅ If Redux already has meals, use them
     if (mealsFromStore.length > 0) {
       setProducts(mealsFromStore);
       setLoading(false);
@@ -77,12 +70,6 @@ const FastFoodProducts = () => {
       fetchProducts();
     }
   }, [location, mealsFromStore, dispatch]);
-
-  const getImageUrl = (image) => {
-    if (!image) return "";
-    if (image.startsWith("http")) return image;
-    return `${BACKEND_URL}${image.startsWith("/") ? image : `/${image}`}`;
-  };
 
   if (loading) {
     return (
@@ -111,7 +98,12 @@ const FastFoodProducts = () => {
               const quantity = getQuantity(product._id);
               return (
                 <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
-                  <img src={getImageUrl(product.image)} alt={product.name} className="w-full h-48 object-cover rounded-lg" />
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                    className="w-full h-48 object-cover rounded-lg"
+                    onError={(e) => (e.target.src = "/fallback.jpg")} // ✅ fallback
+                  />
                   <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                   <p className="text-gray-600 text-sm">{product.description}</p>
                   <p className="font-bold text-green-600">₦{product.price}</p>
@@ -162,7 +154,12 @@ const FastFoodProducts = () => {
               const quantity = getQuantity(product._id);
               return (
                 <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
-                  <img src={getImageUrl(product.image)} alt={product.name} className="w-full h-48 object-cover rounded-lg" />
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                    className="w-full h-48 object-cover rounded-lg"
+                    onError={(e) => (e.target.src = "/fallback.jpg")}
+                  />
                   <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                   <p className="text-gray-600 text-sm">{product.description}</p>
                   <p className="font-bold text-green-600">₦{product.price}</p>

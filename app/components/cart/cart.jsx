@@ -15,30 +15,19 @@ import {
 } from './../../store/cartSlice';
 import { setOrderDetails } from './../../store/orderSlice';
 
-const BACKEND_URL = "http://localhost:5000";
-
 const CartPage = () => {
   const dispatch = useDispatch();
   const cartItems = useSelector((state) => state.cart.cartItem || []);
   const [suggestedItems, setSuggestedItems] = useState([]);
 
-  // Helper to ensure all images are correct URLs
-  const getImageUrl = (image) => {
-    if (!image) return null;
-    if (image.startsWith('http')) return image;
-    return `${BACKEND_URL}${image.startsWith('/') ? image : `/${image}`}`;
-  };
-
   // Fetch sides & drinks
   useEffect(() => {
     const fetchSuggestedItems = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/foods/sides-drinks`);
+        const res = await fetch(`/api/foods/sides-drinks`);
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const data = await res.json();
-        setSuggestedItems(
-          data.map(item => ({ ...item, image: getImageUrl(item.image) }))
-        );
+        setSuggestedItems(data);
       } catch (err) {
         console.error('Failed to fetch suggested items:', err);
       }
@@ -52,7 +41,7 @@ const CartPage = () => {
     if (pending) {
       try {
         const product = JSON.parse(pending);
-        dispatch(addItemCart({ ...product, image: getImageUrl(product.image) }));
+        dispatch(addItemCart(product));
       } catch (err) {
         console.error('Failed to parse pendingProduct:', err);
       }
@@ -75,7 +64,7 @@ const CartPage = () => {
   const handleDecrement = (id) => dispatch(decrementQuantity(id));
   const handleRemove = (id) => dispatch(removeItemCart(id));
   const handleAddSuggestion = (item) => {
-    const cartItem = { ...item, quantity: 1, isSideOrDrink: true, image: getImageUrl(item.image) };
+    const cartItem = { ...item, quantity: 1, isSideOrDrink: true };
     dispatch(addItemCart(cartItem));
   };
 
@@ -97,11 +86,12 @@ const CartPage = () => {
                     key={item._id}
                     className="flex items-center gap-4 bg-white p-4 rounded-lg shadow-sm border border-gray-100"
                   >
-                    {getImageUrl(item.image) && (
+                    {item.image && (
                       <img
-                        src={getImageUrl(item.image)}
+                        src={item.image}
                         alt={item.name}
                         className="w-24 h-24 object-cover rounded-lg"
+                        onError={(e) => (e.currentTarget.src = "/placeholder.png")}
                       />
                     )}
                     <div className="flex-1">
@@ -188,11 +178,12 @@ const CartPage = () => {
                   <SwiperSlide key={item._id}>
                     <div className="group bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-red-200 hover:shadow-lg transition-all duration-300">
                       <div className="relative overflow-hidden">
-                        {getImageUrl(item.image) && (
+                        {item.image && (
                           <img
-                            src={getImageUrl(item.image)}
+                            src={item.image}
                             alt={item.name}
                             className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => (e.currentTarget.src = "/placeholder.png")}
                           />
                         )}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300"></div>

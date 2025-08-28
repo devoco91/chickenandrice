@@ -5,16 +5,15 @@ import {
   incrementQuantity,
   decrementQuantity,
   addItemCart,
-  resetCart, // ✅ clear cart
+  resetCart,
 } from "./../store/cartSlice";
-import { setMeals, resetMeals } from "./../store/mealsSlice"; // ✅ reset meals
+import { setMeals, resetMeals } from "./../store/mealsSlice";
 import { resetLocation } from "./../store/locationSlice";
 import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar/Navbar";
 
 const API_BASE = "/api";
-const BACKEND_URL = "http://localhost:5000";
 
 const Detailspage = () => {
   const dispatch = useDispatch();
@@ -38,10 +37,7 @@ const Detailspage = () => {
 
   // ✅ Add to cart directly if location is confirmed
   const handleAddToCart = (product) => {
-    const cartProduct = {
-      ...product,
-      image: getImageUrl(product.image),
-    };
+    const cartProduct = { ...product };
 
     if (location?.isConfirmed) {
       dispatch(addItemCart(cartProduct));
@@ -56,10 +52,10 @@ const Detailspage = () => {
 
   // ✅ Change Location (reset cart + reset meals + reset location)
   const handleChangeLocation = () => {
-    dispatch(resetCart());     // clear cart
-    dispatch(resetMeals());    // clear meals from store
-    dispatch(resetLocation()); // clear location
-    router.push("/");          // back to homepage
+    dispatch(resetCart());
+    dispatch(resetMeals());
+    dispatch(resetLocation());
+    router.push("/");
   };
 
   useEffect(() => {
@@ -92,12 +88,6 @@ const Detailspage = () => {
     };
     fetchProducts();
   }, [location, mealsFromStore, dispatch]);
-
-  const getImageUrl = (image) => {
-    if (!image) return "";
-    if (image.startsWith("http")) return image;
-    return `${BACKEND_URL}${image.startsWith("/") ? image : `/${image}`}`;
-  };
 
   if (loading) {
     return (
@@ -147,9 +137,12 @@ const Detailspage = () => {
                     className="bg-white rounded-xl shadow-md p-4"
                   >
                     <img
-                      src={getImageUrl(product.image)}
+                      src={product.image}
                       alt={product.name}
                       className="w-full h-48 object-cover rounded-lg"
+                      onError={(e) =>
+                        (e.currentTarget.src = "/placeholder.png")
+                      }
                     />
                     <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                     <p className="text-gray-600 text-sm">{product.description}</p>
@@ -208,9 +201,12 @@ const Detailspage = () => {
                     className="bg-white rounded-xl shadow-md p-4"
                   >
                     <img
-                      src={getImageUrl(product.image)}
+                      src={product.image}
                       alt={product.name}
                       className="w-full h-48 object-cover rounded-lg"
+                      onError={(e) =>
+                        (e.currentTarget.src = "/placeholder.png")
+                      }
                     />
                     <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                     <p className="text-gray-600 text-sm">{product.description}</p>

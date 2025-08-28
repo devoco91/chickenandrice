@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { MapPin, Phone, Clock, Package, User, Navigation, Truck, CheckCircle, XCircle, ArrowRightCircle } from 'lucide-react';
 
 const API_BASE = "/api"
-const BACKEND_URL = "http://localhost:5000"
 
 export default function Dashboard() {
   const [foods, setFoods] = useState([])
@@ -143,7 +142,8 @@ export default function Dashboard() {
       lgas: food.lgas || [],
     })
     setImageFile(null)
-    setImagePreview(food.image ? `${BACKEND_URL}${food.image}` : null)
+    // food.image already contains "/uploads/filename"
+    setImagePreview(food.image ? food.image : null)
     setEditingFoodId(food._id)
     setShowForm(true)
   }
@@ -156,12 +156,6 @@ export default function Dashboard() {
     } catch (err) {
       setError(err.message)
     }
-  }
-
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null
-    if (imagePath.startsWith("http")) return imagePath
-    return `${BACKEND_URL}${imagePath.startsWith("/") ? imagePath : `/${imagePath}`}`
   }
 
   const lgas = NaijaStates.lgas("Lagos").lgas
@@ -177,15 +171,12 @@ export default function Dashboard() {
 
       {/* Populate button */}
       <div className="relative inline-block mb-6">
-      
-  <Link
-    href="/foodpopdashboard"
-    className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white px-5 py-3 rounded-2xl shadow hover:shadow-lg transition"
-  >
-    Populate <ArrowRightCircle className="w-5 h-5" />
-  </Link>
-
-       
+        <Link
+          href="/foodpopdashboard"
+          className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white px-5 py-3 rounded-2xl shadow hover:shadow-lg transition"
+        >
+          Populate <ArrowRightCircle className="w-5 h-5" />
+        </Link>
       </div>
 
       {/* Conditionally render external PopulateForm */}
@@ -258,7 +249,13 @@ export default function Dashboard() {
           </label>
 
           <input type="file" accept="image/*" onChange={handleFileChange} />
-          {imagePreview && <img src={imagePreview} className="w-24 h-24 object-cover rounded mx-auto" />}
+          {imagePreview && (
+            <img
+              src={imagePreview}
+              className="w-24 h-24 object-cover rounded mx-auto"
+              onError={(e) => (e.currentTarget.src = "/placeholder.png")}
+            />
+          )}
 
           <div className="flex justify-center gap-2">
             <button
@@ -280,8 +277,12 @@ export default function Dashboard() {
         {currentFoods.map((food) => (
           <div key={food._id} className="border rounded-lg p-4 bg-white shadow h-full flex flex-col">
             {food.image && (
-              <img src={getImageUrl(food.image)} alt={food.name}
-                className="w-full h-40 object-cover rounded mb-2" />
+              <img
+                src={food.image}
+                alt={food.name}
+                className="w-full h-40 object-cover rounded mb-2"
+                onError={(e) => (e.currentTarget.src = "/placeholder.png")}
+              />
             )}
             <h3 className="font-bold">{food.name}</h3>
             <p className="text-sm text-gray-600 flex-grow">{food.description}</p>
