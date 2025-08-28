@@ -12,8 +12,7 @@ import { resetLocation } from "./../store/locationSlice";
 import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar/Navbar";
-
-const API_BASE = "/api";
+import { API_BASE, UPLOADS_BASE } from "../../config"; // ✅ use central config
 
 const Detailspage = () => {
   const dispatch = useDispatch();
@@ -35,7 +34,6 @@ const Detailspage = () => {
     return item ? item.quantity : 0;
   };
 
-  // ✅ Add to cart directly if location is confirmed
   const handleAddToCart = (product) => {
     const cartProduct = { ...product };
 
@@ -50,7 +48,6 @@ const Detailspage = () => {
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
   const handleDecrement = (id) => dispatch(decrementQuantity(id));
 
-  // ✅ Change Location (reset cart + reset meals + reset location)
   const handleChangeLocation = () => {
     dispatch(resetCart());
     dispatch(resetMeals());
@@ -112,7 +109,6 @@ const Detailspage = () => {
       <Navbar />
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-gray-50 to-green-50 pt-20">
         <div className="max-w-7xl mx-auto px-4 py-8">
-          {/* ✅ Change Location button */}
           <div className="flex justify-end mb-6">
             <button
               onClick={handleChangeLocation}
@@ -137,7 +133,11 @@ const Detailspage = () => {
                     className="bg-white rounded-xl shadow-md p-4"
                   >
                     <img
-                      src={product.image}
+                      src={
+                        product.image?.startsWith("http")
+                          ? product.image
+                          : `${UPLOADS_BASE}/${product.image}`
+                      }
                       alt={product.name}
                       className="w-full h-48 object-cover rounded-lg"
                       onError={(e) =>
@@ -145,10 +145,11 @@ const Detailspage = () => {
                       }
                     />
                     <h3 className="text-lg font-bold mt-2">{product.name}</h3>
-                    <p className="text-gray-600 text-sm">{product.description}</p>
+                    <p className="text-gray-600 text-sm">
+                      {product.description}
+                    </p>
                     <p className="font-bold text-green-600">₦{product.price}</p>
 
-                    {/* ⭐ Rating */}
                     <div className="flex items-center text-yellow-500 mt-2">
                       {[1, 2, 3, 4].map((i) => (
                         <Star key={i} className="w-5 h-5 fill-yellow-500" />
@@ -201,7 +202,11 @@ const Detailspage = () => {
                     className="bg-white rounded-xl shadow-md p-4"
                   >
                     <img
-                      src={product.image}
+                      src={
+                        product.image?.startsWith("http")
+                          ? product.image
+                          : `${UPLOADS_BASE}/${product.image}`
+                      }
                       alt={product.name}
                       className="w-full h-48 object-cover rounded-lg"
                       onError={(e) =>
@@ -209,7 +214,9 @@ const Detailspage = () => {
                       }
                     />
                     <h3 className="text-lg font-bold mt-2">{product.name}</h3>
-                    <p className="text-gray-600 text-sm">{product.description}</p>
+                    <p className="text-gray-600 text-sm">
+                      {product.description}
+                    </p>
                     <p className="font-bold text-green-600">₦{product.price}</p>
 
                     {quantity > 0 ? (

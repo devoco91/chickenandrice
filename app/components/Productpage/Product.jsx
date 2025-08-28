@@ -5,8 +5,7 @@ import { incrementQuantity, decrementQuantity } from "./../../store/cartSlice";
 import { setMeals } from "./../../store/mealsSlice";
 import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
-
-const API_BASE = "/api"; // ✅ we keep this
+import { API_BASE, UPLOADS_BASE } from "../../../config";   // ✅ central config
 
 const FastFoodProducts = () => {
   const dispatch = useDispatch();
@@ -28,7 +27,6 @@ const FastFoodProducts = () => {
     return item ? item.quantity : 0;
   };
 
-  // 🚨 Always redirect to select-location, never add directly
   const handleAddToCart = (product) => {
     localStorage.setItem("pendingProduct", JSON.stringify(product));
     router.push(`/select-location?mealId=${product._id}`);
@@ -99,10 +97,14 @@ const FastFoodProducts = () => {
               return (
                 <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
                   <img
-                    src={product.image}
+                    src={
+                      product.image?.startsWith("http")
+                        ? product.image
+                        : `${UPLOADS_BASE}/${product.image}`
+                    }
                     alt={product.name}
                     className="w-full h-48 object-cover rounded-lg"
-                    onError={(e) => (e.target.src = "/fallback.jpg")} // ✅ fallback
+                    onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
                   />
                   <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                   <p className="text-gray-600 text-sm">{product.description}</p>
@@ -155,10 +157,14 @@ const FastFoodProducts = () => {
               return (
                 <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
                   <img
-                    src={product.image}
+                    src={
+                      product.image?.startsWith("http")
+                        ? product.image
+                        : `${UPLOADS_BASE}/${product.image}`
+                    }
                     alt={product.name}
                     className="w-full h-48 object-cover rounded-lg"
-                    onError={(e) => (e.target.src = "/fallback.jpg")}
+                    onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
                   />
                   <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                   <p className="text-gray-600 text-sm">{product.description}</p>
