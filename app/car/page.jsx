@@ -2,6 +2,9 @@
 import { useState, useEffect } from "react"
 import NaijaStates from "naija-state-local-government"
 import { useRouter } from "next/navigation"
+import PopulateForm from "../components/PopulateForm"
+import Link from 'next/link';
+import { MapPin, Phone, Clock, Package, User, Navigation, Truck, CheckCircle, XCircle, ArrowRightCircle } from 'lucide-react';
 
 const API_BASE = "/api"
 const BACKEND_URL = "http://localhost:5000"
@@ -27,6 +30,8 @@ export default function Dashboard() {
   const [showForm, setShowForm] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(3)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState(null)
 
   const router = useRouter()
 
@@ -170,9 +175,30 @@ export default function Dashboard() {
     <div className="min-h-screen bg-red-50 p-6 text-gray-900">
       <h1 className="text-3xl font-bold mb-6 text-red-700">Dashboard</h1>
 
+      {/* Populate button */}
+      <div className="relative inline-block mb-6">
+      
+  <Link
+    href="/foodpopdashboard"
+    className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white px-5 py-3 rounded-2xl shadow hover:shadow-lg transition"
+  >
+    Populate <ArrowRightCircle className="w-5 h-5" />
+  </Link>
+
+       
+      </div>
+
+      {/* Conditionally render external PopulateForm */}
+      {selectedCategory && (
+        <div className="mb-6">
+          <PopulateForm category={selectedCategory} />
+        </div>
+      )}
+
       {success && <div className="mb-4 p-3 bg-green-100 text-green-800 rounded">{success}</div>}
       {error && <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">{error}</div>}
 
+      {/* Add Food button */}
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
@@ -182,6 +208,7 @@ export default function Dashboard() {
         </button>
       )}
 
+      {/* Food form */}
       {showForm && (
         <form
           onSubmit={handleSubmit}
@@ -207,10 +234,8 @@ export default function Dashboard() {
           <textarea name="description" value={form.description} onChange={handleInputChange}
             placeholder="Description" className="w-full border p-2 rounded" />
 
-          {/* State fixed to Lagos */}
           <input type="text" value="Lagos" disabled className="w-full border p-2 rounded bg-gray-100" />
 
-          {/* LGA selection */}
           <select
             multiple
             value={form.lgas}

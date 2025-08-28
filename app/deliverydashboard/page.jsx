@@ -58,7 +58,7 @@ function TabsContent({ value, children }) {
 // --- Main Delivery Dashboard ---
 const API_BASE = '/api';
 const NOTIFICATION_ICON = '/favicon.ico';
-const DASHBOARD_PATH = '/dashboard';
+const DASHBOARD_PATH = '/deliverydashboard';
 
 export default function DeliveryDashboard() {
   const [deliveries, setDeliveries] = useState([]);

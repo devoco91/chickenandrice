@@ -1,9 +1,14 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { incrementQuantity, decrementQuantity, addItemCart } from "./../store/cartSlice";
-import { setMeals } from "./../store/mealsSlice";
-import { resetLocation } from "./../store/locationSlice"; // ✅ import resetLocation
+import {
+  incrementQuantity,
+  decrementQuantity,
+  addItemCart,
+  resetCart, // ✅ clear cart
+} from "./../store/cartSlice";
+import { setMeals, resetMeals } from "./../store/mealsSlice"; // ✅ reset meals
+import { resetLocation } from "./../store/locationSlice";
 import { ShoppingCart, Plus, Minus, Star } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar/Navbar";
@@ -49,10 +54,12 @@ const Detailspage = () => {
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
   const handleDecrement = (id) => dispatch(decrementQuantity(id));
 
-  // ✅ Change Location
+  // ✅ Change Location (reset cart + reset meals + reset location)
   const handleChangeLocation = () => {
-    dispatch(resetLocation());
-    router.push("/");
+    dispatch(resetCart());     // clear cart
+    dispatch(resetMeals());    // clear meals from store
+    dispatch(resetLocation()); // clear location
+    router.push("/");          // back to homepage
   };
 
   useEffect(() => {
@@ -101,17 +108,20 @@ const Detailspage = () => {
   }
 
   const popularProducts = products.filter((p) => p.isPopular);
-  const paginatedAll = products.slice((allPage - 1) * itemsPerPage, allPage * itemsPerPage);
-  const paginatedPopular = popularProducts.slice((popularPage - 1) * itemsPerPage, popularPage * itemsPerPage);
-  const totalAllPages = Math.ceil(products.length / itemsPerPage);
-  const totalPopularPages = Math.ceil(popularProducts.length / itemsPerPage);
+  const paginatedAll = products.slice(
+    (allPage - 1) * itemsPerPage,
+    allPage * itemsPerPage
+  );
+  const paginatedPopular = popularProducts.slice(
+    (popularPage - 1) * itemsPerPage,
+    popularPage * itemsPerPage
+  );
 
   return (
     <>
       <Navbar />
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-gray-50 to-green-50 pt-20">
         <div className="max-w-7xl mx-auto px-4 py-8">
-          
           {/* ✅ Change Location button */}
           <div className="flex justify-end mb-6">
             <button
@@ -132,18 +142,28 @@ const Detailspage = () => {
               {paginatedPopular.map((product) => {
                 const quantity = getQuantity(product._id);
                 return (
-                  <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
-                    <img src={getImageUrl(product.image)} alt={product.name} className="w-full h-48 object-cover rounded-lg" />
+                  <div
+                    key={product._id}
+                    className="bg-white rounded-xl shadow-md p-4"
+                  >
+                    <img
+                      src={getImageUrl(product.image)}
+                      alt={product.name}
+                      className="w-full h-48 object-cover rounded-lg"
+                    />
                     <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                     <p className="text-gray-600 text-sm">{product.description}</p>
                     <p className="font-bold text-green-600">₦{product.price}</p>
 
                     {/* ⭐ Rating */}
                     <div className="flex items-center text-yellow-500 mt-2">
-                      {[1, 2, 3, 4].map(i => (
+                      {[1, 2, 3, 4].map((i) => (
                         <Star key={i} className="w-5 h-5 fill-yellow-500" />
                       ))}
-                      <Star className="w-5 h-5 fill-yellow-500" style={{ clipPath: "inset(0 50% 0 0)" }} />
+                      <Star
+                        className="w-5 h-5 fill-yellow-500"
+                        style={{ clipPath: "inset(0 50% 0 0)" }}
+                      />
                     </div>
 
                     {quantity > 0 ? (
@@ -183,8 +203,15 @@ const Detailspage = () => {
               {paginatedAll.map((product) => {
                 const quantity = getQuantity(product._id);
                 return (
-                  <div key={product._id} className="bg-white rounded-xl shadow-md p-4">
-                    <img src={getImageUrl(product.image)} alt={product.name} className="w-full h-48 object-cover rounded-lg" />
+                  <div
+                    key={product._id}
+                    className="bg-white rounded-xl shadow-md p-4"
+                  >
+                    <img
+                      src={getImageUrl(product.image)}
+                      alt={product.name}
+                      className="w-full h-48 object-cover rounded-lg"
+                    />
                     <h3 className="text-lg font-bold mt-2">{product.name}</h3>
                     <p className="text-gray-600 text-sm">{product.description}</p>
                     <p className="font-bold text-green-600">₦{product.price}</p>

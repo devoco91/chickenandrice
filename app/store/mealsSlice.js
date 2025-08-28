@@ -15,8 +15,10 @@ const mealsSlice = createSlice({
     clearMeals: (state) => {
       state.meals = [];
     },
+    // ✅ Reset meals completely to initial state
+    resetMeals: () => initialState,
   },
 });
 
-export const { setMeals, clearMeals } = mealsSlice.actions;
+export const { setMeals, clearMeals, resetMeals } = mealsSlice.actions;
 export default mealsSlice.reducer;

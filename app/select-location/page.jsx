@@ -20,12 +20,11 @@ export default function SelectLocationPage() {
   const [location, setLocationState] = useState({ state: "", lga: "" });
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
-  const [alternatives, setAlternatives] = useState([]);
   const [countdown, setCountdown] = useState(0);
 
-  // countdown effect (only for alternatives, none, error)
+  // countdown for auto-redirect in alternatives/none/error cases
   useEffect(() => {
-    if (!status || status === "available") return; // skip case 1
+    if (!status || status === "available") return;
 
     let timer;
     if (countdown > 0) {
@@ -41,11 +40,11 @@ export default function SelectLocationPage() {
     if (status === "alternatives") {
       router.push("/Detailspage");
     } else {
-      router.push("/"); // none or error → homepage
+      router.push("/");
     }
   };
 
-  const handlePendingProduct = async () => {
+  const addPendingProductToCart = async () => {
     if (typeof window === "undefined") return;
 
     const pending = localStorage.getItem("pendingProduct");
@@ -56,12 +55,16 @@ export default function SelectLocationPage() {
     }
   };
 
+  const clearPendingProduct = () => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem("pendingProduct");
+  };
+
   const checkMealAvailability = async () => {
     const res = await fetch(
       `/api/check-meal/${mealId}?state=${location.state}&lga=${location.lga}`,
       { headers: { "Content-Type": "application/json" } }
     );
-
     if (!res.ok) throw new Error("Failed to check availability");
     return res.json();
   };
@@ -79,15 +82,16 @@ export default function SelectLocationPage() {
       dispatch(setLocation({ ...location, isConfirmed: true }));
 
       if (data.available) {
-        await handlePendingProduct(); // ✅ auto add to cart
+        await addPendingProductToCart(); // ✅ add to cart
         dispatch(setMeals(data.meals || []));
         setStatus("available");
       } else if (data.alternatives?.length > 0) {
+        clearPendingProduct(); // ❌ do not add to cart
         dispatch(setMeals(data.alternatives));
-        setAlternatives(data.alternatives);
         setStatus("alternatives");
-        setCountdown(3); // ✅ auto redirect
+        setCountdown(3);
       } else {
+        clearPendingProduct(); // ❌ do not add to cart
         try {
           const res = await fetch("/api/foods");
           const allMeals = await res.json();
@@ -97,10 +101,11 @@ export default function SelectLocationPage() {
           dispatch(setMeals([]));
         }
         setStatus("none");
-        setCountdown(3); // ✅ auto redirect
+        setCountdown(3);
       }
     } catch (err) {
       console.error("Error checking availability:", err);
+      clearPendingProduct();
       try {
         const res = await fetch("/api/foods");
         const allMeals = await res.json();
@@ -110,7 +115,7 @@ export default function SelectLocationPage() {
         dispatch(setMeals([]));
       }
       setStatus("error");
-      setCountdown(3); // ✅ auto redirect
+      setCountdown(3);
     } finally {
       setLoading(false);
     }

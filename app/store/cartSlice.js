@@ -13,7 +13,9 @@ const cartSlice = createSlice({
     // Add item to cart
     addItemCart: (state, action) => {
       const item = action.payload;
-      const existingItem = state.cartItem.find((product) => product._id === item._id);
+      const existingItem = state.cartItem.find(
+        (product) => product._id === item._id
+      );
       if (existingItem) {
         existingItem.quantity++;
       } else {
@@ -24,13 +26,18 @@ const cartSlice = createSlice({
     // Remove item from cart
     removeItemCart: (state, action) => {
       const itemId = action.payload;
-      state.cartItem = state.cartItem.filter((product) => product._id !== itemId);
+      state.cartItem = state.cartItem.filter(
+        (product) => product._id !== itemId
+      );
     },
 
     // Clear all items
     clearCart: (state) => {
       state.cartItem = [];
     },
+
+    // ✅ Reset cart completely (to initial state)
+    resetCart: () => initialState,
 
     // Update item quantity directly
     updateQuantityCart: (state, action) => {
@@ -89,6 +96,7 @@ export const {
   addItemCart,
   removeItemCart,
   clearCart,
+  resetCart, // ✅ make sure this is exported
   updateQuantityCart,
   checkoutCart,
   decrementQuantity,

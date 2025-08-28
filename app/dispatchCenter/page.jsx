@@ -1,19 +1,35 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { MapPin, Phone, Clock, Package, User, Navigation, Truck, CheckCircle, XCircle, ArrowRightCircle } from 'lucide-react';
+import {
+  MapPin, Phone, Clock, Package, User, Navigation,
+  Truck, CheckCircle, XCircle, ArrowRightCircle, Hash
+} from 'lucide-react';
+import Link from 'next/link';
 
 const API_BASE = '/api';
+
+// helper to normalize API status values: "in transit" -> "in-transit", "canceled" -> "cancelled"
+const normalizeStatus = (s) =>
+  (s ?? 'pending')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace('canceled', 'cancelled');
 
 export default function DeliveryCenter() {
   const [orders, setOrders] = useState([]);
   const [deliverymen, setDeliverymen] = useState([]);
-  const [filterStatus, setFilterStatus] = useState('pending');
+  // const [filterStatus, setFilterStatus] = useState('pending');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [assigningId, setAssigningId] = useState(null);
   const [selectedDeliveryman, setSelectedDeliveryman] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+  const getToken = () =>
+    (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+
   const authHeaders = () => {
     const token = getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -45,8 +61,7 @@ export default function DeliveryCenter() {
 
   const fetchOrders = async () => {
     try {
-      const data = await safeFetch(`${API_BASE}/orders`, { headers: authHeaders() });
-      console.log('📦 Orders API response:', data);
+      const data = await safeFetch(`${API_BASE}/orders/online`, { headers: authHeaders() });
       setOrders(Array.isArray(data) ? data : data.orders || data.data || []);
     } catch (err) {
       console.error('❌ Failed to fetch orders:', err);
@@ -57,7 +72,6 @@ export default function DeliveryCenter() {
   const fetchDeliverymen = async () => {
     try {
       const data = await safeFetch(`${API_BASE}/delivery`, { headers: authHeaders() });
-      console.log('👷 Deliverymen API response:', data);
       setDeliverymen(Array.isArray(data) ? data : data.deliverymen || data.data || []);
     } catch (err) {
       console.error('❌ Failed to fetch deliverymen:', err);
@@ -91,7 +105,6 @@ export default function DeliveryCenter() {
         headers: { ...authHeaders() },
         body: JSON.stringify({ assignedTo: deliverymanId, status: 'assigned' }),
       });
-      console.log('✅ Order updated with deliveryman:', updated);
       setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
       setAssigningId(null);
       setSelectedDeliveryman('');
@@ -108,7 +121,6 @@ export default function DeliveryCenter() {
         headers: { ...authHeaders() },
         body: JSON.stringify({ status }),
       });
-      console.log('🔄 Order status updated:', updated);
       setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
     } catch (err) {
       console.error('❌ Error updating status:', err);
@@ -116,12 +128,18 @@ export default function DeliveryCenter() {
     }
   };
 
-  const filteredOrders = useMemo(() => {
-    if (filterStatus === 'all') return orders;
-    return orders.filter((o) => o.status === filterStatus);
-  }, [orders, filterStatus]);
+const filteredOrders = useMemo(() => {
+  const list = Array.isArray(orders) ? orders : [];
+  if (filterStatus === 'all') return list;
+
+  const want = normalizeStatus(filterStatus);
+
+  // strict equality so only correct statuses show
+  return list.filter((o) => normalizeStatus(o?.status) === want);
+}, [orders, filterStatus]);
 
   const renderTimeline = (order) => {
+    const ns = normalizeStatus(order?.status);
     const steps = [
       { key: 'pending', label: 'Order Created', icon: <Clock className="w-4 h-4" /> },
       { key: 'assigned', label: 'Assigned to Deliveryman', icon: <User className="w-4 h-4" /> },
@@ -129,8 +147,7 @@ export default function DeliveryCenter() {
       { key: 'delivered', label: 'Delivered', icon: <CheckCircle className="w-4 h-4" /> },
       { key: 'cancelled', label: 'Cancelled', icon: <XCircle className="w-4 h-4" /> },
     ];
-
-    const currentIndex = steps.findIndex((s) => s.key === order.status);
+    const currentIndex = steps.findIndex((s) => s.key === ns);
 
     return (
       <div className="flex flex-col gap-2">
@@ -167,6 +184,25 @@ export default function DeliveryCenter() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4">
       <div className="max-w-6xl mx-auto">
+
+        {/* Top Nav Buttons */}
+        <div className="mb-6 flex justify-end gap-4">
+          <Link
+            href="/admindashboard"
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white px-5 py-3 rounded-2xl shadow hover:shadow-lg transition"
+          >
+            Go to Admin Dashboard <ArrowRightCircle className="w-5 h-5" />
+          </Link>
+
+          <Link
+            href="/order"
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-green-500 to-teal-500 text-white px-5 py-3 rounded-2xl shadow hover:shadow-lg transition"
+          >
+            Shop Order <ArrowRightCircle className="w-5 h-5" />
+          </Link>
+        </div>
+
+        {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 bg-white px-8 py-4 rounded-2xl shadow-lg">
             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-green-500 rounded-xl flex items-center justify-center">
@@ -185,7 +221,7 @@ export default function DeliveryCenter() {
               <button
                 key={status}
                 onClick={() => setFilterStatus(status)}
-                className={`px-6 py-3 rounded--xl font-medium transition duration-200 ${
+                className={`px-6 py-3 rounded-xl font-medium transition duration-200 ${
                   filterStatus === status
                     ? status === 'delivered'
                       ? 'bg-green-500 text-white shadow-lg scale-105'
@@ -246,199 +282,217 @@ export default function DeliveryCenter() {
           </div>
         ) : (
           <div className="space-y-6">
-            {filteredOrders.map((order) => (
-              <div key={order._id} className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition duration-300 overflow-hidden">
-                <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <Package className="w-6 h-6 text-blue-600" />
+            {filteredOrders.map((order) => {
+              const ns = normalizeStatus(order?.status);
+              const badgeClass =
+                ns === 'pending'
+                  ? 'bg-blue-100 text-blue-700'
+                  : ns === 'assigned'
+                  ? 'bg-indigo-100 text-indigo-700'
+                  : ns === 'in-transit'
+                  ? 'bg-blue-200 text-blue-800'
+                  : ns === 'delivered'
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-red-100 text-red-700';
+
+              return (
+                <div key={order._id} className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition duration-300 overflow-hidden">
+                  {/* Card Header */}
+                  <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                          <Package className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <p className="text-gray-600 flex items-center gap-2">
+                          <Clock className="w-4 h-4" />
+                          {new Date(order.createdAt).toLocaleDateString('en-GB')} at{' '}
+                          {new Date(order.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </div>
-                      <p className="text-gray-600 flex items-center gap-2">
-                        <Clock className="w-4 h-4" />
-                        {new Date(order.createdAt).toLocaleDateString('en-GB')} at{' '}
-                        {new Date(order.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                    <div
-                      className={`px-6 py-3 rounded-2xl font-semibold text-sm ${
-                        order.status === 'pending'
-                          ? 'bg-blue-100 text-blue-700'
-                          : order.status === 'assigned'
-                          ? 'bg-indigo-100 text-indigo-700'
-                          : order.status === 'in-transit'
-                          ? 'bg-blue-200 text-blue-800'
-                          : order.status === 'delivered'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}
-                    >
-                      {order.status.replace('-', ' ').toUpperCase()}
+                      <div className={`px-6 py-3 rounded-2xl font-semibold text-sm ${badgeClass}`}>
+                        {ns.replace('-', ' ').toUpperCase()}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="p-8">
-                  <div className="grid lg:grid-cols-3 gap-8">
-                    {/* Customer Details */}
-                    <div className="bg-gray-50 rounded-2xl p-6">
-                      <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <User className="w-5 h-5 text-blue-600" />
-                        Customer Details
-                      </h3>
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <User className="w-4 h-4 text-blue-600" />
-                          </div>
-                          <span className="font-medium">{order.customerName}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                            <Phone className="w-4 h-4 text-green-600" />
-                          </div>
-                          <span>{order.phone}</span>
-                        </div>
-                        <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                            <MapPin className="w-4 h-4 text-red-600" />
-                          </div>
-                          <span>{order.houseNumber}, {order.street}</span>
-                        </div>
-                        {order.landmark && (
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                              <Navigation className="w-4 h-4 text-yellow-600" />
+                  {/* Card Body */}
+                  <div className="p-8">
+                    <div className="grid lg:grid-cols-3 gap-8">
+                      {/* Customer Details */}
+                      <div className="bg-gray-50 rounded-2xl p-6">
+                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                          <User className="w-5 h-5 text-blue-600" />
+                          Customer Details
+                        </h3>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                              <User className="w-4 h-4 text-blue-600" />
                             </div>
-                            <span>{order.landmark}</span>
+                            <span className="font-medium">{order.customerName}</span>
                           </div>
-                        )}
-                      </div>
-                    </div>
 
-                   {/* Order Details */}
-<div className="bg-gray-50 rounded-2xl p-6">
-  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-    <Package className="w-5 h-5 text-blue-600" />
-    Order Details
-  </h3>
+                          {/* Customer ID */}
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                              <Hash className="w-4 h-4 text-gray-600" />
+                            </div>
+                            <span>ID: {order.customerId || order.customer_id || 'N/A'}</span>
+                          </div>
 
-  <p className="mb-2">
-  <strong>Order Name:</strong>{" "}
-  {order.name || order.orderName || order.title || order.orderId || (order.items?.[0]?.name) || "N/A"}
-</p>
-
-  {(() => {
-    const baseAmount = Number(order.total || 0);
-    const tax = baseAmount * 0.02; // 2% tax
-    const deliveryFee = 500;       // flat fee
-    const grandTotal = baseAmount + tax + deliveryFee;
-
-    return (
-      <div className="space-y-2">
-        <p><strong>Payment Mode:</strong> {order.paymentMode}</p>
-        <p><strong>Amount:</strong> ₦{baseAmount.toLocaleString()}</p>
-        <p><strong>Tax (2%):</strong> ₦{tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-        <p><strong>Delivery Fee:</strong> ₦{deliveryFee.toLocaleString()}</p>
-        <hr className="my-2" />
-        <p className="font-bold text-lg">
-          <strong>Total:</strong> ₦{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-        </p>
-        {order.assignedTo && (
-          <p><strong>Deliveryman:</strong> {order.assignedTo?.name || order.assignedToName || 'N/A'}</p>
-        )}
-      </div>
-    );
-  })()}
-</div>
-
-
-                    {/* Actions & Timeline */}
-                    <div className="bg-gray-50 rounded-2xl p-6 flex flex-col justify-between">
-                      {/* Actions */}
-                      {order.status === 'pending' && (
-                        <>
-                          {assigningId === order._id ? (
-                            <>
-                              <select
-                                value={selectedDeliveryman}
-                                onChange={(e) => setSelectedDeliveryman(e.target.value)}
-                                className="mb-4 p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              >
-                                <option value="">Select Deliveryman</option>
-                                {deliverymen.filter((dm) => dm.isOnline).length > 0 ? (
-                                  deliverymen
-                                    .filter((dm) => dm.isOnline)
-                                    .map((dm) => (
-                                      <option key={dm._id} value={dm._id}>
-                                        {dm.name} (Online)
-                                      </option>
-                                    ))
-                                ) : (
-                                  <option value="" disabled>No deliverymen online</option>
-                                )}
-                              </select>
-                              <button
-                                onClick={() => updateDeliveryman(order._id, selectedDeliveryman)}
-                                disabled={!selectedDeliveryman || deliverymen.filter((dm) => dm.isOnline).length === 0}
-                                className="bg-blue-600 text-white px-4 py-3 rounded-xl hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
-                              >
-                                Assign
-                              </button>
-                              <button
-                                onClick={() => setAssigningId(null)}
-                                className="mt-2 text-gray-500 hover:underline py-2"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              onClick={() => handleAssignClick(order._id)}
-                              className="bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-700 transition"
-                            >
-                              Assign Deliveryman
-                            </button>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                              <Phone className="w-4 h-4 text-green-600" />
+                            </div>
+                            <span>{order.phone}</span>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                              <MapPin className="w-4 h-4 text-red-600" />
+                            </div>
+                            <span>{order.houseNumber}, {order.street}</span>
+                          </div>
+                          {order.landmark && (
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                                <Navigation className="w-4 h-4 text-yellow-600" />
+                              </div>
+                              <span>{order.landmark}</span>
+                            </div>
                           )}
-                          <button
-                            onClick={() => updateStatus(order._id, 'cancelled')}
-                            className="mt-2 bg-red-600 text-white px-4 py-3 rounded-xl hover:bg-red-700 transition"
-                          >
-                            Cancel Order
-                          </button>
-                        </>
-                      )}
+                        </div>
+                      </div>
 
-                      {order.status === 'assigned' && (
-                        <>
-                          <p className="text-gray-500 text-center">
-                            Waiting for {order.assignedTo?.name || order.assignedToName || 'deliveryman'} to start delivery
+                      {/* Order Details */}
+                      <div className="bg-gray-50 rounded-2xl p-6">
+                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                          <Package className="w-5 h-5 text-blue-600" />
+                          Order Details
+                        </h3>
+
+                        <p className="mb-2">
+                          <strong>Order Name:</strong>{' '}
+                          {order.name || order.orderName || order.title || order.orderId || (order.items?.[0]?.name) || 'N/A'}
+                        </p>
+
+                        {(() => {
+                          const baseAmount = Number(order.total || 0);
+                          const tax = baseAmount * 0.02; // 2% tax
+                          const deliveryFee = 500;       // flat fee
+                          const grandTotal = baseAmount + tax + deliveryFee;
+
+                          return (
+                            <div className="space-y-2">
+                              <p><strong>Payment Mode:</strong> {order.paymentMode}</p>
+                              <p><strong>Amount:</strong> ₦{baseAmount.toLocaleString()}</p>
+                              <p><strong>Tax (2%):</strong> ₦{tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                              <p><strong>Delivery Fee:</strong> ₦{deliveryFee.toLocaleString()}</p>
+                              <hr className="my-2" />
+                              <p className="font-bold text-lg">
+                                <strong>Total:</strong> ₦{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </p>
+                              {order.assignedTo && (
+                                <p><strong>Deliveryman:</strong> {order.assignedTo?.name || order.assignedToName || 'N/A'}</p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Actions & Timeline */}
+                      <div className="bg-gray-50 rounded-2xl p-6 flex flex-col justify-between">
+                        {/* Actions */}
+                        {ns === 'pending' && (
+                          <>
+                            {assigningId === order._id ? (
+                              <>
+                                <select
+                                  value={selectedDeliveryman}
+                                  onChange={(e) => setSelectedDeliveryman(e.target.value)}
+                                  className="mb-4 p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                >
+                                  <option value="">Select Deliveryman</option>
+                                  {deliverymen.filter((dm) => dm.isOnline).length > 0 ? (
+                                    deliverymen
+                                      .filter((dm) => dm.isOnline)
+                                      .map((dm) => (
+                                        <option key={dm._id} value={dm._id}>
+                                          {dm.name} (Online)
+                                        </option>
+                                      ))
+                                  ) : (
+                                    <option value="" disabled>No deliverymen online</option>
+                                  )}
+                                </select>
+                                <button
+                                  onClick={() => updateDeliveryman(order._id, selectedDeliveryman)}
+                                  disabled={!selectedDeliveryman || deliverymen.filter((dm) => dm.isOnline).length === 0}
+                                  className="bg-blue-600 text-white px-4 py-3 rounded-xl hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                >
+                                  Assign
+                                </button>
+                                <button
+                                  onClick={() => setAssigningId(null)}
+                                  className="mt-2 text-gray-500 hover:underline py-2"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => handleAssignClick(order._id)}
+                                className="bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-700 transition"
+                              >
+                                Assign Deliveryman
+                              </button>
+                            )}
+                            <button
+                              onClick={() => updateStatus(order._id, 'cancelled')}
+                              className="mt-2 bg-red-600 text-white px-4 py-3 rounded-xl hover:bg-red-700 transition"
+                            >
+                              Cancel Order
+                            </button>
+                          </>
+                        )}
+
+                        {ns === 'assigned' && (
+                          <>
+                            <p className="text-gray-500 text-center">
+                              Waiting for {order.assignedTo?.name || order.assignedToName || 'deliveryman'} to start delivery
+                            </p>
+                            <button
+                              onClick={() => updateStatus(order._id, 'in-transit')}
+                              className="mt-2 bg-blue-600 text-white px-4 py-3 rounded-xl hover:bg-blue-700 transition"
+                            >
+                              Mark In Transit
+                            </button>
+                          </>
+                        )}
+
+                        {ns === 'in-transit' && (
+                          <button
+                            onClick={() => updateStatus(order._id, 'delivered')}
+                            className="bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-700 transition"
+                          >
+                            Mark as Delivered
+                          </button>
+                        )}
+
+                        {(ns === 'delivered' || ns === 'cancelled') && (
+                          <p className="text-center text-gray-500">
+                            {ns === 'delivered' ? 'Order has been delivered.' : 'Order was cancelled.'}
                           </p>
-                          <button
-                            onClick={() => updateStatus(order._id, 'in-transit')}
-                            className="mt-2 bg-blue-600 text-white px-4 py-3 rounded-xl hover:bg-blue-700 transition"
-                          >
-                            Mark In Transit
-                          </button>
-                        </>
-                      )}
+                        )}
 
-                      {order.status === 'in-transit' && (
-                        <button
-                          onClick={() => updateStatus(order._id, 'delivered')}
-                          className="bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-700 transition"
-                        >
-                          Mark as Delivered
-                        </button>
-                      )}
-
-                      {/* Timeline */}
-                      <div className="mt-6">{renderTimeline(order)}</div>
+                        {/* Timeline */}
+                        <div className="mt-6">{renderTimeline(order)}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
