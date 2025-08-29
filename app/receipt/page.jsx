@@ -18,20 +18,17 @@ export default function ReceiptPage() {
     onAfterPrint: () => dispatch(clearCart2()),
   })
 
-  // ✅ Calculate total
   const total = cart.reduce((sum, item) => {
     const unitCount = item.category === "food" ? item.portion : item.quantity
     return sum + (item.price || 0) * unitCount
   }, 0)
 
-  // ✅ Format currency
   const formatCurrency = (amount) =>
     `₦${(amount || 0).toLocaleString("en-NG", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`
 
-  // ✅ Format date (cleaner)
   const formatDate = () =>
     new Date().toLocaleString("en-NG", {
       year: "numeric",
@@ -51,9 +48,16 @@ export default function ReceiptPage() {
       >
         {/* ✅ Logo + Store Name */}
         <div className="text-center mb-4">
-          <Image src="/favicon.ico" alt="Logo" width={50} height={50} className="mx-auto" />
-          <p className="font-bold text-lg mt-1">Chicken and Rice Limited</p>
-          <p className="text-xs">Thank you for your purchase!</p>
+          <Image
+            src="/favicon.ico"
+            alt="Logo"
+            width={120}
+            height={120}
+            className="mx-auto print:w-28 print:h-28"
+            priority
+          />
+          <p className="font-bold text-lg mt-1 print:text-xl">Chicken and Rice Limited</p>
+          <p className="text-xs print:text-sm">Thank you for your purchase!</p>
         </div>
 
         {/* ✅ Items */}
@@ -64,7 +68,7 @@ export default function ReceiptPage() {
           return (
             <div
               key={`${item._id}-${item.category}`}
-              className="flex justify-between text-sm border-b border-dashed py-1"
+              className="flex justify-between text-sm border-b border-dashed py-1 print:text-base"
             >
               <span className="w-2/3 truncate">
                 {unitCount}x {item.name}
@@ -75,13 +79,14 @@ export default function ReceiptPage() {
         })}
 
         {/* ✅ Grand Total */}
-        <div className="flex justify-between mt-2 text-base font-bold border-t border-dashed pt-2">
+        <div className="mt-3 pt-3 border-t-2 border-black flex justify-between text-base font-bold print:text-lg print:font-extrabold print:justify-center print:gap-6">
           <span>Total</span>
           <span>{formatCurrency(total)}</span>
         </div>
+        <div className="border-t border-dashed mt-2"></div>
 
         {/* ✅ Footer */}
-        <div className="text-center text-xs mt-4">
+        <div className="text-center text-xs mt-4 print:text-sm">
           <p>Powered by Chicken and Rice Ltd</p>
           <p>{formatDate()}</p>
           <p className="mt-1">No refund after order is confirmed</p>
