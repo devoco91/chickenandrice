@@ -1,8 +1,8 @@
 "use client"
-import { useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useSelector, useDispatch } from "react-redux"
 import { useReactToPrint } from "react-to-print"
-import { clearCart2 } from "@/store/cartSlice2"   // cashier cart
+import { clearCart2 } from "@/store/cartSlice2"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 
@@ -10,7 +10,19 @@ export default function ReceiptPage() {
   const cart = useSelector((state) => state.cart2.cartItem)
   const dispatch = useDispatch()
   const router = useRouter()
-  const componentRef = useRef()
+  const componentRef = useRef(null)
+  const [paymentMode, setPaymentMode] = useState("")
+  const [orderId, setOrderId] = useState("")
+
+  // Optional: read values set by Summary page
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const pm = sessionStorage.getItem("paymentMode") || ""
+      const oid = sessionStorage.getItem("lastOrderId") || ""
+      if (pm) setPaymentMode(pm)
+      if (oid) setOrderId(oid)
+    }
+  }, [])
 
   const handlePrint = useReactToPrint({
     contentRef: componentRef,
@@ -18,13 +30,17 @@ export default function ReceiptPage() {
     onAfterPrint: () => dispatch(clearCart2()),
   })
 
-  const total = cart.reduce((sum, item) => {
-    const unitCount = item.category === "food" ? item.portion : item.quantity
-    return sum + (item.price || 0) * unitCount
-  }, 0)
+  const total = useMemo(
+    () =>
+      cart.reduce((sum, item) => {
+        const unitCount = item.category === "food" ? item.portion : item.quantity
+        return sum + (item.price || 0) * unitCount
+      }, 0),
+    [cart]
+  )
 
-  const formatCurrency = (amount) =>
-    `₦${(amount || 0).toLocaleString("en-NG", {
+  const money = (n) =>
+    `₦${(n || 0).toLocaleString("en-NG", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`
@@ -39,74 +55,140 @@ export default function ReceiptPage() {
     })
 
   return (
-    <div className="p-10 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Receipt</h1>
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50">
+      <div className="max-w-3xl mx-auto px-6 md:px-10 pb-28"> {/* bottom padding for sticky bar */}
+        <header className="py-6 print:hidden">
+          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
+            Receipt
+          </h1>
+          <p className="text-sm text-gray-600 mt-1">
+            Review and print the customer receipt below.
+          </p>
+        </header>
 
-      <div
-        ref={componentRef}
-        className="bg-white shadow rounded p-6 print:w-[80mm] print:p-2 print:shadow-none print:rounded-none print:font-mono"
-      >
-        {/* ✅ Logo + Store Name */}
-        <div className="text-center mb-4">
-          <Image
-            src="/favicon.ico"
-            alt="Logo"
-            width={120}
-            height={120}
-            className="mx-auto print:w-28 print:h-28"
-            priority
-          />
-          <p className="font-bold text-lg mt-1 print:text-xl">Chicken and Rice Limited</p>
-          <p className="text-xs print:text-sm">Thank you for your purchase!</p>
-        </div>
-
-        {/* ✅ Items */}
-        {cart.map((item) => {
-          const unitCount = item.category === "food" ? item.portion : item.quantity
-          const subtotal = (item.price || 0) * unitCount
-
-          return (
-            <div
-              key={`${item._id}-${item.category}`}
-              className="flex justify-between text-sm border-b border-dashed py-1 print:text-base"
-            >
-              <span className="w-2/3 truncate">
-                {unitCount}x {item.name}
-              </span>
-              <span className="w-1/3 text-right">{formatCurrency(subtotal)}</span>
+        {/* Receipt card (also used for thermal print) */}
+        <div className="bg-white/90 backdrop-blur rounded-2xl border border-gray-200 shadow-lg p-6 print:w-[80mm] print:rounded-none print:border-0 print:shadow-none print:p-3">
+          <div ref={componentRef} className="print:font-mono">
+            {/* Brand */}
+            <div className="text-center">
+              <div className="mx-auto mb-3 rounded-2xl inline-flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100 p-2 print:bg-transparent">
+                <Image
+                  src="/favicon.ico"
+                  alt="Logo"
+                  width={72}
+                  height={72}
+                  className="rounded-xl"
+                  priority
+                />
+              </div>
+              <p className="font-black text-xl tracking-wide text-gray-900 print:text-lg">
+                Chicken and Rice Limited
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5 print:text-[11px]">
+                Thank you for your purchase!
+              </p>
             </div>
-          )
-        })}
 
-        {/* ✅ Grand Total */}
-        <div className="mt-3 pt-3 border-t-2 border-black flex justify-between text-base font-bold print:text-lg print:font-extrabold print:justify-center print:gap-6">
-          <span>Total</span>
-          <span>{formatCurrency(total)}</span>
-        </div>
-        <div className="border-t border-dashed mt-2"></div>
+            {/* Meta */}
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-gray-600 print:text-[11px]">
+              <div className="bg-gray-50 rounded-xl p-2 border print:bg-transparent print:border-0">
+                <p className="font-semibold text-gray-800">Date</p>
+                <p>{formatDate()}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-2 border text-right print:text-left print:bg-transparent print:border-0">
+                {paymentMode ? (
+                  <>
+                    <p className="font-semibold text-gray-800">Payment</p>
+                    <p className="capitalize">{paymentMode}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold text-gray-800">Payment</p>
+                    <p className="text-gray-500">—</p>
+                  </>
+                )}
+              </div>
+            </div>
 
-        {/* ✅ Footer */}
-        <div className="text-center text-xs mt-4 print:text-sm">
-          <p>Powered by Chicken and Rice Ltd</p>
-          <p>{formatDate()}</p>
-          <p className="mt-1">No refund after order is confirmed</p>
+            {/* Optional order id */}
+            {(orderId || "").trim() !== "" && (
+              <div className="mt-2 text-xs text-gray-600 print:text-[11px]">
+                <p>
+                  <span className="font-semibold text-gray-800">Order ID:</span>{" "}
+                  <span className="font-mono">{orderId}</span>
+                </p>
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="my-4 border-y-2 border-dashed border-gray-300 print:border-black print:border-dashed" />
+
+            {/* Items */}
+            <div>
+              <div className="hidden md:grid grid-cols-12 text-[13px] font-semibold text-gray-700 mb-2 print:grid">
+                <span className="col-span-7">Item</span>
+                <span className="col-span-2 text-right">Qty</span>
+                <span className="col-span-3 text-right">Amount</span>
+              </div>
+
+              {cart.map((item) => {
+                const qty = item.category === "food" ? item.portion : item.quantity
+                const subtotal = (item.price || 0) * qty
+                return (
+                  <div
+                    key={`${item._id}-${item.category}`}
+                    className="grid grid-cols-12 items-center text-sm py-2 border-b border-dashed last:border-b-0 print:text-[13px]"
+                  >
+                    <div className="col-span-7 pr-2">
+                      <p className="font-medium text-gray-900 truncate">{item.name}</p>
+                      <p className="text-[11px] text-gray-500">₦{item.price} each</p>
+                    </div>
+                    <div className="col-span-2 text-right">
+                      <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-800 font-semibold text-[12px]">
+                        {qty}
+                      </span>
+                    </div>
+                    <div className="col-span-3 text-right font-semibold text-gray-900">
+                      {money(subtotal)}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Total */}
+            <div className="mt-3 pt-3 border-t-2 border-black flex items-center justify-between text-base font-extrabold print:text-[15px]">
+              <span>Total</span>
+              <span>{money(total)}</span>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-4 text-center text-[11px] text-gray-600 print:text-[12px]">
+              <p className="tracking-wide">Powered by Chicken and Rice Ltd</p>
+              <p className="mt-1">No refund after order is confirmed</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Actions (hidden on print) */}
-      <div className="flex justify-between mt-8 print:hidden">
-        <button
-          onClick={() => router.push("/summary")}
-          className="px-4 py-2 bg-gray-200 rounded"
-        >
-          Back to Summary
-        </button>
-        <button
-          onClick={handlePrint}
-          className="px-4 py-2 bg-blue-600 text-white rounded"
-        >
-          Print Receipt
-        </button>
+      {/* Sticky bottom actions — single print button (not shown in print) */}
+      <div className="print:hidden fixed inset-x-0 bottom-0">
+        <div className="mx-auto max-w-3xl px-6 md:px-10 pb-4">
+          <div className="rounded-2xl shadow-[0_-8px_30px_rgba(0,0,0,0.08)] bg-white/90 backdrop-blur border border-gray-200 px-4 py-3 flex items-center justify-between">
+            <button
+              onClick={() => router.push("/summary")}
+              className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 active:scale-95 transition"
+            >
+              Back to Summary
+            </button>
+            <button
+              onClick={handlePrint}
+              className="px-6 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg hover:opacity-95 active:scale-95 transition"
+            >
+              Print Receipt
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
