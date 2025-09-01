@@ -1,510 +1,398 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import axios from 'axios';
-import {
-    Truck,
-    Package,
-    MapPin,
-    Clock,
-    DollarSign,
-    Star,
-    Bell,
-    User,
-    Menu,
-    X,
-    Phone,
-    Navigation,
-    CheckCircle,
-    AlertCircle,
-    Calendar,
-    TrendingUp,
-    LogOut,
-    Settings
-} from 'lucide-react';
 
-const DeliveryDashboard = () => {
-    const router = useRouter();
-    const [activeTab, setActiveTab] = useState('overview');
-    const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [userInfo, setUserInfo] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [deliveries, setDeliveries] = useState([]);
-    const [stats, setStats] = useState({
-        totalDeliveries: 0,
-        completedToday: 0,
-        totalEarnings: 0,
-        rating: 0,
-        pendingDeliveries: 0,
-        monthlyEarnings: 0
+import React, { useEffect, useRef, useState } from 'react';
+import { CheckCircle } from 'lucide-react';
+
+const API_BASE = '/api';
+const NOTIFICATION_ICON = '/favicon.ico';
+const DASHBOARD_PATH = '/deliverydashboard';
+const LOGOUT_REDIRECT = '/deliverylogin'; // fallback handled in logout()
+
+// --- Tabs ---
+function Tabs({ defaultValue, children }) {
+  const [activeTab, setActiveTab] = useState(defaultValue);
+  return (
+    <div>
+      <div className="flex gap-2">
+        {React.Children.map(children, (child) =>
+          child.type === TabsList
+            ? React.cloneElement(child, { activeTab, setActiveTab })
+            : null
+        )}
+      </div>
+      {React.Children.map(children, (child) =>
+        child.type === TabsContent && child.props.value === activeTab
+          ? child.props.children
+          : null
+      )}
+    </div>
+  );
+}
+function TabsList({ children, activeTab, setActiveTab }) {
+  return (
+    <div className="flex gap-2">
+      {React.Children.map(children, (child) =>
+        React.cloneElement(child, {
+          active: activeTab === child.props.value,
+          onClick: () => setActiveTab(child.props.value),
+        })
+      )}
+    </div>
+  );
+}
+function TabsTrigger({ value, children, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 rounded-xl ${
+        active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+function TabsContent({ children }) {
+  return <div className="mt-4">{children}</div>;
+}
+
+export default function DeliveryDashboard() {
+  const [deliveries, setDeliveries] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [profile, setProfile] = useState(null);
+
+  const [banner, setBanner] = useState(null); // { type: 'success'|'error'|'info', text: string }
+  const [notifPermission, setNotifPermission] = useState(null); // 'granted' | 'denied' | 'default' | null
+
+  const audioRef = useRef(null);
+  const seenIdsRef = useRef(new Set());
+  const initialLoadRef = useRef(true);
+
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+  const getAuthHeaders = (token) => (token ? { Authorization: `Bearer ${token}` } : {});
+
+  const safeFetch = async (url, options = {}) => {
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
     });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  };
 
-   
-    useEffect(() => {
-        const fetchUserData = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                if (!token) {
-                    router.push('/logindeliverymen');
-                    return;
-                }
+  // === FETCH ORDERS ===
+  const fetchDeliveries = async () => {
+    const token = getToken();
+    const data = await safeFetch(`${API_BASE}/delivery/orders/assigned`, {
+      headers: getAuthHeaders(token),
+    });
+    const list = Array.isArray(data) ? data : data.orders || [];
+    const onlyOnline = list.filter((o) => o.orderType === 'online'); // ✅ filter online orders only
 
-                const userResponse = await axios.get('http://localhost:5000/api/delivery/dashboard', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setUserInfo(userResponse.data.deliveryman);
+    if (initialLoadRef.current) {
+      onlyOnline.forEach((o) => seenIdsRef.current.add(o._id));
+      initialLoadRef.current = false;
+    } else {
+      const newOnes = onlyOnline.filter((o) => !seenIdsRef.current.has(o._id));
+      newOnes.forEach((o) => notifyNewAssignment(o));
+      newOnes.forEach((o) => seenIdsRef.current.add(o._id));
+    }
+    setDeliveries(onlyOnline.filter((o) => o.status !== 'delivered'));
+    setHistory(onlyOnline.filter((o) => o.status === 'delivered'));
+  };
 
-                const deliveriesResponse = await axios.get('http://localhost:5000/api/delivery/deliveries', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setDeliveries(deliveriesResponse.data.deliveries || []);
+  // === FETCH PROFILE ===
+  const fetchProfile = async () => {
+    try {
+      const token = getToken();
+      const data = await safeFetch(`${API_BASE}/delivery/profile`, {
+        headers: getAuthHeaders(token),
+      });
+      setProfile(data);
+    } catch {
+      setProfile(null);
+    }
+  };
 
-              
-                const statsResponse = await axios.get('http://localhost:5000/api/delivery/stats', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setStats(statsResponse.data || stats);
+  // === ORDER ACTIONS ===
+  const callAction = async (orderId, action) => {
+    try {
+      const updated = await safeFetch(`${API_BASE}/delivery/orders/${orderId}/${action}`, {
+        method: 'POST',
+        headers: getAuthHeaders(getToken()),
+      });
 
-            } catch (error) {
-                console.error('Error fetching user data:', error);
-                if (error.response?.status === 401) {
-                    localStorage.removeItem('token');
-                    router.push('/logindeliverymen');
-                }
-            } finally {
-                setLoading(false);
-            }
-        };
+      // Update active list
+      setDeliveries((prev) =>
+        prev.map((o) => (o._id === orderId ? updated : o)).filter((o) => o.status !== 'delivered')
+      );
 
-        fetchUserData();
-    }, [router]);
+      // Push to history if delivered
+      if (updated.status === 'delivered') {
+        setHistory((prev) => [updated, ...prev]);
+        // Success banner
+        setBanner({
+          type: 'success',
+          text: `Order delivered to ${updated.customerName || 'customer'} (₦${updated.total}).`,
+        });
+        // System notification (optional)
+        notifyDelivered(updated);
+        // Haptic
+        if ('vibrate' in navigator) navigator.vibrate([120, 60, 120]);
+      }
+    } catch (e) {
+      setBanner({ type: 'error', text: `Action failed: ${e.message || e}` });
+    }
+  };
 
+  // === NOTIFICATIONS ===
+  const notifyNewAssignment = (order) => {
+    try {
+      if (audioRef.current) audioRef.current.play();
+    } catch {}
+    if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification('📦 New Order Assigned!', {
+        body: `${order.customerName || 'Customer'} — ₦${order.total}`,
+        icon: NOTIFICATION_ICON,
+        tag: order._id,
+      });
+      n.onclick = () => {
+        window.focus();
+        window.location.assign(DASHBOARD_PATH);
+        n.close();
+      };
+    }
+  };
 
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        router.push('/logindeliverymen');
-    };
+  const notifyDelivered = (order) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification('✅ Order Delivered', {
+        body: `${order.customerName || 'Customer'} — ₦${order.total}`,
+        icon: NOTIFICATION_ICON,
+        tag: `delivered-${order._id}`,
+      });
+      n.onclick = () => {
+        window.focus();
+        window.location.assign(DASHBOARD_PATH);
+        n.close();
+      };
+    }
+  };
 
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'pending': return 'bg-yellow-100 text-yellow-800';
-            case 'in-transit': return 'bg-blue-100 text-blue-800';
-            case 'completed': return 'bg-green-100 text-green-800';
-            case 'cancelled': return 'bg-red-100 text-red-800';
-            default: return 'bg-gray-100 text-gray-800';
-        }
-    };
+  const requestNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    try {
+      const perm = await Notification.requestPermission();
+      setNotifPermission(perm);
+      if (perm === 'granted') {
+        setBanner({ type: 'success', text: 'Notifications enabled.' });
+      } else if (perm === 'denied') {
+        setBanner({ type: 'error', text: 'Notifications blocked in browser settings.' });
+      }
+    } catch {
+      // ignore
+    }
+  };
 
-    const updateDeliveryStatus = async (id, newStatus) => {
-        try {
-            const token = localStorage.getItem('token');
-            await axios.patch(`http://localhost:5000/api/delivery/deliveries/${id}/status`,
-                { status: newStatus },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+  // === LOGOUT ===
+  const logout = () => {
+    try {
+      localStorage.removeItem('token');
+    } catch {}
+    // best-effort redirect
+    if (typeof window !== 'undefined') {
+      window.location.assign(LOGOUT_REDIRECT || '/');
+    }
+  };
 
-            setDeliveries(prev =>
-                prev.map(delivery =>
-                    delivery.id === id ? { ...delivery, status: newStatus } : delivery
-                )
-            );
-        } catch (error) {
-            console.error('Error updating delivery status:', error);
-            alert('Failed to update delivery status');
-        }
-    };
+  useEffect(() => {
+    audioRef.current = new Audio('/sound/notification.wav');
+    audioRef.current.preload = 'auto';
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotifPermission(Notification.permission);
+    }
+    fetchDeliveries();
+    fetchProfile();
+    const interval = setInterval(fetchDeliveries, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
-    const Sidebar = () => (
-        <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
-            <div className="flex items-center justify-between h-16 px-6 bg-blue-600">
-                <div className="flex items-center">
-                    <Truck className="text-white w-8 h-8 mr-2" />
-                    <span className="text-white font-bold text-lg">DeliveryHub</span>
-                </div>
-                <button
-                    onClick={() => setSidebarOpen(false)}
-                    className="lg:hidden text-white hover:text-gray-200"
-                >
-                    <X className="w-6 h-6" />
-                </button>
-            </div>
+  // Auto-dismiss banner
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 4000);
+    return () => clearTimeout(t);
+  }, [banner]);
 
-            <nav className="mt-8 px-4">
-                {[
-                    { id: 'overview', label: 'Overview', icon: TrendingUp },
-                    { id: 'deliveries', label: 'Deliveries', icon: Package },
-                    { id: 'earnings', label: 'Earnings', icon: DollarSign },
-                    { id: 'profile', label: 'Profile', icon: User },
-                    { id: 'settings', label: 'Settings', icon: Settings }
-                ].map(({ id, label, icon: Icon }) => (
-                    <button
-                        key={id}
-                        onClick={() => setActiveTab(id)}
-                        className={`w-full flex items-center px-4 py-3 mb-2 rounded-lg text-left transition-colors ${activeTab === id
-                                ? 'bg-blue-50 text-blue-700 border-r-4 border-blue-700'
-                                : 'text-gray-700 hover:bg-gray-50'
-                            }`}
-                    >
-                        <Icon className="w-5 h-5 mr-3" />
-                        {label}
-                    </button>
-                ))}
-            </nav>
-
-            <div className="absolute bottom-4 left-4 right-4">
-                <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                >
-                    <LogOut className="w-5 h-5 mr-3" />
-                    Logout
-                </button>
-            </div>
-        </div>
-    );
-
-    const OverviewTab = () => (
-        <div className="space-y-6">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {[
-                    { label: 'Total Deliveries', value: stats.totalDeliveries, icon: Package, color: 'blue' },
-                    { label: 'Today\'s Deliveries', value: stats.completedToday, icon: CheckCircle, color: 'green' },
-                    { label: 'Today\'s Earnings', value: `₦${stats.totalEarnings.toLocaleString()}`, icon: DollarSign, color: 'yellow' },
-                    { label: 'Rating', value: stats.rating, icon: Star, color: 'purple' }
-                ].map(({ label, value, icon: Icon, color }, index) => (
-                    <div key={index} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-gray-600 text-sm">{label}</p>
-                                <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
-                            </div>
-                            <div className={`p-3 rounded-full bg-${color}-100`}>
-                                <Icon className={`w-6 h-6 text-${color}-600`} />
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Quick Actions */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button className="flex items-center justify-center p-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
-                        <Navigation className="w-5 h-5 text-blue-600 mr-2" />
-                        Start Navigation
-                    </button>
-                    <button className="flex items-center justify-center p-4 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
-                        <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-                        Mark as Delivered
-                    </button>
-                    <button className="flex items-center justify-center p-4 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors">
-                        <AlertCircle className="w-5 h-5 text-yellow-600 mr-2" />
-                        Report Issue
-                    </button>
-                </div>
-            </div>
-
-            {/* Recent Deliveries */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Deliveries</h3>
-                <div className="space-y-4">
-                    {deliveries.slice(0, 3).map((delivery) => (
-                        <div key={delivery.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                            <div className="flex items-center">
-                                <Package className="w-8 h-8 text-gray-400 mr-3" />
-                                <div>
-                                    <p className="font-medium text-gray-900">{delivery.customer}</p>
-                                    <p className="text-sm text-gray-600">{delivery.address}</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(delivery.status)}`}>
-                                    {delivery.status}
-                                </span>
-                                <span className="text-sm font-medium text-gray-900">₦{delivery.amount.toLocaleString()}</span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-
-    const DeliveriesTab = () => (
-        <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900">Active Deliveries</h3>
-                    <span className="text-sm text-gray-600">{deliveries.length} total deliveries</span>
-                </div>
-
-                <div className="space-y-4">
-                    {deliveries.map((delivery) => (
-                        <div key={delivery.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                            <div className="flex items-start justify-between mb-3">
-                                <div className="flex-1">
-                                    <div className="flex items-center mb-2">
-                                        <h4 className="font-semibold text-gray-900 mr-2">{delivery.customer}</h4>
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(delivery.status)}`}>
-                                            {delivery.status}
-                                        </span>
-                                    </div>
-                                    <div className="space-y-1 text-sm text-gray-600">
-                                        <div className="flex items-center">
-                                            <MapPin className="w-4 h-4 mr-1" />
-                                            {delivery.address}
-                                        </div>
-                                        <div className="flex items-center">
-                                            <Phone className="w-4 h-4 mr-1" />
-                                            {delivery.phone}
-                                        </div>
-                                        <div className="flex items-center">
-                                            <Package className="w-4 h-4 mr-1" />
-                                            {delivery.items}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-lg font-semibold text-gray-900">₦{delivery.amount.toLocaleString()}</div>
-                                    <div className="text-sm text-gray-500">{delivery.distance} • {delivery.time}</div>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                <div className="flex space-x-2">
-                                    {delivery.status === 'pending' && (
-                                        <button
-                                            onClick={() => updateDeliveryStatus(delivery.id, 'in-transit')}
-                                            className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                                        >
-                                            Start Delivery
-                                        </button>
-                                    )}
-                                    {delivery.status === 'in-transit' && (
-                                        <button
-                                            onClick={() => updateDeliveryStatus(delivery.id, 'completed')}
-                                            className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
-                                        >
-                                            Mark Complete
-                                        </button>
-                                    )}
-                                    <button className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors">
-                                        <Phone className="w-4 h-4" />
-                                    </button>
-                                    <button className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors">
-                                        <Navigation className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-
-    const EarningsTab = () => (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-gray-600 text-sm">Today's Earnings</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">₦{stats.totalEarnings.toLocaleString()}</p>
-                        </div>
-                        <DollarSign className="w-8 h-8 text-green-600" />
-                    </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-gray-600 text-sm">This Week</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">₦{(stats.totalEarnings * 5).toLocaleString()}</p>
-                        </div>
-                        <Calendar className="w-8 h-8 text-blue-600" />
-                    </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-gray-600 text-sm">This Month</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">₦{stats.monthlyEarnings.toLocaleString()}</p>
-                        </div>
-                        <TrendingUp className="w-8 h-8 text-purple-600" />
-                    </div>
-                </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Transactions</h3>
-                <div className="space-y-3">
-                    {deliveries.filter(d => d.status === 'completed').map((delivery) => (
-                        <div key={delivery.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center">
-                                <CheckCircle className="w-5 h-5 text-green-600 mr-3" />
-                                <div>
-                                    <p className="font-medium text-gray-900">{delivery.customer}</p>
-                                    <p className="text-sm text-gray-600">{delivery.time}</p>
-                                </div>
-                            </div>
-                            <span className="text-green-600 font-semibold">+₦{delivery.amount.toLocaleString()}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-
-    const ProfileTab = () => (
-        <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-6">Profile Information</h3>
-                {userInfo ? (
-                    <>
-                        <div className="flex items-center mb-6">
-                            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mr-6">
-                                <span className="text-white text-2xl font-bold">
-                                    {userInfo.name?.charAt(0)?.toUpperCase() || 'U'}
-                                </span>
-                            </div>
-                            <div>
-                                <h4 className="text-xl font-semibold text-gray-900">{userInfo.name}</h4>
-                                <p className="text-gray-600">Delivery Rider</p>
-                                <div className="flex items-center mt-1">
-                                    <Star className="w-4 h-4 text-yellow-400 mr-1" />
-                                    <span className="text-sm text-gray-600">{stats.rating || 'No rating yet'}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                                <input
-                                    type="email"
-                                    value={userInfo.email || ''}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    readOnly
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                                <input
-                                    type="tel"
-                                    value={userInfo.phone || ''}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    readOnly
-                                />
-                            </div>
-                            {userInfo.dateOfBirth && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Date of Birth</label>
-                                    <input
-                                        type="date"
-                                        value={new Date(userInfo.dateOfBirth).toISOString().split('T')[0]}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                        readOnly
-                                    />
-                                </div>
-                            )}
-                            <div className={userInfo.dateOfBirth ? '' : 'md:col-span-2'}>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
-                                <textarea
-                                    value={userInfo.address || ''}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    rows="2"
-                                    readOnly
-                                />
-                            </div>
-                        </div>
-                    </>
-                ) : (
-                    <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                        <p className="mt-2 text-gray-600">Loading profile...</p>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-
-    const renderTabContent = () => {
-        switch (activeTab) {
-            case 'overview': return <OverviewTab />;
-            case 'deliveries': return <DeliveriesTab />;
-            case 'earnings': return <EarningsTab />;
-            case 'profile': return <ProfileTab />;
-            default: return <OverviewTab />;
-        }
-    };
-
-    return (
-        <div className="min-h-screen bg-gray-50 flex">
-            <Sidebar />
-
-            {/* Mobile Sidebar Overlay */}
-            {sidebarOpen && (
-                <div
-                    className="fixed inset-0 bg-gray-600 bg-opacity-50 z-40 lg:hidden"
-                    onClick={() => setSidebarOpen(false)}
-                />
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        {/* Top bar: Title + actions */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold">Deliveryman Dashboard</h1>
+          <div className="flex items-center gap-2">
+            {typeof window !== 'undefined' && 'Notification' in window && notifPermission !== 'granted' && (
+              <button
+                onClick={requestNotifications}
+                className="px-3 py-2 rounded-xl bg-yellow-500 text-white hover:opacity-95"
+              >
+                Enable Notifications
+              </button>
             )}
-
-            {/* Main Content */}
-            <div className="flex-1 lg:ml-0">
-                {/* Header */}
-                <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                            <button
-                                onClick={() => setSidebarOpen(true)}
-                                className="lg:hidden mr-4 text-gray-600 hover:text-gray-900"
-                            >
-                                <Menu className="w-6 h-6" />
-                            </button>
-                            <div>
-                                <h1 className="text-2xl font-bold text-gray-900">
-                                    {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
-                                </h1>
-                                <p className="text-gray-600">
-                                    Welcome back, {userInfo?.name?.split(' ')[0] || 'User'}!
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                            <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                                <Bell className="w-6 h-6" />
-                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                            </button>
-                            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                                <span className="text-white text-sm font-bold">
-                                    {userInfo?.name?.charAt(0)?.toUpperCase() || 'U'}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </header>
-
-                {/* Content */}
-                <main className="p-6">
-                    {loading ? (
-                        <div className="flex items-center justify-center h-64">
-                            <div className="text-center">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                                <p className="mt-4 text-gray-600">Loading dashboard...</p>
-                            </div>
-                        </div>
-                    ) : (
-                        renderTabContent()
-                    )}
-                </main>
-            </div>
+            <button
+              onClick={logout}
+              className="px-3 py-2 rounded-xl bg-gray-800 text-white hover:opacity-95"
+            >
+              Logout
+            </button>
+          </div>
         </div>
-    );
-};
 
-export default DeliveryDashboard;
+        {/* Banner */}
+        {banner && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`mb-4 p-3 rounded-xl shadow ${
+              banner.type === 'success'
+                ? 'bg-green-100 text-green-800'
+                : banner.type === 'error'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-blue-100 text-blue-800'
+            }`}
+          >
+            {banner.text}
+          </div>
+        )}
+
+        <Tabs defaultValue="deliveries">
+          <TabsList>
+            <TabsTrigger value="deliveries">Active Deliveries</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+          </TabsList>
+
+          {/* Active Deliveries */}
+          <TabsContent value="deliveries">
+            <div className="grid gap-4">
+              {deliveries.map((o) => (
+                <div key={o._id} className="bg-white p-4 rounded-xl shadow">
+                  <div className="flex justify-between">
+                    <div>
+                      <p className="font-bold">{o.customerName}</p>
+                      <p className="text-sm">
+                        {o.houseNumber} {o.street}
+                      </p>
+                      <p className="text-sm">{o.phone}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-green-600 font-bold">₦{o.total}</p>
+                      <p className="text-sm">{o.status}</p>
+                    </div>
+                  </div>
+
+                  {/* ACTION BUTTONS */}
+                  {o.status === 'assigned' && (
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        onClick={() => callAction(o._id, 'accept')}
+                        className="bg-green-500 text-white px-3 py-1 rounded"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => callAction(o._id, 'decline')}
+                        className="bg-red-500 text-white px-3 py-1 rounded"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
+
+                  {/* After Accept → Start Delivery */}
+                  {o.status === 'accepted' && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => callAction(o._id, 'in-transit')}
+                        className="bg-blue-500 text-white px-3 py-1 rounded"
+                      >
+                        Start Delivery
+                      </button>
+                    </div>
+                  )}
+
+                  {/* After Start Delivery → Navigate + Delivered */}
+                  {o.status === 'in-transit' && (
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        onClick={() => {
+                          const addr = [o.houseNumber, o.street, o.landmark].filter(Boolean).join(' ');
+                          const url = `https://maps.google.com/?q=${encodeURIComponent(addr)}`;
+                          window.open(url, '_blank');
+                        }}
+                        className="bg-gray-500 text-white px-3 py-1 rounded"
+                      >
+                        Navigate
+                      </button>
+                      <button
+                        onClick={() => callAction(o._id, 'deliver')}
+                        className="bg-green-700 text-white px-3 py-1 rounded"
+                      >
+                        Mark as Delivered
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+
+          {/* History */}
+          <TabsContent value="history">
+            {history.length === 0 ? (
+              <p>No completed deliveries yet</p>
+            ) : (
+              <div className="grid gap-4">
+                {history.map((o) => (
+                  <div key={o._id} className="bg-white p-4 rounded-xl shadow flex justify-between">
+                    <div>
+                      <p className="font-bold">{o.customerName}</p>
+                      <p className="text-sm">
+                        {o.houseNumber} {o.street}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-green-600">
+                      <CheckCircle className="w-5 h-5" /> Delivered
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Profile */}
+          <TabsContent value="profile">
+            {profile ? (
+              <div className="bg-white p-4 rounded-xl shadow">
+                <p className="font-bold">{profile.name}</p>
+                <p>{profile.email}</p>
+                <p>{profile.phone}</p>
+                <p>{profile.address}</p>
+                {profile.dateOfBirth && (
+                  <p>DOB: {new Date(profile.dateOfBirth).toLocaleDateString()}</p>
+                )}
+                <p>Status: {profile.isOnline ? '🟢 Online' : '🔴 Offline'}</p>
+              </div>
+            ) : (
+              <p>No profile data</p>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}

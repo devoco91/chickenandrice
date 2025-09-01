@@ -1,8 +1,7 @@
 'use client';
-
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Star } from 'lucide-react';
+import { Minus, Plus, Trash2, Star, ShoppingBag } from 'lucide-react';
 import NavbarDark from '../Navbar/NavbarDark';
 import Link from 'next/link';
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -14,13 +13,49 @@ import {
   removeItemCart,
   addItemCart,
 } from './../../store/cartSlice';
+import { setOrderDetails } from './../../store/orderSlice';
+
+const RAW_API = process.env.NEXT_PUBLIC_API_URL || '';
+const UPLOADS_BASE =
+  process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
+  (RAW_API ? RAW_API.replace(/\/api$/, '') + '/uploads' : '/uploads');
+
+const getImageUrl = (val) => {
+  let s = val;
+  if (!s) return '/placeholder.png';
+  if (typeof s !== 'string') {
+    try {
+      if (Array.isArray(s)) s = s[0] || '';
+      else if (typeof s === 'object') s = s.url || s.path || s.filename || s.filepath || '';
+    } catch {}
+  }
+  if (!s) return '/placeholder.png';
+  if (/^https?:\/\//i.test(s)) return s;
+  const cleaned = String(s).replace(/\\/g, '/').replace(/^\/+/, '').replace(/^uploads\//i, '');
+  return `${UPLOADS_BASE}/${encodeURI(cleaned)}`;
+};
 
 const CartPage = () => {
   const dispatch = useDispatch();
-  const cartItems = useSelector((state) => state.cart.cartItem);
+  const cartItems = useSelector((state) => state.cart.cartItem || []);
   const [suggestedItems, setSuggestedItems] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(true);
 
+  // ✅ Fetch drinks only
+  useEffect(() => {
+    const fetchSuggestedItems = async () => {
+      try {
+        const res = await fetch(`/api/drinks`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const data = await res.json();
+        setSuggestedItems(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Failed to fetch drinks:', err);
+      }
+    };
+    fetchSuggestedItems();
+  }, []);
+
+  // Restore pending product from localStorage
   useEffect(() => {
     const pending = localStorage.getItem('pendingProduct');
     if (pending) {
@@ -32,365 +67,192 @@ const CartPage = () => {
       }
       localStorage.removeItem('pendingProduct');
     }
-
-    const fetchSuggestedItems = async () => {
-      try {
-        const res = await fetch('http://localhost:5000/api/foods/sides-drinks');
-        const data = await res.json();
-        setSuggestedItems(data);
-      } catch (err) {
-        console.error('Failed to fetch suggested items:', err);
-      }
-    };
-
-    fetchSuggestedItems();
   }, [dispatch]);
 
-  const subtotal = cartItems.reduce(
-    (total, item) => total + item.price * item.quantity,
-    0
-  );
-
+  // Totals
+  const subtotal = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
   const deliveryFee = 500;
   const tax = subtotal * 0.02;
   const total = subtotal + deliveryFee + tax;
 
-  const handleIncrement = (id) => {
-    dispatch(incrementQuantity(id));
-  };
+  // Sync totals to Redux
+  useEffect(() => {
+    dispatch(setOrderDetails({ subtotal, deliveryFee, tax, total }));
+  }, [subtotal, deliveryFee, tax, total, dispatch]);
 
-  const handleDecrement = (id) => {
-    dispatch(decrementQuantity(id));
-  };
-
-  const handleRemove = (id) => {
-    dispatch(removeItemCart(id));
-  };
-
+  const handleIncrement = (id) => dispatch(incrementQuantity(id));
+  const handleDecrement = (id) => dispatch(decrementQuantity(id));
+  const handleRemove = (id) => dispatch(removeItemCart(id));
   const handleAddSuggestion = (item) => {
-    const cartItem = {
-      _id: item._id,
-      name: item.name,
-      price: item.price,
-      image: item.image,
-      quantity: 1,
-      isSideOrDrink: true,
-    };
+    const cartItem = { ...item, quantity: 1, isDrink: true };
     dispatch(addItemCart(cartItem));
   };
-
-  if (cartItems.length === 0) {
-    return (
-      <>
-        <NavbarDark />
-        <div className="min-h-screen bg-gray-50">
-          <div className="max-w-6xl mx-auto px-4 py-8 pt-28">
-            <div className="text-center py-16">
-              <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <ShoppingBag className="w-12 h-12 text-gray-400" />
-              </div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">Your Cart is Empty</h1>
-              <p className="text-lg text-gray-600 mb-8 max-w-md mx-auto">
-                Discover our delicious selection of jollof rice, fried rice, and refreshing drinks to get started.
-              </p>
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 bg-red-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors"
-              >
-                Start Shopping <ArrowRight className="w-5 h-5" />
-              </Link>
-            </div>
-
-            {suggestedItems.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-                <div className="flex items-center gap-3 mb-6">
-                  <Star className="w-6 h-6 text-yellow-500 fill-current" />
-                  <h2 className="text-2xl font-bold text-gray-900">Popular Choices</h2>
-                </div>
-                <Swiper
-                  modules={[Autoplay]}
-                  autoplay={{ delay: 5000, disableOnInteraction: false }}
-                  loop={true}
-                  spaceBetween={24}
-                  slidesPerView={1}
-                  breakpoints={{
-                    640: { slidesPerView: 2 },
-                    768: { slidesPerView: 3 },
-                    1024: { slidesPerView: 4 },
-                  }}
-                  className="pb-4"
-                >
-                  {suggestedItems.map((item) => (
-                    <SwiperSlide key={item._id}>
-                      <div className="group bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-red-200 hover:shadow-lg transition-all duration-300">
-                        <div className="relative overflow-hidden">
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300"></div>
-                        </div>
-                        <div className="p-5">
-                          <h3 className="font-bold text-lg text-gray-900 mb-2 line-clamp-1">{item.name}</h3>
-                          <p className="text-2xl font-bold text-red-600 mb-4">
-                            ₦{item.price.toLocaleString()}
-                          </p>
-                          <button
-                            onClick={() => handleAddSuggestion(item)}
-                            className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-red-700 transition-colors duration-200"
-                          >
-                            Add to Cart
-                          </button>
-                        </div>
-                      </div>
-                    </SwiperSlide>
-                  ))}
-                </Swiper>
-              </div>
-            )}
-          </div>
-        </div>
-      </>
-    );
-  }
 
   return (
     <>
       <NavbarDark />
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 py-8 pt-28">
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Shopping Cart</h1>
-            <p className="text-gray-600">Review your items and proceed to checkout</p>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
+        <div className="max-w-6xl mx-auto px-4 py-8 pt-28">
+          <h1 className="text-4xl font-extrabold text-gray-900 mb-10 tracking-tight">
+            {cartItems.length === 0 ? '🛒 Your Cart is Empty' : '🛍️ Your Cart'}
+          </h1>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Cart Items */}
-            <div className="lg:col-span-2 space-y-8">
-              {/* Main Items */}
-              {cartItems.filter(item => !item.isSideOrDrink).length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="bg-gradient-to-r from-red-50 to-red-100 px-6 py-4 border-b border-gray-100">
-                    <h2 className="text-xl font-bold text-gray-900">Main Dishes</h2>
-                    <p className="text-sm text-gray-600 mt-1">{cartItems.filter(item => !item.isSideOrDrink).length} item(s)</p>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {cartItems
-                      .filter(item => !item.isSideOrDrink)
-                      .map((item) => (
-                        <div
-                          key={item._id}
-                          className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                        >
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-lg text-gray-900 mb-1">{item.name}</h3>
-                            <p className="text-gray-600 text-sm mb-3">
-                              ₦{item.price.toLocaleString()} per serving
-                            </p>
-                            <div className="flex items-center gap-3">
-                              <button
-                                onClick={() => handleDecrement(item._id)}
-                                className="w-10 h-10 flex items-center justify-center bg-white border-2 border-gray-200 rounded-lg hover:border-red-300 hover:bg-red-50 transition-all duration-200"
-                                disabled={item.quantity <= 1}
-                              >
-                                <Minus className="w-4 h-4" />
-                              </button>
-                              <span className="font-bold text-lg min-w-[40px] text-center">{item.quantity}</span>
-                              <button
-                                onClick={() => handleIncrement(item._id)}
-                                className="w-10 h-10 flex items-center justify-center bg-white border-2 border-gray-200 rounded-lg hover:border-red-300 hover:bg-red-50 transition-all duration-200"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="text-2xl font-bold text-red-600 mb-2">
-                              ₦{(item.price * item.quantity).toLocaleString()}
-                            </p>
-                            <button
-                              onClick={() => handleRemove(item._id)}
-                              className="inline-flex items-center gap-1 text-red-500 hover:text-red-700 font-medium text-sm transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" /> Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Sides & Drinks */}
-              {cartItems.filter(item => item.isSideOrDrink).length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-gray-100">
-                    <h2 className="text-xl font-bold text-gray-900">Sides & Drinks</h2>
-                    <p className="text-sm text-gray-600 mt-1">{cartItems.filter(item => item.isSideOrDrink).length} item(s)</p>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {cartItems
-                      .filter(item => item.isSideOrDrink)
-                      .map((item) => (
-                        <div
-                          key={item._id}
-                          className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                        >
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-gray-900 mb-1">{item.name}</h3>
-                            <p className="text-gray-600 text-sm mb-3">
-                              ₦{item.price.toLocaleString()} each
-                            </p>
-                            <div className="flex items-center gap-3">
-                              <button
-                                onClick={() => handleDecrement(item._id)}
-                                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 rounded-md hover:border-red-300 transition-colors"
-                                disabled={item.quantity <= 1}
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                              <span className="font-semibold min-w-[24px] text-center">{item.quantity}</span>
-                              <button
-                                onClick={() => handleIncrement(item._id)}
-                                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 rounded-md hover:border-red-300 transition-colors"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="font-bold text-red-600 text-lg mb-2">
-                              ₦{(item.price * item.quantity).toLocaleString()}
-                            </p>
-                            <button
-                              onClick={() => handleRemove(item._id)}
-                              className="inline-flex items-center gap-1 text-red-500 hover:text-red-700 font-medium text-sm transition-colors"
-                            >
-                              <Trash2 className="w-3 h-3" /> Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Suggested Items */}
-              {suggestedItems.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-900">Complete Your Order</h2>
-                      <p className="text-sm text-gray-600 mt-1">Add drinks and sides to enhance your meal</p>
-                    </div>
-                    {cartItems.some(item => item.isSideOrDrink) && (
-                      <button
-                        onClick={() => setShowSuggestions(!showSuggestions)}
-                        className="text-red-600 hover:text-red-700 font-semibold text-sm transition-colors"
-                      >
-                        {showSuggestions ? 'Hide' : 'Show'} Options
-                      </button>
-                    )}
-                  </div>
-
-                  {(showSuggestions || !cartItems.some(item => item.isSideOrDrink)) && (
-                    <div className="p-6">
-                      <Swiper
-                        modules={[Autoplay]}
-                        autoplay={{ delay: 4000, disableOnInteraction: false }}
-                        spaceBetween={16}
-                        slidesPerView={1}
-                        breakpoints={{
-                          480: { slidesPerView: 2 },
-                          640: { slidesPerView: 3 },
-                          768: { slidesPerView: 4 },
-                          1024: { slidesPerView: 5 },
-                        }}
-                        className="pb-4"
-                      >
-                        {suggestedItems
-                          .filter(suggestedItem =>
-                            !cartItems.some(cartItem =>
-                              cartItem._id === suggestedItem._id && cartItem.isSideOrDrink
-                            )
-                          )
-                          .map((item) => (
-                            <SwiperSlide key={item._id}>
-                              <div className="bg-gradient-to-b from-gray-50 to-gray-100 rounded-xl overflow-hidden hover:shadow-md transition-all duration-300 border border-gray-200">
-                                <img
-                                  src={item.image}
-                                  alt={item.name}
-                                  className="w-full h-24 object-cover"
-                                />
-                                <div className="p-3">
-                                  <h4 className="font-bold text-sm text-gray-900 mb-1 line-clamp-1">{item.name}</h4>
-                                  <p className="text-red-600 font-bold mb-3">
-                                    ₦{item.price.toLocaleString()}
-                                  </p>
-                                  <button
-                                    onClick={() => handleAddSuggestion(item)}
-                                    className="w-full bg-red-600 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
-                                  >
-                                    Add to Cart
-                                  </button>
-                                </div>
-                              </div>
-                            </SwiperSlide>
-                          ))}
-                      </Swiper>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Order Summary */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 h-fit sticky top-28">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Payment Summary</h2>
-
-              <div className="space-y-4 mb-6">
-                <div className="flex justify-between items-center text-gray-700">
-                  <span className="font-medium">Subtotal</span>
-                  <span className="font-semibold">₦{subtotal.toLocaleString()}</span>
-                </div>
-
-                <div className="flex justify-between items-center text-gray-700">
-                  <span className="font-medium">DELIVERY FEE</span>
-                  <span className="font-semibold">₦500</span>
-                </div>
-
-                <div className="flex justify-between items-center text-gray-700">
-                  <span className="font-medium">Tax (2%)</span>
-                  <span className="font-semibold">₦{tax.toLocaleString()}</span>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 pt-4 mb-6">
-                <div className="flex justify-between items-center">
-                  <span className="text-xl font-bold text-gray-900">Total</span>
-                  <span className="text-2xl font-bold text-red-600">₦{total.toLocaleString()}</span>
-                </div>
-              </div>
-
+          {/* ===== Empty Cart Premium State ===== */}
+          {cartItems.length === 0 && (
+            <div className="flex flex-col items-center justify-center text-center py-20 px-6 bg-white rounded-3xl shadow-lg border border-gray-200 animate-fadeIn">
+              <ShoppingBag className="w-20 h-20 text-red-500 mb-6" />
+              <h2 className="text-2xl font-bold text-gray-800 mb-3">
+                Your cart is currently empty
+              </h2>
+              <p className="text-gray-600 mb-6 max-w-md">
+                Looks like you haven’t added anything yet. Browse our menu and pick your favorites!
+              </p>
               <Link
-                href="/checkout"
-                className="block w-full bg-gradient-to-r from-red-600 to-red-700 text-white text-center text-lg font-bold py-4 rounded-xl shadow-md hover:from-red-700 hover:to-red-800 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-0.5"
+                href="/"
+                className="bg-gradient-to-r from-red-500 to-red-700 text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition"
               >
-                Proceed to Checkout
+                Continue Shopping
               </Link>
             </div>
-          </div>
+          )}
+
+          {/* ===== Cart Items ===== */}
+          {cartItems.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 mb-12 animate-fadeIn">
+              <div className="lg:col-span-2 space-y-6">
+                {cartItems.map((item) => (
+                  <div
+                    key={item._id}
+                    className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300"
+                  >
+                    {item.image && (
+                      <img
+                        src={getImageUrl(item.image)}
+                        alt={item.name}
+                        className="w-24 h-24 object-cover rounded-xl"
+                        onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                      />
+                    )}
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
+                      <p className="text-red-600 font-bold text-base">
+                        ₦{item.price.toLocaleString()}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <button
+                          onClick={() => handleDecrement(item._id)}
+                          className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
+                        >
+                          <Minus className="w-4 h-4" />
+                        </button>
+                        <span className="font-medium">{item.quantity}</span>
+                        <button
+                          onClick={() => handleIncrement(item._id)}
+                          className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemove(item._id)}
+                      className="text-gray-400 hover:text-red-600 transition"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* ===== Order Summary ===== */}
+              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-gray-200 p-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Order Summary</h2>
+                <div className="space-y-4 text-gray-700">
+                  <div className="flex justify-between">
+                    <span>Subtotal</span>
+                    <span>₦{subtotal.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Delivery Fee</span>
+                    <span>₦{deliveryFee.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Tax (2%)</span>
+                    <span>₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="border-t pt-4 flex justify-between font-extrabold text-xl text-gray-900">
+                    <span>Total</span>
+                    <span className="text-red-600">
+                      ₦{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                <Link
+                  href="/checkout"
+                  className="mt-8 block w-full bg-gradient-to-r from-red-500 to-red-700 text-white text-center py-3 rounded-xl font-semibold hover:opacity-90 transition"
+                >
+                  Proceed to Checkout
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* ===== Suggested Drinks Slider ===== */}
+          {suggestedItems.length > 0 && (
+            <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-10 mt-12">
+              <div className="flex items-center gap-3 mb-8">
+                <Star className="w-7 h-7 text-yellow-500 fill-current" />
+                <h2 className="text-3xl font-extrabold text-gray-900">
+                  Suggested Drinks 🍹
+                </h2>
+              </div>
+              <Swiper
+                modules={[Autoplay]}
+                autoplay={{ delay: 4500, disableOnInteraction: false }}
+                loop={true}
+                spaceBetween={28}
+                slidesPerView={1}
+                breakpoints={{
+                  640: { slidesPerView: 2 },
+                  768: { slidesPerView: 3 },
+                  1024: { slidesPerView: 4 },
+                }}
+                className="pb-6"
+              >
+                {suggestedItems.map((item) => (
+                  <SwiperSlide key={item._id}>
+                    <div className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-red-300 hover:shadow-xl transition-all duration-300">
+                      <div className="relative overflow-hidden">
+                        {item.image && (
+                          <img
+                            src={getImageUrl(item.image)}
+                            alt={item.name}
+                            className="w-full h-52 object-cover group-hover:scale-105 transition-transform duration-500"
+                            onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                          />
+                        )}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-500"></div>
+                      </div>
+                      <div className="p-5">
+                        <h3 className="font-bold text-lg text-gray-900 mb-2 line-clamp-1">
+                          {item.name}
+                        </h3>
+                        <p className="text-2xl font-extrabold text-red-600 mb-4">
+                          ₦{item.price.toLocaleString()}
+                        </p>
+                        <button
+                          onClick={() => handleAddSuggestion(item)}
+                          className="w-full bg-gradient-to-r from-red-500 to-red-700 text-white py-3 px-4 rounded-lg font-semibold hover:opacity-90 transition"
+                        >
+                          Add to Cart
+                        </button>
+                      </div>
+                    </div>
+                  </SwiperSlide>
+                ))}
+              </Swiper>
+            </div>
+          )}
         </div>
       </div>
     </>

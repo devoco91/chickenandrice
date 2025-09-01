@@ -1,24 +1,31 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice } from "@reduxjs/toolkit";
 
 const initialState = {
-  isConfirmed: false,
+  isConfirmed: false, // ✅ whether user has confirmed location
+  state: "",          // ✅ selected state
+  lga: "",            // ✅ selected LGA
 };
 
 const locationSlice = createSlice({
-  name: 'location',
+  name: "location",
   initialState,
   reducers: {
-    confirmLocation(state) {
+    // ✅ Save location and mark it confirmed
+    setLocation(state, action) {
+      const { state: selectedState, lga } = action.payload;
       state.isConfirmed = true;
+      state.state = selectedState;
+      state.lga = lga;
     },
+
+    // ✅ Reset location (used on logout or manual change)
     resetLocation(state) {
       state.isConfirmed = false;
-    },
-    setLocationFromStorage(state, action) {
-      state.isConfirmed = action.payload;
+      state.state = "";
+      state.lga = "";
     },
   },
 });
 
-export const { confirmLocation, resetLocation, setLocationFromStorage } = locationSlice.actions;
+export const { setLocation, resetLocation } = locationSlice.actions;
 export default locationSlice.reducer;

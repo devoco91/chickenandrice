@@ -1,104 +1,197 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 function Banner() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const scrollToSection = (id) => {
+    const section = document.getElementById(id);
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
   return (
     <section
       id="hero"
-      className="relative w-full min-h-screen bg-gradient-to-br from-red-600 via-red-500 to-red-700 overflow-hidden pt-20"
+      className={`relative w-full bg-gradient-to-br from-red-700 via-red-600 to-red-800 overflow-hidden flex items-center justify-center py-16 md:py-24 mt-20 transition-all duration-1000 ${
+        mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+      }`}
     >
-     
-      <div className="absolute inset-0">
-        <div className="absolute top-1/2 left-1/4 w-16 h-16 bg-blue-500 rounded-full opacity-15 animate-ping"></div>
-        <div className="absolute bottom-20 left-1/3 w-20 h-20 bg-yellow-400 rounded-full opacity-20 animate-pulse"></div>
-      </div>
+      {/* Subtle overlay */}
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]"></div>
 
-      {/* Geometric patterns */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-0 right-0 w-96 h-96 border-4 border-blue-400 rounded-full transform rotate-45"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 border-2 border-blue-300 rounded-full"></div>
+      {/* Decorative orbiting food images (unchanged) */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-12 left-12 w-16 h-16 md:w-20 md:h-20 animate-orbit-slow">
+          <img
+            src="/images/food1.jpg"
+            alt="Orbit Food 1"
+            className="w-full h-full object-cover rounded-full border-4 border-white shadow-xl"
+          />
+        </div>
+
+        <div className="absolute top-24 right-20 w-14 h-14 md:w-20 md:h-20 animate-orbit-medium">
+          <img
+            src="/images/food2.jpg"
+            alt="Orbit Food 2"
+            className="w-full h-full object-cover rounded-full border-4 border-white shadow-lg"
+          />
+        </div>
+
+        <div className="absolute bottom-16 left-24 w-12 h-12 md:w-16 md:h-16 animate-orbit-fast">
+          <img
+            src="/images/food1.jpg"
+            alt="Orbit Food 3"
+            className="w-full h-full object-cover rounded-full border-4 border-white shadow-md"
+          />
+        </div>
       </div>
 
       {/* Banner Content */}
-      <div className="relative z-10 max-w-7xl mx-auto flex flex-col-reverse lg:flex-row items-center justify-between min-h-[calc(100vh-5rem)] px-6 md:px-12">
-        <div className="w-full lg:w-1/2 text-center lg:text-left pb-12 lg:pb-0">
-          <h1 className="text-4xl md:text-3xl lg:text-5xl font-black text-white leading-none mb-6">
-            <span className="block">The Only </span>
-            <span className="block text-yellow-300 drop-shadow-lg">Place For The Best </span>
+      <div className="relative z-10 max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between w-full px-6 sm:px-10 md:px-12 gap-12">
+        
+        {/* Left text section */}
+        <div className="w-full lg:w-1/2 text-center lg:text-left flex flex-col items-center lg:items-start">
+          <h1
+            className={`text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6 tracking-tight transition-all duration-1000 delay-200 ${
+              mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
+          >
+            <span className="block">The Only</span>
+            <span className="block text-yellow-300 drop-shadow-md">Place For The Best</span>
             <span className="block text-blue-200">Jollof And Fried Rice</span>
           </h1>
 
-          <p className="text-white/90 text-4xl md:text-4xl mb-8 leading-relaxed font-medium">
+          <p
+            className={`text-white/90 text-base sm:text-lg md:text-xl lg:text-2xl mb-8 leading-relaxed font-medium transition-all duration-1000 delay-500 ${
+              mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
+          >
             We deliver under 30 minutes!
           </p>
 
           {/* Quick stats */}
-          <div className="flex justify-center lg:justify-start gap-8 mt-12 text-white">
+          <div
+            className={`flex justify-center lg:justify-start gap-10 mt-4 text-white transition-all duration-1000 delay-700 ${
+              mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
+          >
             <div className="text-center">
-              <div className="text-3xl font-bold text-yellow-300">15min</div>
-              <div className="text-sm opacity-80">Avg Delivery</div>
+              <div className="text-3xl sm:text-4xl font-bold text-yellow-300">15min</div>
+              <div className="text-sm sm:text-base opacity-80">Avg Delivery</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-blue-300">4.9★</div>
-              <div className="text-sm opacity-80">Customer Rating</div>
-            </div>
-        
-          </div>
-        </div>
-
-        {/* Visual content */}
-        <div className="w-full lg:w-1/2 relative mb-12 lg:mb-0 translate-y-12 sm:translate-y-0 transition-transform duration-300">
-          <div className="relative z-20">
-            <div className="relative mx-auto w-80 h-80 md:w-96 md:h-96 lg:w-[500px] lg:h-[500px]">
-              
-              <div className="absolute -top-10 -right-10 w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center text-2xl animate-float shadow-xl">
-                🍟
-              </div>
-              <div className="absolute -bottom-10 -left-10 w-14 h-14 bg-blue-500 rounded-full flex items-center justify-center text-xl animate-bounce shadow-xl">
-                🥤
-              </div>
-              <div className="absolute top-1/4 -left-16 w-12 h-12 bg-red-400 rounded-full flex items-center justify-center text-lg animate-pulse shadow-xl">
-                🌮
-              </div>
-              <div className="absolute bottom-1/4 -right-16 w-12 h-12 bg-orange-400 rounded-full flex items-center justify-center text-lg animate-ping shadow-xl">
-                🍕
-              </div>
+              <div className="text-3xl sm:text-4xl font-bold text-blue-300">4.9★</div>
+              <div className="text-sm sm:text-base opacity-80">Customer Rating</div>
             </div>
           </div>
 
-          {/* Glow effects */}
-          <div className="absolute inset-0 bg-gradient-radial from-yellow-400/20 via-transparent to-transparent rounded-full blur-3xl"></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-blue-500/10 rounded-full blur-2xl"></div>
+          {/* Buttons */}
+          <div className="mt-8 flex flex-wrap justify-center lg:justify-start gap-4">
+            <button
+              onClick={() => scrollToSection("popular-items")}
+              className="px-6 py-3 bg-yellow-400 text-black font-semibold rounded-xl shadow-lg hover:bg-yellow-500 transition"
+            >
+              Order Now
+            </button>
+            <button
+              onClick={() => scrollToSection("all-items")}
+              className="px-6 py-3 bg-white text-red-600 font-semibold rounded-xl shadow-lg hover:bg-gray-100 transition"
+            >
+              Learn More
+            </button>
+          </div>
         </div>
-      </div>
 
-      
-      <div className="absolute bottom-0 left-0 right-0">
-        <svg
-          viewBox="0 0 1200 120"
-          preserveAspectRatio="none"
-          className="w-full h-12 md:h-20"
+        {/* Right image section (BIG with steam + gif effect) */}
+        <div
+          className={`w-full lg:w-1/2 flex justify-center items-center gap-8 transition-all duration-1000 delay-900 ${
+            mounted ? "opacity-100 scale-100" : "opacity-0 scale-90"
+          }`}
         >
-          <path
-            d="M0,120 C150,60 350,0 600,20 C850,40 1050,100 1200,60 L1200,120 Z"
-            fill="white"
-          ></path>
-        </svg>
+          {/* Food 1 */}
+          <div className="relative group">
+            <img
+              src="/images/food1.jpg"
+              alt="Food 1"
+              className="w-40 h-40 sm:w-56 sm:h-56 md:w-72 md:h-72 lg:w-80 lg:h-80 object-cover rounded-2xl border-4 border-white shadow-2xl animate-pulse-slow"
+            />
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 steam"></div>
+          </div>
+
+          {/* Food 2 */}
+          <div className="relative group">
+            <img
+              src="/images/food2.jpg"
+              alt="Food 2"
+              className="w-40 h-40 sm:w-56 sm:h-56 md:w-72 md:h-72 lg:w-80 lg:h-80 object-cover rounded-2xl border-4 border-white shadow-2xl animate-pulse-slow"
+            />
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 steam"></div>
+          </div>
+        </div>
       </div>
 
+      {/* Animations */}
       <style jsx>{`
-        @keyframes float {
-          0%,
-          100% {
-            transform: translateY(0px) rotate(0deg);
-          }
-          50% {
-            transform: translateY(-10px) rotate(5deg);
-          }
+        @keyframes orbitSlow {
+          from { transform: rotate(0deg) translateX(80px) rotate(0deg); }
+          to { transform: rotate(360deg) translateX(80px) rotate(-360deg); }
         }
-        .animate-float {
-          animation: float 3s ease-in-out infinite;
+        @keyframes orbitMedium {
+          from { transform: rotate(0deg) translateX(120px) rotate(0deg); }
+          to { transform: rotate(360deg) translateX(120px) rotate(-360deg); }
+        }
+        @keyframes orbitFast {
+          from { transform: rotate(0deg) translateX(60px) rotate(0deg); }
+          to { transform: rotate(360deg) translateX(60px) rotate(-360deg); }
+        }
+        .animate-orbit-slow { animation: orbitSlow 25s linear infinite; transform-origin: center; }
+        .animate-orbit-medium { animation: orbitMedium 18s linear infinite; transform-origin: center; }
+        .animate-orbit-fast { animation: orbitFast 12s linear infinite; transform-origin: center; }
+
+        /* Steam effect */
+        .steam {
+          width: 30px;
+          height: 60px;
+          position: relative;
+        }
+        .steam::before,
+        .steam::after {
+          content: "";
+          position: absolute;
+          left: 50%;
+          width: 8px;
+          height: 30px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.6);
+          animation: rise 3s ease-in-out infinite;
+        }
+        .steam::after {
+          left: 30%;
+          width: 6px;
+          height: 20px;
+          animation-duration: 4s;
+          animation-delay: 1s;
+        }
+        @keyframes rise {
+          0% { transform: translateY(20px) scale(0.5); opacity: 0; }
+          50% { opacity: 0.8; }
+          100% { transform: translateY(-50px) scale(1); opacity: 0; }
+        }
+
+        /* Gentle gif-like pulse for heat effect */
+        @keyframes pulseSlow {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.03); }
+        }
+        .animate-pulse-slow {
+          animation: pulseSlow 4s ease-in-out infinite;
         }
       `}</style>
     </section>
