@@ -23,6 +23,7 @@
     "naija-state-local-government": "^1.1.2",
     "next": "15.4.5",
     "ngn-states-lgas": "^1.0.1",
+    "qrcode.react": "^4.2.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hot-toast": "^2.6.0",

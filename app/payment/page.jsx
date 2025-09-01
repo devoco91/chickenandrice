@@ -6,6 +6,8 @@ import { useDispatch, useSelector } from 'react-redux'
 import { clearCart } from '../store/cartSlice'
 import { clearOrderDetails } from '../store/orderSlice'
 import NavbarDark from '../components/Navbar/NavbarDark'
+// import QRCode from "qrcode.react";
+
 
 // Icons & libs (kept)
 import {
