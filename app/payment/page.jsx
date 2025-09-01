@@ -6,10 +6,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { clearCart } from '../store/cartSlice'
 import { clearOrderDetails } from '../store/orderSlice'
 import NavbarDark from '../components/Navbar/NavbarDark'
-// import QRCode from "qrcode.react";
 
-
-// Icons & libs (kept)
 import {
   Banknote,
   Check,
@@ -21,8 +18,8 @@ import {
   Printer,
   ShieldCheck,
   Smartphone,
-  Upload,
   Wallet,
+  Sparkles,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { QRCodeSVG } from 'qrcode.react'
@@ -45,7 +42,6 @@ export default function PaymentPage() {
   const [isPaying, setIsPaying] = useState(false)
   const [copiedKey, setCopiedKey] = useState(null)
   const [isMounted, setIsMounted] = useState(false)
-  const [receiptFile, setReceiptFile] = useState(null)
   const [tab, setTab] = useState('transfer')
 
   const total = useSelector((state) => state.order.total || 0)
@@ -72,11 +68,22 @@ export default function PaymentPage() {
     try {
       await navigator.clipboard.writeText(value)
       setCopiedKey(key)
-      setTimeout(() => setCopiedKey(null), 1500)
+      setTimeout(() => setCopiedKey(null), 1300)
     } catch (e) {
       console.error('Copy failed', e)
     }
   }
+
+const copyAllDetails = async () => {
+  const text = [
+    `Amount: ${formatNGN(total)}`,
+    `Account Number: ${ACCOUNT_NUMBER}`,
+    `Bank: ${BANK_NAME}`,
+    `Account Name: ${ACCOUNT_NAME}`,
+    `Reference: ${paymentRef.current}`,
+  ].join('\n')
+  await handleCopy('all', text)
+}
 
   const handlePay = () => {
     if (isPaying) return
@@ -98,28 +105,57 @@ export default function PaymentPage() {
     <>
       <NavbarDark />
 
-      {/* Premium gradient background */}
-      <div className="relative min-h-[100dvh] bg-[radial-gradient(60%_60%_at_50%_0%,rgba(59,130,246,0.18),transparent),radial-gradient(40%_40%_at_100%_0%,rgba(236,72,153,0.12),transparent)] from-slate-950 via-slate-950 to-black text-slate-100">
-        <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 32 32\' width=\'32\' height=\'32\'><path fill=\'rgba(255,255,255,0.04)\' d=\'M0 0h1v1H0z\'/></svg>')] [mask-image:radial-gradient(white,transparent_80%)]" />
-
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 relative">
+      {/* Solid dark theme */}
+      <div className="relative min-h-[100dvh] text-slate-100 bg-slate-950">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-start justify-between mb-6">
             <div>
-              <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Payment</h1>
-              <p className="mt-1 text-sm text-slate-300">Complete your order securely in a few seconds.</p>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white px-2.5 py-1 text-xs text-white">
+                <Sparkles className="h-3.5 w-3.5" /> Premium Checkout
+              </div>
+              <h1 className="mt-2 text-3xl sm:text-4xl font-semibold tracking-tight text-white">
+                Payment
+              </h1>
+              <p className="mt-1 text-sm text-slate-300">
+                Complete your order securely in a few seconds.
+              </p>
             </div>
-            <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-sm">
-              <Lock className="h-4 w-4" /> Secure
-            </span>
+            <div className="text-right">
+              <span className="inline-flex items-center gap-1 rounded-full border border-white px-2.5 py-1 text-sm">
+                <Lock className="h-4 w-4" /> Secure
+              </span>
+              <div className="mt-2 text-xs text-slate-300">Due now</div>
+              <div className="text-2xl font-semibold">{totalLabel}</div>
+            </div>
           </div>
 
-          {/* Tabs (pure Tailwind) */}
-          <div className="grid w-full grid-cols-2 rounded-xl border border-white/10 bg-white/10 p-1">
+          {/* Stepper */}
+          <div className="mb-4 flex items-center gap-2 text-xs text-white">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-black font-bold">1</span>
+              <span>Cart</span>
+            </div>
+            <span className="h-[1px] flex-1 bg-white" />
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-black font-bold">2</span>
+              <span>Payment</span>
+            </div>
+            <span className="h-[1px] flex-1 bg-white" />
+            <div className="flex items-center gap-2 opacity-60">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white text-white">3</span>
+              <span>Done</span>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="grid w-full grid-cols-2 rounded-xl border border-white p-1">
             <button
               onClick={() => setTab('transfer')}
               className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
-                tab === 'transfer' ? 'bg-white/20' : 'hover:bg-white/10'
+                tab === 'transfer'
+                  ? 'bg-white text-black'
+                  : 'hover:bg-slate-800'
               }`}
             >
               <Banknote className="h-4 w-4" /> Bank Transfer
@@ -135,9 +171,17 @@ export default function PaymentPage() {
 
           {/* Order Summary */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl">
+            <div className="mt-6 rounded-2xl border border-white bg-slate-900">
               <div className="p-5 sm:p-6">
-                <h2 className="text-lg font-medium">Order Summary</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-medium">Order Summary</h2>
+                  <button
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95"
+                  >
+                    <Printer className="h-4 w-4" /> Print Invoice
+                  </button>
+                </div>
                 <div className="mt-4 space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-300">Subtotal</span>
@@ -147,20 +191,12 @@ export default function PaymentPage() {
                     <span className="text-slate-300">Fees</span>
                     <span>{formatNGN(0)}</span>
                   </div>
-                  <hr className="my-3 border-white/10" />
+                  <hr className="my-3 border-white" />
                   <div className="flex items-center justify-between">
                     <span className="text-slate-300">Total Due</span>
                     <span className="text-2xl font-semibold">{totalLabel}</span>
                   </div>
                 </div>
-              </div>
-              <div className="flex justify-end gap-2 p-4 pt-0">
-                <button
-                  onClick={() => window.print()}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
-                >
-                  <Printer className="h-4 w-4" /> Print Invoice
-                </button>
               </div>
             </div>
           </motion.div>
@@ -168,7 +204,7 @@ export default function PaymentPage() {
           {/* Bank Transfer Content */}
           {tab === 'transfer' && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-              <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl">
+              <div className="mt-6 overflow-hidden rounded-2xl border border-white bg-slate-900">
                 <div className="p-5 sm:p-6 space-y-1">
                   <h3 className="flex items-center gap-2 text-base font-medium">
                     <Smartphone className="h-5 w-5" /> Transfer with your banking app
@@ -180,12 +216,12 @@ export default function PaymentPage() {
 
                 <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-2 sm:p-6">
                   {/* QR / Reference */}
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 p-6">
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-white bg-slate-900 p-6">
                     <QRCodeSVG
                       value={`banktransfer://pay?acc=${ACCOUNT_NUMBER}&bank=${encodeURIComponent(
                         BANK_NAME
                       )}&name=${encodeURIComponent(ACCOUNT_NAME)}&amt=${Number(total || 0)}&ref=${paymentRef.current}`}
-                      size={168}
+                      size={176}
                       bgColor="transparent"
                     />
                     <p className="mt-3 text-xs text-center text-slate-300">
@@ -199,12 +235,12 @@ export default function PaymentPage() {
                           id="ref"
                           value={paymentRef.current}
                           readOnly
-                          className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-slate-100 outline-none"
+                          className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none"
                         />
                         <button
                           type="button"
                           onClick={() => handleCopy('ref', paymentRef.current)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
+                          className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95"
                         >
                           {copiedKey === 'ref' ? (
                             <>
@@ -229,12 +265,12 @@ export default function PaymentPage() {
                           id="account"
                           value={ACCOUNT_NUMBER}
                           readOnly
-                          className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-slate-100 tracking-wider outline-none"
+                          className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 tracking-wider outline-none"
                         />
                         <button
                           type="button"
                           onClick={() => handleCopy('account', ACCOUNT_NUMBER)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
+                          className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95"
                         >
                           {copiedKey === 'account' ? (
                             <>
@@ -256,12 +292,12 @@ export default function PaymentPage() {
                           id="bank"
                           value={BANK_NAME}
                           readOnly
-                          className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-slate-100 outline-none"
+                          className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none"
                         />
                         <button
                           type="button"
                           onClick={() => handleCopy('bank', BANK_NAME)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
+                          className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95"
                         >
                           {copiedKey === 'bank' ? (
                             <>
@@ -277,18 +313,18 @@ export default function PaymentPage() {
                     </div>
 
                     <div>
-                      <label htmlFor="name" className="text-sm text-slate-2 00">Account Name</label>
+                      <label htmlFor="name" className="text-sm text-slate-200">Account Name</label>
                       <div className="mt-1 flex items-center gap-2">
                         <input
                           id="name"
                           value={ACCOUNT_NAME}
                           readOnly
-                          className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-slate-100 outline-none"
+                          className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none"
                         />
                         <button
                           type="button"
                           onClick={() => handleCopy('name', ACCOUNT_NAME)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
+                          className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95"
                         >
                           {copiedKey === 'name' ? (
                             <>
@@ -309,15 +345,31 @@ export default function PaymentPage() {
                         id="amount"
                         value={totalLabel}
                         readOnly
-                        className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-slate-100 outline-none"
+                        className="mt-1 w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none"
                       />
+                    </div>
+
+                    <div className="pt-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={copyAllDetails}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-xs hover:bg-slate-800 active:scale-95"
+                          title="Copy all details"
+                        >
+                          <ClipboardCopy className="h-4 w-4" /> Copy All
+                        </button>
+                        <div className="inline-flex items-center gap-2 text-xs text-slate-300">
+                          <ShieldCheck className="h-4 w-4" /> Bank‑grade security
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4 p-5 sm:p-6">
                   {/* Alert */}
-                  <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
+                  <div className="flex items-start gap-3 rounded-xl border border-amber-500 bg-amber-900/30 p-3 text-amber-100">
                     <Info className="mt-0.5 h-4 w-4" />
                     <div>
                       <p className="font-medium">Don’t forget the reference</p>
@@ -339,25 +391,10 @@ export default function PaymentPage() {
 
                   <div className="flex flex-col-reverse sm:flex-row gap-3 w-full">
                     <button
-                      type="button"
-                      onClick={() => document.getElementById('receipt')?.click()}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
-                    >
-                      <Upload className="h-4 w-4" /> Upload Transfer Receipt (optional)
-                    </button>
-                    <input
-                      id="receipt"
-                      type="file"
-                      accept="image/*,application/pdf"
-                      className="hidden"
-                      onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
-                    />
-
-                    <button
                       onClick={handlePay}
                       disabled={isPaying}
                       className={`flex-1 inline-flex items-center justify-center rounded-lg px-4 py-2 text-white transition ${
-                        isPaying ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                        isPaying ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
                       }`}
                     >
                       {isPaying ? (
@@ -369,10 +406,6 @@ export default function PaymentPage() {
                       )}
                     </button>
                   </div>
-
-                  {receiptFile && (
-                    <p className="text-xs text-slate-300">Attached: {receiptFile.name}</p>
-                  )}
                 </div>
               </div>
             </motion.div>
@@ -384,11 +417,25 @@ export default function PaymentPage() {
           </div>
         </div>
 
+        {/* Tiny toast */}
+        <AnimatePresence>
+          {copiedKey && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 rounded-full border border-white bg-black px-4 py-2 text-xs text-white"
+            >
+              Copied to clipboard
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Processing Overlay */}
         <AnimatePresence>
           {isPaying && (
             <motion.div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -397,16 +444,16 @@ export default function PaymentPage() {
                 initial={{ y: 12, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 12, opacity: 0 }}
-                className="w-[90%] max-w-md rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/5 p-6 text-center"
+                className="w-[90%] max-w-md rounded-2xl border border-white bg-slate-900 p-6 text-center"
               >
-                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/10">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-800">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
                 <h3 className="text-lg font-semibold">Confirming your payment…</h3>
                 <p className="mt-1 text-sm text-slate-300">Please hold while we verify and finalize your order.</p>
-                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-700">
                   <div
-                    className="h-full bg-white/60"
+                    className="h-full bg-blue-600"
                     style={{ width: `${progress}%`, transition: 'width 120ms linear' }}
                   />
                 </div>

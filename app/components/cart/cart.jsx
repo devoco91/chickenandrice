@@ -1,12 +1,13 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Minus, Plus, Trash2, Star, ShoppingBag } from 'lucide-react';
+import { Minus, Plus, Trash2, Star, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import NavbarDark from '../Navbar/NavbarDark';
 import Link from 'next/link';
 import { Swiper, SwiperSlide } from 'swiper/react';
-import { Autoplay } from 'swiper/modules';
+import { Autoplay, Navigation } from 'swiper/modules';
 import 'swiper/css';
+import 'swiper/css/navigation';
 import {
   incrementQuantity,
   decrementQuantity,
@@ -35,12 +36,92 @@ const getImageUrl = (val) => {
   return `${UPLOADS_BASE}/${encodeURI(cleaned)}`;
 };
 
+const DrinksSlider = ({ items, onAdd }) => {
+  if (!items?.length) return null;
+  return (
+    <div className="relative bg-white rounded-3xl shadow-lg border border-gray-100 p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Star className="w-7 h-7 text-yellow-500 fill-current" />
+          <h2 className="text-2xl font-extrabold text-gray-900">Suggested Drinks 🍹</h2>
+        </div>
+      </div>
+
+      {/* One pair of custom arrows (responsive positioning) */}
+      <button
+        aria-label="Previous"
+        className="drinks-prev absolute z-10 inline-flex items-center justify-center rounded-full border border-red-200 bg-white
+                   w-9 h-9 left-2 top-1/2 -translate-y-1/2 hover:bg-red-50 hover:border-red-300 active:scale-95 transition
+                   sm:left-auto sm:top-4 sm:-translate-y-0 sm:right-14 sm:w-10 sm:h-10"
+      >
+        <ChevronLeft className="w-5 h-5 text-red-600" />
+      </button>
+      <button
+        aria-label="Next"
+        className="drinks-next absolute z-10 inline-flex items-center justify-center rounded-full border border-red-200 bg-white
+                   w-9 h-9 right-2 top-1/2 -translate-y-1/2 hover:bg-red-50 hover:border-red-300 active:scale-95 transition
+                   sm:right-4 sm:top-4 sm:-translate-y-0 sm:w-10 sm:h-10"
+      >
+        <ChevronRight className="w-5 h-5 text-red-600" />
+      </button>
+
+      <Swiper
+        modules={[Autoplay, Navigation]}
+        autoplay={{ delay: 4500, disableOnInteraction: false }}
+        loop={true}
+        navigation={{ prevEl: '.drinks-prev', nextEl: '.drinks-next' }} // bind to the single pair above
+        spaceBetween={16}
+        slidesPerView={1}
+        breakpoints={{
+          640: { slidesPerView: 2 },
+          768: { slidesPerView: 3 },
+          1024: { slidesPerView: 3 },
+        }}
+        className="pb-8"
+      >
+        {items.map((item) => (
+          <SwiperSlide key={item._id}>
+            <div className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-red-300 hover:shadow-xl transition-all duration-300">
+              <div className="relative overflow-hidden">
+                {item.image && (
+                  <img
+                    src={getImageUrl(item.image)}
+                    alt={item.name}
+                    className="w-full h-40 object-cover group-hover:scale-105 transition-transform duration-500"
+                    onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                  />
+                )}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-500"></div>
+              </div>
+              <div className="p-4">
+                <h3 className="font-bold text-base text-gray-900 mb-2 line-clamp-1">
+                  {item.name}
+                </h3>
+                <p className="text-xl font-extrabold text-red-600 mb-3">
+                  ₦{item.price.toLocaleString()}
+                </p>
+                <button
+                  onClick={() => onAdd(item)}
+                  className="w-full bg-gradient-to-r from-red-500 to-red-700 text-white py-2.5 px-3 rounded-lg font-semibold hover:opacity-90 transition"
+                >
+                  Add to Cart
+                </button>
+              </div>
+            </div>
+          </SwiperSlide>
+        ))}
+      </Swiper>
+    </div>
+  );
+};
+
 const CartPage = () => {
   const dispatch = useDispatch();
   const cartItems = useSelector((state) => state.cart.cartItem || []);
   const [suggestedItems, setSuggestedItems] = useState([]);
 
-  // ✅ Fetch drinks only
+  // Fetch drinks only
   useEffect(() => {
     const fetchSuggestedItems = async () => {
       try {
@@ -97,29 +178,41 @@ const CartPage = () => {
             {cartItems.length === 0 ? '🛒 Your Cart is Empty' : '🛍️ Your Cart'}
           </h1>
 
-          {/* ===== Empty Cart Premium State ===== */}
+          {/* ===== Empty Cart Premium State (drinks now also visible) ===== */}
           {cartItems.length === 0 && (
-            <div className="flex flex-col items-center justify-center text-center py-20 px-6 bg-white rounded-3xl shadow-lg border border-gray-200 animate-fadeIn">
-              <ShoppingBag className="w-20 h-20 text-red-500 mb-6" />
-              <h2 className="text-2xl font-bold text-gray-800 mb-3">
-                Your cart is currently empty
-              </h2>
-              <p className="text-gray-600 mb-6 max-w-md">
-                Looks like you haven’t added anything yet. Browse our menu and pick your favorites!
-              </p>
-              <Link
-                href="/"
-                className="bg-gradient-to-r from-red-500 to-red-700 text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition"
-              >
-                Continue Shopping
-              </Link>
-            </div>
+            <>
+              <div className="flex flex-col items-center justify-center text-center py-20 px-6 bg-white rounded-3xl shadow-lg border border-gray-200 animate-fadeIn">
+                <ShoppingBag className="w-20 h-20 text-red-500 mb-6" />
+                <h2 className="text-2xl font-bold text-gray-800 mb-3">
+                  Your cart is currently empty
+                </h2>
+                <p className="text-gray-600 mb-6 max-w-md">
+                  Looks like you haven’t added anything yet. Browse our menu and pick your favorites!
+                </p>
+                <Link
+                  href="/"
+                  className="bg-gradient-to-r from-red-500 to-red-700 text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition"
+                >
+                  Continue Shopping
+                </Link>
+              </div>
+
+              {/* Suggested Drinks visible even when cart is empty */}
+              <div className="mt-10">
+                <DrinksSlider items={suggestedItems} onAdd={handleAddSuggestion} />
+              </div>
+            </>
           )}
 
-          {/* ===== Cart Items ===== */}
+          {/* ===== Cart + Suggested Drinks (Top Row) ===== */}
           {cartItems.length > 0 && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 mb-12 animate-fadeIn">
-              <div className="lg:col-span-2 space-y-6">
+            <div
+              className={`grid grid-cols-1 ${
+                suggestedItems.length > 0 ? 'lg:grid-cols-2' : 'lg:grid-cols-1'
+              } gap-10 mb-12 animate-fadeIn`}
+            >
+              {/* Cart Items (left) */}
+              <div className="space-y-6">
                 {cartItems.map((item) => (
                   <div
                     key={item._id}
@@ -164,93 +257,43 @@ const CartPage = () => {
                 ))}
               </div>
 
-              {/* ===== Order Summary ===== */}
-              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-gray-200 p-8">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Order Summary</h2>
-                <div className="space-y-4 text-gray-700">
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span>₦{subtotal.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Delivery Fee</span>
-                    <span>₦{deliveryFee.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Tax (2%)</span>
-                    <span>₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="border-t pt-4 flex justify-between font-extrabold text-xl text-gray-900">
-                    <span>Total</span>
-                    <span className="text-red-600">
-                      ₦{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-                <Link
-                  href="/checkout"
-                  className="mt-8 block w-full bg-gradient-to-r from-red-500 to-red-700 text-white text-center py-3 rounded-xl font-semibold hover:opacity-90 transition"
-                >
-                  Proceed to Checkout
-                </Link>
-              </div>
+              {/* Suggested Drinks (right, only when cart has items) */}
+              {suggestedItems.length > 0 && (
+                <DrinksSlider items={suggestedItems} onAdd={handleAddSuggestion} />
+              )}
             </div>
           )}
 
-          {/* ===== Suggested Drinks Slider ===== */}
-          {suggestedItems.length > 0 && (
-            <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-10 mt-12">
-              <div className="flex items-center gap-3 mb-8">
-                <Star className="w-7 h-7 text-yellow-500 fill-current" />
-                <h2 className="text-3xl font-extrabold text-gray-900">
-                  Suggested Drinks 🍹
-                </h2>
+          {/* ===== Order Summary (Bottom, full width) ===== */}
+          {cartItems.length > 0 && (
+            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-gray-200 p-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Order Summary</h2>
+              <div className="space-y-4 text-gray-700">
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>₦{subtotal.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Delivery Fee</span>
+                  <span>₦{deliveryFee.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Tax (2%)</span>
+                  <span>₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="border-t pt-4 flex justify-between font-extrabold text-xl text-gray-900">
+                  <span>Total</span>
+                  <span className="text-red-600">
+                    ₦{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
-              <Swiper
-                modules={[Autoplay]}
-                autoplay={{ delay: 4500, disableOnInteraction: false }}
-                loop={true}
-                spaceBetween={28}
-                slidesPerView={1}
-                breakpoints={{
-                  640: { slidesPerView: 2 },
-                  768: { slidesPerView: 3 },
-                  1024: { slidesPerView: 4 },
-                }}
-                className="pb-6"
+              <Link
+                href="/checkout"
+                className="mt-8 block w-full bg-gradient-to-r from-red-500 to-red-700 text-white text-center py-3 rounded-xl font-semibold hover:opacity-90 transition"
               >
-                {suggestedItems.map((item) => (
-                  <SwiperSlide key={item._id}>
-                    <div className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-red-300 hover:shadow-xl transition-all duration-300">
-                      <div className="relative overflow-hidden">
-                        {item.image && (
-                          <img
-                            src={getImageUrl(item.image)}
-                            alt={item.name}
-                            className="w-full h-52 object-cover group-hover:scale-105 transition-transform duration-500"
-                            onError={(e) => (e.currentTarget.src = '/placeholder.png')}
-                          />
-                        )}
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-500"></div>
-                      </div>
-                      <div className="p-5">
-                        <h3 className="font-bold text-lg text-gray-900 mb-2 line-clamp-1">
-                          {item.name}
-                        </h3>
-                        <p className="text-2xl font-extrabold text-red-600 mb-4">
-                          ₦{item.price.toLocaleString()}
-                        </p>
-                        <button
-                          onClick={() => handleAddSuggestion(item)}
-                          className="w-full bg-gradient-to-r from-red-500 to-red-700 text-white py-3 px-4 rounded-lg font-semibold hover:opacity-90 transition"
-                        >
-                          Add to Cart
-                        </button>
-                      </div>
-                    </div>
-                  </SwiperSlide>
-                ))}
-              </Swiper>
+                Proceed to Checkout
+              </Link>
             </div>
           )}
         </div>

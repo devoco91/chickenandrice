@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
 
-  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null); // inline dropdown
   const [showSummary, setShowSummary] = useState(false);
 
   const [weeklyOnlineTotal, setWeeklyOnlineTotal] = useState(0);
@@ -55,7 +55,6 @@ export default function AdminDashboard() {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      // cancel any in-flight request
       if (abortRef.current) abortRef.current.abort();
       const ac = new AbortController();
       abortRef.current = ac;
@@ -91,7 +90,6 @@ export default function AdminDashboard() {
   const filteredOrders = useMemo(() => {
     const list =
       filter === "all" ? orders : orders.filter((o) => (o?.orderType || "").toLowerCase() === filter);
-    // sort newest first; fall back to id string compare if createdAt missing
     return [...list].sort((a, b) => {
       const ad = safeDate(a?.createdAt)?.getTime() ?? 0;
       const bd = safeDate(b?.createdAt)?.getTime() ?? 0;
@@ -104,7 +102,6 @@ export default function AdminDashboard() {
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
 
-  // Clamp page when data/filter changes so we never show an empty page
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [totalPages, page]);
@@ -128,7 +125,7 @@ export default function AdminDashboard() {
   const startOfWeek = useMemo(() => {
     const n = new Date();
     const s = new Date(n);
-    s.setDate(n.getDate() - n.getDay()); // week starts Sunday; adjust if you prefer Monday
+    s.setDate(n.getDate() - n.getDay()); // week starts Sunday
     s.setHours(0, 0, 0, 0);
     return s;
   }, []);
@@ -182,6 +179,42 @@ export default function AdminDashboard() {
       }
     }
     return { cashToday: cash, cardToday: card, transferToday: transfer };
+  }, [orders, startOfToday]);
+
+  // TODAY item totals (resets 12 AM): per item + split online/instore
+  const itemTotalsToday = useMemo(() => {
+    const all = new Map();
+    const online = new Map();
+    const instore = new Map();
+    const display = new Map();
+
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d || d < startOfToday) continue;
+      const type = (o?.orderType || "").toLowerCase();
+      const items = Array.isArray(o?.items) ? o.items : [];
+      for (const it of items) {
+        const raw = String(it?.name || "Item").trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        if (!display.has(key)) display.set(key, raw);
+        const qty = Number(it?.quantity ?? 1) || 1;
+        all.set(key, (all.get(key) || 0) + qty);
+        if (type === "online") online.set(key, (online.get(key) || 0) + qty);
+        if (type === "instore") instore.set(key, (instore.get(key) || 0) + qty);
+      }
+    }
+
+    const rows = Array.from(all.keys()).map((k) => ({
+      key: k,
+      name: display.get(k) || k,
+      total: all.get(k) || 0,
+      online: online.get(k) || 0,
+      instore: instore.get(k) || 0,
+    }));
+
+    rows.sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
+    return rows;
   }, [orders, startOfToday]);
 
   const removeOrder = async (id) => {
@@ -294,6 +327,36 @@ export default function AdminDashboard() {
         </button>
       </div>
 
+      {/* ITEM TOTALS TABLE (Today) — position: AFTER the buttons above */}
+      <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
+        <table className="min-w-full border-collapse">
+          <thead className="bg-gray-100 text-left">
+            <tr>
+              <th className="p-3 border-b">Item</th>
+              <th className="p-3 border-b">Shop</th>
+              <th className="p-3 border-b">Online</th>
+              <th className="p-3 border-b">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {itemTotalsToday.length === 0 ? (
+              <tr>
+                <td className="p-3 border-b text-gray-500" colSpan={4}>No items sold today yet.</td>
+              </tr>
+            ) : (
+              itemTotalsToday.map((row) => (
+                <tr key={row.key} className="odd:bg-gray-50/60">
+                  <td className="p-3 border-b">{row.name}</td>
+                  <td className="p-3 border-b">{row.instore}</td>
+                  <td className="p-3 border-b">{row.online}</td>
+                  <td className="p-3 border-b">{row.total}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
       {/* Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-8">
         <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
@@ -350,26 +413,90 @@ export default function AdminDashboard() {
                   ? "bg-amber-100 text-amber-700"
                   : "bg-gray-100 text-gray-600";
 
+              const isOpen = selectedOrder && String(selectedOrder?._id) === String(order?._id);
+
               return (
-                <tr
-                  key={order?._id || `${idx}`}
-                  className={`cursor-pointer ${idx % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100`}
-                  onClick={() => setSelectedOrder(order)}
-                >
-                  <td className="p-3 border-b">{order?._id || "-"}</td>
-                  <td className="p-3 border-b">{orderName}</td>
-                  <td className="p-3 border-b">{money(order?.total)}</td>
-                  <td className="p-3 border-b capitalize">{type || "-"}</td>
-                  <td className="p-3 border-b">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold capitalize ${badge}`}>
-                      {pm === "upi" ? "transfer" : order?.paymentMode || "--"}
-                    </span>
-                  </td>
-                  <td className="p-3 border-b">{order?.customerName || "-"}</td>
-                  <td className="p-3 border-b">{address || "-"}</td>
-                  <td className="p-3 border-b">{fmtDate(order?.createdAt)}</td>
-                  <td className="p-3 border-b">{fmtTime(order?.createdAt)}</td>
-                </tr>
+                <Fragment key={order?._id || idx}>
+                  <tr
+                    className={`cursor-pointer ${idx % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100`}
+                    onClick={() =>
+                      setSelectedOrder((prev) =>
+                        prev && String(prev?._id) === String(order?._id) ? null : order
+                      )
+                    }
+                  >
+                    <td className="p-3 border-b">{order?._id || "-"}</td>
+                    <td className="p-3 border-b">{orderName}</td>
+                    <td className="p-3 border-b">{money(order?.total)}</td>
+                    <td className="p-3 border-b capitalize">{type || "-"}</td>
+                    <td className="p-3 border-b">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold capitalize ${badge}`}>
+                        {pm === "upi" ? "transfer" : order?.paymentMode || "--"}
+                      </span>
+                    </td>
+                    <td className="p-3 border-b">{order?.customerName || "-"}</td>
+                    <td className="p-3 border-b">{address || "-"}</td>
+                    <td className="p-3 border-b">{fmtDate(order?.createdAt)}</td>
+                    <td className="p-3 border-b">{fmtTime(order?.createdAt)}</td>
+                  </tr>
+
+                  {isOpen && (
+                    <tr className="bg-white/90">
+                      <td className="p-3 border-b" colSpan={9}>
+                        {/* Clicking anywhere in dropdown closes it */}
+                        <div
+                          className="bg-white w-full p-6 rounded-2xl shadow-xl relative border border-gray-200 cursor-pointer"
+                          onClick={() => setSelectedOrder(null)}
+                        >
+                          <h2 className="text-xl font-bold mb-4">Order Details ({order?._id || "-"})</h2>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                            <p><strong>Customer:</strong> {order?.customerName || "-"}</p>
+                            <p><strong>Phone:</strong> {order?.phone || "-"}</p>
+                            <p>
+                              <strong>Address:</strong>{" "}
+                              {(order?.orderType || "").toLowerCase() === "online"
+                                ? `${order?.houseNumber || ""} ${order?.street || ""} ${order?.landmark || ""}`.trim()
+                                : "In-store"}
+                            </p>
+                            <p className="capitalize"><strong>Type:</strong> {(order?.orderType || "-").toLowerCase()}</p>
+                            <p>
+                              <strong>Payment:</strong>{" "}
+                              {(String(order?.paymentMode || "").toLowerCase() === "upi"
+                                ? "transfer"
+                                : order?.paymentMode) || "--"}
+                            </p>
+                            <p><strong>Total:</strong> {money(order?.total)}</p>
+                            <p><strong>Date:</strong> {fmtDate(order?.createdAt)}</p>
+                            <p><strong>Time:</strong> {fmtTime(order?.createdAt)}</p>
+                          </div>
+
+                          <h3 className="mt-4 font-bold">Items</h3>
+                          <ul className="list-disc list-inside text-sm">
+                            {(Array.isArray(order?.items) ? order.items : []).map((item, i) => (
+                              <li key={i}>
+                                {item?.name || "Item"} — {Number(item?.quantity || 0)} × {money(item?.price)}
+                              </li>
+                            ))}
+                          </ul>
+
+                          <div className="mt-6 flex justify-end">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeOrder(order?._id);
+                              }}
+                              disabled={removing}
+                              className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-rose-600 to-red-600 shadow hover:opacity-95 active:scale-95 disabled:opacity-50 transition"
+                            >
+                              {removing ? "Removing..." : "Remove Order"}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -395,63 +522,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Order Detail Modal */}
-      {selectedOrder && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white w-11/12 md:w-2/3 lg:w-1/2 p-6 rounded-2xl shadow-xl relative">
-            <button
-              className="absolute top-3 right-3 bg-red-600 text-white px-3 py-1 rounded-lg shadow hover:bg-red-700"
-              onClick={() => setSelectedOrder(null)}
-            >
-              ✕
-            </button>
-
-            <h2 className="text-xl font-bold mb-4">Order Details ({selectedOrder?._id || "-"})</h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <p><strong>Customer:</strong> {selectedOrder?.customerName || "-"}</p>
-              <p><strong>Phone:</strong> {selectedOrder?.phone || "-"}</p>
-              <p>
-                <strong>Address:</strong>{" "}
-                {(selectedOrder?.orderType || "").toLowerCase() === "online"
-                  ? `${selectedOrder?.houseNumber || ""} ${selectedOrder?.street || ""} ${selectedOrder?.landmark || ""}`.trim()
-                  : "In-store"}
-              </p>
-              <p className="capitalize"><strong>Type:</strong> {(selectedOrder?.orderType || "-").toLowerCase()}</p>
-              <p>
-                <strong>Payment:</strong>{" "}
-                {(String(selectedOrder?.paymentMode || "").toLowerCase() === "upi"
-                  ? "transfer"
-                  : selectedOrder?.paymentMode) || "--"}
-              </p>
-              <p><strong>Total:</strong> {money(selectedOrder?.total)}</p>
-              <p><strong>Date:</strong> {fmtDate(selectedOrder?.createdAt)}</p>
-              <p><strong>Time:</strong> {fmtTime(selectedOrder?.createdAt)}</p>
-            </div>
-
-            <h3 className="mt-4 font-bold">Items</h3>
-            <ul className="list-disc list-inside text-sm">
-              {(Array.isArray(selectedOrder?.items) ? selectedOrder.items : []).map((item, i) => (
-                <li key={i}>
-                  {item?.name || "Item"} — {Number(item?.quantity || 0)} × {money(item?.price)}
-                </li>
-              ))}
-            </ul>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => removeOrder(selectedOrder?._id)}
-                disabled={removing}
-                className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-rose-600 to-red-600 shadow hover:opacity-95 active:scale-95 disabled:opacity-50 transition"
-              >
-                {removing ? "Removing..." : "Remove Order"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Modal */}
+      {/* Summary Modal (unchanged) */}
       {showSummary && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white w-11/12 md:w-[520px] p-6 rounded-2xl shadow-xl relative">
