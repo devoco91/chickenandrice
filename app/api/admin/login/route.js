@@ -1,7 +1,7 @@
 import { BACKEND } from "../../_lib/backend";
 
 export async function POST(req) {
-  const url = `${BACKEND}/api/delivery/login`;
+  const url = `${BACKEND}/api/admin/login`;
   const body = await req.text();
   const res = await fetch(url, {
     method: "POST",

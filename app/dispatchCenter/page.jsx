@@ -7,33 +7,19 @@ import {
 import Link from 'next/link';
 
 const API_BASE = '/api';
-
-// normalize status values consistently
 const normalizeStatus = (s) =>
-  (s ?? 'pending')
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace('canceled', 'cancelled');
+  (s ?? 'pending').toString().trim().toLowerCase().replace(/\s+/g, '-').replace('canceled', 'cancelled');
 
 export default function DeliveryCenter() {
   const [orders, setOrders] = useState([]);
   const [deliverymen, setDeliverymen] = useState([]);
   const [filterStatus, setFilterStatus] = useState('all');
-
   const [assigningId, setAssigningId] = useState(null);
   const [selectedDeliveryman, setSelectedDeliveryman] = useState('');
-
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  // Banners: { type: 'success' | 'error' | 'info', text: string }
   const [banner, setBanner] = useState(null);
 
-  const getToken = () =>
-    (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
-
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
   const authHeaders = () => {
     const token = getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -42,10 +28,8 @@ export default function DeliveryCenter() {
   const safeFetch = async (url, options = {}) => {
     const res = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      cache: 'no-store',
     });
     if (res.status === 401) {
       alert('Your session expired. Please log in again.');
@@ -68,8 +52,6 @@ export default function DeliveryCenter() {
       const data = await safeFetch(`${API_BASE}/orders/online`, { headers: authHeaders() });
       setOrders(Array.isArray(data) ? data : data.orders || data.data || []);
     } catch (err) {
-      console.error('❌ Failed to fetch orders:', err);
-      setError(err.message || 'Failed to fetch orders');
       setBanner({ type: 'error', text: err.message || 'Failed to fetch orders' });
     }
   };
@@ -79,16 +61,14 @@ export default function DeliveryCenter() {
       const data = await safeFetch(`${API_BASE}/delivery/all`, { headers: authHeaders() });
       setDeliverymen(Array.isArray(data) ? data : data.deliverymen || data.data || []);
     } catch (err) {
-      console.error('❌ Failed to fetch deliverymen:', err);
-      setDeliverymen([]);
       setBanner({ type: 'error', text: err.message || 'Failed to fetch deliverymen' });
+      setDeliverymen([]);
     }
   };
 
   useEffect(() => {
     setLoading(true);
     Promise.all([fetchOrders(), fetchDeliverymen()]).finally(() => setLoading(false));
-
     const interval = setInterval(() => {
       fetchOrders();
       fetchDeliverymen();
@@ -96,7 +76,6 @@ export default function DeliveryCenter() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-dismiss banner
   useEffect(() => {
     if (!banner) return;
     const t = setTimeout(() => setBanner(null), 4000);
@@ -114,8 +93,8 @@ export default function DeliveryCenter() {
       return;
     }
     try {
-      const updated = await safeFetch(`${API_BASE}/orders/${orderId}`, {
-        method: 'PUT',
+      const updated = await safeFetch(`${API_BASE}/orders/${orderId}/assign`, {
+        method: 'PATCH',
         headers: { ...authHeaders() },
         body: JSON.stringify({ assignedTo: deliverymanId, status: 'assigned' }),
       });
@@ -124,24 +103,20 @@ export default function DeliveryCenter() {
       setSelectedDeliveryman('');
       setBanner({ type: 'success', text: `Order assigned to ${updated?.assignedTo?.name || 'deliveryman'}.` });
     } catch (err) {
-      console.error('❌ Error assigning deliveryman:', err);
-      alert(err.message || 'Failed to assign deliveryman');
       setBanner({ type: 'error', text: err.message || 'Failed to assign deliveryman' });
     }
   };
 
   const updateStatus = async (orderId, status) => {
     try {
-      const updated = await safeFetch(`${API_BASE}/orders/${orderId}`, {
-        method: 'PUT',
+      const updated = await safeFetch(`${API_BASE}/orders/${orderId}/status`, {
+        method: 'PATCH',
         headers: { ...authHeaders() },
         body: JSON.stringify({ status }),
       });
       setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
       setBanner({ type: 'success', text: `Status updated to ${normalizeStatus(updated?.status).toUpperCase()}.` });
     } catch (err) {
-      console.error('❌ Error updating status:', err);
-      alert(err.message || 'Failed to update status');
       setBanner({ type: 'error', text: err.message || 'Failed to update status' });
     }
   };
@@ -156,39 +131,38 @@ export default function DeliveryCenter() {
   const renderTimeline = (order) => {
     const ns = normalizeStatus(order?.status);
     const steps = [
-      { key: 'pending', label: 'Order Created', icon: <Clock className="w-4 h-4" /> },
-      { key: 'assigned', label: 'Assigned to Deliveryman', icon: <User className="w-4 h-4" /> },
-      { key: 'in-transit', label: 'In Transit', icon: <Truck className="w-4 h-4" /> },
-      { key: 'delivered', label: 'Delivered', icon: <CheckCircle className="w-4 h-4" /> },
-      { key: 'cancelled', label: 'Cancelled', icon: <XCircle className="w-4 h-4" /> },
+      { key: 'pending', label: 'Order Created' },
+      { key: 'assigned', label: 'Assigned to Deliveryman' },
+      { key: 'in-transit', label: 'In Transit' },
+      { key: 'delivered', label: 'Delivered' },
+      { key: 'cancelled', label: 'Cancelled' },
     ];
-    const currentIndex = steps.findIndex((s) => s.key === ns);
-
+    const current = steps.findIndex((s) => s.key === ns);
     return (
       <div className="flex flex-col gap-2">
-        {steps.map((step, idx) => (
-          <div key={step.key} className="flex items-center gap-2">
+        {steps.map((s, idx) => (
+          <div key={s.key} className="flex items-center gap-2">
             <span
               className={`p-2 rounded-full ${
-                idx <= currentIndex
-                  ? step.key === 'cancelled'
+                idx <= current
+                  ? s.key === 'cancelled'
                     ? 'bg-red-100 text-red-600'
                     : 'bg-green-100 text-green-600'
                   : 'bg-gray-100 text-gray-400'
               }`}
             >
-              {step.icon}
+              ●
             </span>
             <span
               className={`text-sm ${
-                idx <= currentIndex
-                  ? step.key === 'cancelled'
+                idx <= current
+                  ? s.key === 'cancelled'
                     ? 'text-red-600 font-medium'
                     : 'text-green-700 font-medium'
                   : 'text-gray-400'
               }`}
             >
-              {step.label}
+              {s.label}
             </span>
           </div>
         ))}
@@ -200,16 +174,13 @@ export default function DeliveryCenter() {
     try {
       localStorage.removeItem('token');
     } catch {}
-    if (typeof window !== 'undefined') {
-      window.location.assign('/deliverylogin');
-    }
+    if (typeof window !== 'undefined') window.location.assign('/deliverylogin');
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4">
       <div className="max-w-6xl mx-auto">
-
-        {/* Top actions: nav + logout */}
+        {/* Top actions */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex gap-4">
             <Link
@@ -225,7 +196,6 @@ export default function DeliveryCenter() {
               Shop Order <ArrowRightCircle className="w-5 h-5" />
             </Link>
           </div>
-
           <button
             onClick={logout}
             className="px-4 py-2 rounded-xl bg-gray-800 text-white hover:opacity-95"
@@ -266,27 +236,29 @@ export default function DeliveryCenter() {
         {/* Filter Tabs */}
         <div className="flex justify-center mb-8">
           <div className="inline-flex bg-white rounded-2xl p-2 shadow-lg">
-            {['all','pending','assigned','in-transit','delivered','cancelled'].map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-6 py-3 rounded-xl font-medium transition duration-200 ${
-                  filterStatus === status
-                    ? status === 'delivered'
-                      ? 'bg-green-500 text-white shadow-lg scale-105'
-                      : status === 'cancelled'
-                      ? 'bg-red-500 text-white shadow-lg scale-105'
-                      : 'bg-blue-500 text-white shadow-lg scale-105'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {status.replace('-', ' ').toUpperCase()}
-              </button>
-            ))}
+            {['all', 'pending', 'assigned', 'in-transit', 'delivered', 'cancelled'].map(
+              (status) => (
+                <button
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  className={`px-6 py-3 rounded-xl font-medium transition ${
+                    filterStatus === status
+                      ? status === 'delivered'
+                        ? 'bg-green-500 text-white shadow-lg scale-105'
+                        : status === 'cancelled'
+                        ? 'bg-red-500 text-white shadow-lg scale-105'
+                        : 'bg-blue-500 text-white shadow-lg scale-105'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {status.replace('-', ' ').toUpperCase()}
+                </button>
+              )
+            )}
           </div>
         </div>
 
-        {/* Deliverymen Section */}
+        {/* === Deliverymen (Admin overview) === */}
         <div className="bg-white rounded-2xl shadow mb-6 p-4">
           <h2 className="text-lg font-semibold mb-3">Deliverymen</h2>
           {deliverymen.length === 0 ? (
@@ -294,14 +266,21 @@ export default function DeliveryCenter() {
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {deliverymen.map((dm) => (
-                <div key={dm._id} className="border rounded-xl p-3 flex items-center justify-between">
+                <div
+                  key={dm._id}
+                  className="border rounded-xl p-3 flex items-center justify-between"
+                >
                   <div>
                     <p className="font-medium">{dm.name}</p>
-                    <p className="text-sm text-gray-600">{dm.phone || dm.email}</p>
+                    <p className="text-sm text-gray-600">
+                      {dm.phone || dm.email || 'No contact'}
+                    </p>
                   </div>
                   <span
                     className={`text-xs px-3 py-1 rounded-full font-semibold ${
-                      dm.isOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      dm.isOnline
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-red-100 text-red-700'
                     }`}
                   >
                     {dm.isOnline ? 'Online' : 'Offline'}
@@ -316,14 +295,18 @@ export default function DeliveryCenter() {
         {loading ? (
           <p className="text-center text-gray-600">Loading...</p>
         ) : filteredOrders.length === 0 ? (
-          <p className="text-center text-gray-600">No {filterStatus} orders at the moment.</p>
+          <p className="text-center text-gray-600">
+            No {filterStatus} orders at the moment.
+          </p>
         ) : (
           <div className="space-y-6">
             {filteredOrders.map((order) => {
               const ns = normalizeStatus(order?.status);
-
               return (
-                <div key={order._id} className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition overflow-hidden">
+                <div
+                  key={order._id}
+                  className="bg-white rounded-3xl shadow-lg hover:shadow-xl transition overflow-hidden"
+                >
                   {/* Header */}
                   <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-8 py-6 border-b flex justify-between items-center">
                     <div className="flex items-center gap-4">
@@ -333,7 +316,10 @@ export default function DeliveryCenter() {
                       <p className="text-gray-600 flex items-center gap-2">
                         <Clock className="w-4 h-4" />
                         {new Date(order.createdAt).toLocaleDateString('en-GB')} at{' '}
-                        {new Date(order.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(order.createdAt).toLocaleTimeString('en-GB', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </p>
                     </div>
                     <span className="px-6 py-2 rounded-xl font-semibold text-sm bg-blue-100 text-blue-700">
@@ -349,10 +335,16 @@ export default function DeliveryCenter() {
                         <User className="w-5 h-5 text-blue-600" />
                         Customer
                       </h3>
-                      <p><strong>{order.customerName}</strong></p>
+                      <p>
+                        <strong>{order.customerName}</strong>
+                      </p>
                       <p className="text-sm text-gray-600">{order.phone}</p>
-                      <p className="text-sm">{order.houseNumber}, {order.street}</p>
-                      {order.landmark && <p className="text-sm italic">{order.landmark}</p>}
+                      <p className="text-sm">
+                        {order.houseNumber}, {order.street}
+                      </p>
+                      {order.landmark && (
+                        <p className="text-sm italic">{order.landmark}</p>
+                      )}
                     </div>
 
                     {/* Order */}
@@ -361,9 +353,13 @@ export default function DeliveryCenter() {
                         <Package className="w-5 h-5 text-blue-600" />
                         Order
                       </h3>
-                      <p><strong>{order.items?.[0]?.name || 'N/A'}</strong></p>
+                      <p>
+                        <strong>{order.items?.[0]?.name || 'N/A'}</strong>
+                      </p>
                       <p className="text-sm">Payment: {order.paymentMode}</p>
-                      <p className="text-sm font-bold">₦{order.total?.toLocaleString()}</p>
+                      <p className="text-sm font-bold">
+                        ₦{order.total?.toLocaleString()}
+                      </p>
                       {order.assignedTo && (
                         <p className="text-sm text-green-600">
                           Assigned to: {order.assignedTo?.name}
@@ -379,18 +375,27 @@ export default function DeliveryCenter() {
                             <>
                               <select
                                 value={selectedDeliveryman}
-                                onChange={(e) => setSelectedDeliveryman(e.target.value)}
+                                onChange={(e) =>
+                                  setSelectedDeliveryman(e.target.value)
+                                }
                                 className="mb-3 w-full p-2 border rounded"
                               >
                                 <option value="">Select Deliveryman</option>
-                                {deliverymen.filter((dm) => dm.isOnline).map((dm) => (
-                                  <option key={dm._id} value={dm._id}>
-                                    {dm.name} (Online)
-                                  </option>
-                                ))}
+                                {deliverymen
+                                  .filter((dm) => dm.isOnline)
+                                  .map((dm) => (
+                                    <option key={dm._id} value={dm._id}>
+                                      {dm.name} (Online)
+                                    </option>
+                                  ))}
                               </select>
                               <button
-                                onClick={() => updateDeliveryman(order._id, selectedDeliveryman)}
+                                onClick={() =>
+                                  updateDeliveryman(
+                                    order._id,
+                                    selectedDeliveryman
+                                  )
+                                }
                                 disabled={!selectedDeliveryman}
                                 className={`w-full text-white py-2 rounded-lg ${
                                   selectedDeliveryman
@@ -422,7 +427,7 @@ export default function DeliveryCenter() {
                         </>
                       )}
 
-                      {ns === 'assigned' && (
+                      {(ns === 'assigned' || ns === 'accepted') && (
                         <button
                           onClick={() => updateStatus(order._id, 'in-transit')}
                           className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"

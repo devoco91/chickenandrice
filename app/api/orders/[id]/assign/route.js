@@ -1,16 +1,17 @@
-import { NextResponse } from "next/server";
+import { BACKEND } from "../../../_lib/backend";
 
-let orders = [
-  { _id: "1", status: "pending", assignedTo: null },
-];
+export const dynamic = "force-dynamic";
 
-export async function PUT(req, { params }) {
-  const { id } = params;
-  const { deliverymanId } = await req.json();
-
-  orders = orders.map(o =>
-    o._id === id ? { ...o, assignedTo: deliverymanId, status: "assigned" } : o
-  );
-
-  return NextResponse.json({ message: "Deliveryman assigned", id, deliverymanId });
+export async function PATCH(req, { params }) {
+  const url = `${BACKEND}/api/orders/${encodeURIComponent(params.id)}/assign`;
+  const body = await req.text();
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "accept": "application/json" },
+    body,
+    cache: "no-store",
+    redirect: "follow",
+  });
+  const buf = await res.arrayBuffer();
+  return new Response(buf, { status: res.status, headers: { "content-type": res.headers.get("content-type") || "application/json" } });
 }

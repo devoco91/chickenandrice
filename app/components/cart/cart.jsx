@@ -21,6 +21,8 @@ const UPLOADS_BASE =
   process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
   (RAW_API ? RAW_API.replace(/\/api$/, '') + '/uploads' : '/uploads');
 
+const PACK_PRICE = 200; // ₦200 per pack
+
 const getImageUrl = (val) => {
   let s = val;
   if (!s) return '/placeholder.png';
@@ -40,7 +42,6 @@ const DrinksSlider = ({ items, onAdd }) => {
   if (!items?.length) return null;
   return (
     <div className="relative bg-white rounded-3xl shadow-lg border border-gray-100 p-8">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Star className="w-7 h-7 text-yellow-500 fill-current" />
@@ -48,7 +49,7 @@ const DrinksSlider = ({ items, onAdd }) => {
         </div>
       </div>
 
-      {/* One pair of custom arrows (responsive positioning) */}
+      {/* single pair of arrows */}
       <button
         aria-label="Previous"
         className="drinks-prev absolute z-10 inline-flex items-center justify-center rounded-full border border-red-200 bg-white
@@ -70,7 +71,7 @@ const DrinksSlider = ({ items, onAdd }) => {
         modules={[Autoplay, Navigation]}
         autoplay={{ delay: 4500, disableOnInteraction: false }}
         loop={true}
-        navigation={{ prevEl: '.drinks-prev', nextEl: '.drinks-next' }} // bind to the single pair above
+        navigation={{ prevEl: '.drinks-prev', nextEl: '.drinks-next' }}
         spaceBetween={16}
         slidesPerView={1}
         breakpoints={{
@@ -121,7 +122,7 @@ const CartPage = () => {
   const cartItems = useSelector((state) => state.cart.cartItem || []);
   const [suggestedItems, setSuggestedItems] = useState([]);
 
-  // Fetch drinks only
+  // Drinks only (for slider)
   useEffect(() => {
     const fetchSuggestedItems = async () => {
       try {
@@ -150,22 +151,38 @@ const CartPage = () => {
     }
   }, [dispatch]);
 
-  // Totals
-  const subtotal = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
-  const deliveryFee = 500;
-  const tax = subtotal * 0.02;
-  const total = subtotal + deliveryFee + tax;
+  // --- Packaging logic (food only) ---
+  const foodItems = cartItems.filter((it) => !it.isDrink); // drinks have isDrink === true
+  const packCount = foodItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+  const packagingCost = packCount * PACK_PRICE;
 
-  // Sync totals to Redux
+  // Totals (tax applied on items + packaging)
+  const itemsSubtotal = cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
+  const subtotal = itemsSubtotal; // display as items-only (packaging shown as its own line)
+  const deliveryFee = 500;
+ const taxableBase = subtotal;
+  const tax = taxableBase * 0.02;
+  const total = taxableBase + deliveryFee + tax;
+
+  // Sync totals (include packaging details so checkout can use it)
   useEffect(() => {
-    dispatch(setOrderDetails({ subtotal, deliveryFee, tax, total }));
-  }, [subtotal, deliveryFee, tax, total, dispatch]);
+    dispatch(
+      setOrderDetails({
+        subtotal,
+        packagingCost,
+        packagingCount: packCount,
+        deliveryFee,
+        tax,
+        total,
+      })
+    );
+  }, [subtotal, packagingCost, packCount, deliveryFee, tax, total, dispatch]);
 
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
   const handleDecrement = (id) => dispatch(decrementQuantity(id));
   const handleRemove = (id) => dispatch(removeItemCart(id));
   const handleAddSuggestion = (item) => {
-    const cartItem = { ...item, quantity: 1, isDrink: true };
+    const cartItem = { ...item, quantity: 1, isDrink: true }; // drinks stay excluded from packs
     dispatch(addItemCart(cartItem));
   };
 
@@ -178,7 +195,7 @@ const CartPage = () => {
             {cartItems.length === 0 ? '🛒 Your Cart is Empty' : '🛍️ Your Cart'}
           </h1>
 
-          {/* ===== Empty Cart Premium State (drinks now also visible) ===== */}
+          {/* Empty Cart + Drinks */}
           {cartItems.length === 0 && (
             <>
               <div className="flex flex-col items-center justify-center text-center py-20 px-6 bg-white rounded-3xl shadow-lg border border-gray-200 animate-fadeIn">
@@ -197,89 +214,109 @@ const CartPage = () => {
                 </Link>
               </div>
 
-              {/* Suggested Drinks visible even when cart is empty */}
               <div className="mt-10">
                 <DrinksSlider items={suggestedItems} onAdd={handleAddSuggestion} />
               </div>
             </>
           )}
 
-          {/* ===== Cart + Suggested Drinks (Top Row) ===== */}
+          {/* Cart + Drinks side-by-side */}
           {cartItems.length > 0 && (
             <div
               className={`grid grid-cols-1 ${
                 suggestedItems.length > 0 ? 'lg:grid-cols-2' : 'lg:grid-cols-1'
               } gap-10 mb-12 animate-fadeIn`}
             >
-              {/* Cart Items (left) */}
+              {/* Cart Items */}
               <div className="space-y-6">
-                {cartItems.map((item) => (
-                  <div
-                    key={item._id}
-                    className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300"
-                  >
-                    {item.image && (
-                      <img
-                        src={getImageUrl(item.image)}
-                        alt={item.name}
-                        className="w-24 h-24 object-cover rounded-xl"
-                        onError={(e) => (e.currentTarget.src = '/placeholder.png')}
-                      />
-                    )}
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
-                      <p className="text-red-600 font-bold text-base">
-                        ₦{item.price.toLocaleString()}
-                      </p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <button
-                          onClick={() => handleDecrement(item._id)}
-                          className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="font-medium">{item.quantity}</span>
-                        <button
-                          onClick={() => handleIncrement(item._id)}
-                          className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleRemove(item._id)}
-                      className="text-gray-400 hover:text-red-600 transition"
+                {cartItems.map((item) => {
+                  const isFood = !item.isDrink;
+                  return (
+                    <div
+                      key={item._id}
+                      className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300"
                     >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                ))}
+                      {item.image && (
+                        <img
+                          src={getImageUrl(item.image)}
+                          alt={item.name}
+                          className="w-24 h-24 object-cover rounded-xl"
+                          onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                        />
+                      )}
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
+                        <p className="text-red-600 font-bold text-base">
+                          ₦{item.price.toLocaleString()}
+                        </p>
+
+                        {/* Small hint: pack count per food item */}
+                        {isFood && (
+                          <p className="text-xs text-gray-500 mt-1">Pack × {item.quantity}</p>
+                        )}
+
+                        <div className="flex items-center gap-3 mt-2">
+                          <button
+                            onClick={() => handleDecrement(item._id)}
+                            className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="font-medium">{item.quantity}</span>
+                          <button
+                            onClick={() => handleIncrement(item._id)}
+                            className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRemove(item._id)}
+                        className="text-gray-400 hover:text-red-600 transition"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Suggested Drinks (right, only when cart has items) */}
+              {/* Drinks slider (only when we already have items) */}
               {suggestedItems.length > 0 && (
                 <DrinksSlider items={suggestedItems} onAdd={handleAddSuggestion} />
               )}
             </div>
           )}
 
-          {/* ===== Order Summary (Bottom, full width) ===== */}
+          {/* Order Summary */}
           {cartItems.length > 0 && (
             <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-gray-200 p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Order Summary</h2>
               <div className="space-y-4 text-gray-700">
                 <div className="flex justify-between">
-                  <span>Subtotal</span>
+                  <span>Subtotal (items)</span>
                   <span>₦{subtotal.toLocaleString()}</span>
                 </div>
+
+                {/* Packaging row (food only) */}
+                <div className="flex justify-between">
+                  <span>
+                    Packaging — Packs × {packCount}{' '}
+                    <span className="text-gray-500">(₦{PACK_PRICE.toLocaleString()} each)</span>
+                  </span>
+                  <span>₦{packagingCost.toLocaleString()}</span>
+                </div>
+
                 <div className="flex justify-between">
                   <span>Delivery Fee</span>
                   <span>₦{deliveryFee.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Tax (2%)</span>
-                  <span>₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  <span>
+                    ₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
                 </div>
                 <div className="border-t pt-4 flex justify-between font-extrabold text-xl text-gray-900">
                   <span>Total</span>

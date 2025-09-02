@@ -1,52 +1,29 @@
-// app/api/orders/route.js
-import { NextResponse } from "next/server";
+import { BACKEND } from "../_lib/backend";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
-const BACKEND =
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://fastfolderbackend.fly.dev"
-    : "http://localhost:5000");
-
-// Copy request headers except hop-by-hop ones and force identity (no gzip)
-function copyReqHeaders(req) {
-  const headers = new Headers();
+function passthroughHeaders(req) {
+  const h = new Headers();
   for (const [k, v] of req.headers.entries()) {
-    if (/^(host|connection|content-length|transfer-encoding)$/i.test(k)) continue;
-    headers.set(k, v);
+    if (/^(host|connection|content-length)$/i.test(k)) continue;
+    h.set(k, v);
   }
-  headers.set("accept-encoding", "identity"); // 🔑 avoid compressed bytes
-  if (!headers.has("accept")) headers.set("accept", "application/json");
-  return headers;
-}
-
-// Keep only safe/important response headers and enforce no-store
-function copyResHeaders(src) {
-  const out = new Headers();
-  const allow = ["content-type", "content-encoding", "cache-control", "etag", "date", "vary"];
-  for (const [k, v] of src.entries()) {
-    if (allow.includes(k.toLowerCase())) out.set(k, v);
-  }
-  out.set("cache-control", "no-store, no-cache, must-revalidate");
-  return out;
+  return h;
 }
 
 async function proxy(method, req) {
   const search = req.nextUrl?.search || "";
   const url = `${BACKEND}/api/orders${search}`;
-  const headers = copyReqHeaders(req);
-
+  const incomingCT = req.headers.get("content-type") || "";
+  const headers = passthroughHeaders(req);
   let body;
+
   if (method !== "GET" && method !== "HEAD") {
-    const ct = req.headers.get("content-type") || "";
-    if (ct.includes("multipart/form-data")) {
+    if (incomingCT.includes("multipart/form-data")) {
       const fd = await req.formData();
       body = fd;
-      headers.delete("content-type"); // let fetch set boundary
-    } else if (ct.includes("application/json")) {
+      headers.delete("content-type");
+    } else if (incomingCT.includes("application/json")) {
       body = await req.text();
       headers.set("content-type", "application/json");
     } else {
@@ -55,21 +32,13 @@ async function proxy(method, req) {
   }
 
   const res = await fetch(url, { method, headers, body, cache: "no-store", redirect: "follow" });
-
-  return new Response(res.body, {
+  const buf = await res.arrayBuffer();
+  return new Response(buf, {
     status: res.status,
-    headers: copyResHeaders(res.headers),
+    headers: { "content-type": res.headers.get("content-type") || "application/json" },
   });
 }
 
-export async function GET(req) {
-  try { return await proxy("GET", req); }
-  catch (e) { console.error("Proxy GET /api/orders failed:", e); return NextResponse.json({ error: "Bad Gateway" }, { status: 502 }); }
-}
-export async function POST(req) {
-  try { return await proxy("POST", req); }
-  catch (e) { console.error("Proxy POST /api/orders failed:", e); return NextResponse.json({ error: "Bad Gateway" }, { status: 502 }); }
-}
-export async function OPTIONS() {
-  return NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
-}
+export async function GET(req)  { return proxy("GET", req); }
+export async function POST(req) { return proxy("POST", req); }
+export async function OPTIONS() { return new Response(null, { status: 200 }); }

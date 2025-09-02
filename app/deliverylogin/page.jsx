@@ -5,21 +5,16 @@ import axios from 'axios';
 import Cookies from 'js-cookie';
 import { Lock, Mail, Truck, Eye, EyeOff } from 'lucide-react';
 
-const DeliveryLoginPage = () => {
+export default function DeliveryLoginPage() {
   const router = useRouter();
-
-  // form
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-
-  // ui
   const [isLoading, setIsLoading] = useState(false);
   const [savedEmails, setSavedEmails] = useState([]);
-  const [banner, setBanner] = useState(null); // { type: 'success'|'error'|'info', text: string }
+  const [banner, setBanner] = useState(null);
 
-  // Load saved emails on mount
   useEffect(() => {
     try {
       const emails = JSON.parse(localStorage.getItem("savedEmails") || "[]");
@@ -27,7 +22,6 @@ const DeliveryLoginPage = () => {
     } catch {}
   }, []);
 
-  // Auto-dismiss banners
   useEffect(() => {
     if (!banner) return;
     const t = setTimeout(() => setBanner(null), 4000);
@@ -35,67 +29,49 @@ const DeliveryLoginPage = () => {
   }, [banner]);
 
   const validate = () => {
-    if (!email || !password) {
-      setBanner({ type: 'error', text: 'Please fill in all fields.' });
-      return false;
-    }
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      setBanner({ type: 'error', text: 'Please enter a valid email address.' });
-      return false;
-    }
-    if (password.length < 4) {
-      setBanner({ type: 'error', text: 'Password is too short.' });
-      return false;
-    }
+    if (!email || !password) { setBanner({type:'error',text:'Please fill in all fields.'}); return false; }
+    if (!/^\S+@\S+\.\S+$/.test(email)) { setBanner({type:'error',text:'Please enter a valid email address.'}); return false; }
+    if (password.length < 4) { setBanner({type:'error',text:'Password is too short.'}); return false; }
     return true;
   };
 
+  async function tryLogin(endpoint) {
+    const url = `${endpoint}?ts=${Date.now()}`;
+    const res = await axios.post(url, { email, password }, {
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      validateStatus: () => true,
+    });
+    if (res.status >= 200 && res.status < 300) return { ok: true, data: res.data };
+    let body = res.data;
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch {} }
+    return { ok: false, status: res.status, message: body?.message || body?.error || res.statusText || 'Login failed' };
+  }
+
   const handleLogin = async () => {
     if (!validate()) return;
-
     try {
       setIsLoading(true);
       setBanner(null);
 
-      // Choose endpoint by email hint (kept)
-      const isAdmin = email.includes("admin") || email.endsWith("@admin.com");
-      const endpoint = isAdmin ? "/api/admin/login" : "/api/delivery/login";
-
-      // cache-bust + require JSON; keep axios for your stack
-      const url = `${endpoint}?ts=${Date.now()}`;
-      const res = await axios.post(
-        url,
-        { email, password },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-          },
-          // never send cached/stale responses
-          withCredentials: false,
-          validateStatus: () => true, // we'll handle status below
-        }
-      );
-
-      if (res.status < 200 || res.status >= 300) {
-        const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data || {});
-        throw new Error(`Login failed (${res.status}) ${res.statusText || ''} ${body?.slice?.(0,140) || ''}`);
+      const attempts = ["/api/admin/login", "/api/delivery/login"];
+      let result = null, firstError = null;
+      for (const ep of attempts) {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await tryLogin(ep);
+        if (r.ok) { result = r.data; break; }
+        if (!firstError) firstError = r;
+      }
+      if (!result) {
+        const msg = firstError?.message || "Login failed";
+        setBanner({ type: 'error', text: msg });
+        alert(msg);
+        return;
       }
 
-      // Some backends mislabel content-type; normalize to object
-      let data = res.data;
-      if (typeof data === 'string') {
-        try { data = JSON.parse(data); } catch {}
-      }
+      const token = result?.token;
+      const role  = result?.user?.role || result?.role;
+      if (!token || !role) throw new Error("Login response missing token or role");
 
-      const token = data?.token;
-      const role  = data?.user?.role ?? data?.role;
-
-      if (!token || !role) {
-        throw new Error("Login response missing token or role");
-      }
-
-      // Save token (cookie + localStorage)
       Cookies.set("token", token, {
         expires: 7,
         sameSite: "Lax",
@@ -103,7 +79,6 @@ const DeliveryLoginPage = () => {
       });
       localStorage.setItem("token", token);
 
-      // Save email only if "remember me"
       if (rememberMe) {
         try {
           let emails = JSON.parse(localStorage.getItem("savedEmails") || "[]");
@@ -117,33 +92,20 @@ const DeliveryLoginPage = () => {
       }
 
       setBanner({ type: 'success', text: 'Login successful. Redirecting…' });
-
-      // Redirect by role (kept)
-      if (role === "admin") {
-        router.push("/dispatchCenter");
-      } else if (role === "deliveryman") {
-        router.push("/deliverydashboard");
-      } else {
-        throw new Error("Unknown role: " + role);
-      }
+      if (role === "admin") router.push("/dispatchCenter");
+      else if (role === "deliveryman") router.push("/deliverydashboard");
+      else throw new Error("Unknown role: " + role);
 
     } catch (err) {
-      console.error("❌ Login error:", err);
-      const axiosMsg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        (typeof err?.response?.data === 'string' ? err.response.data : null);
-      const msg = axiosMsg || err?.message || "Login failed";
+      const msg = err?.message || "Login failed";
       setBanner({ type: 'error', text: msg });
-      alert(msg); // keep your original alert behavior
+      alert(msg);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleLogin();
-  };
+  const handleKeyDown = (e) => { if (e.key === 'Enter') handleLogin(); };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -156,129 +118,78 @@ const DeliveryLoginPage = () => {
           <p className="text-gray-600 mt-2">Sign in to access your dashboard</p>
         </div>
 
-        {/* Banner */}
         {banner && (
-          <div
-            role="status"
-            aria-live="polite"
-            className={`mb-4 p-3 rounded-lg text-sm ${
-              banner.type === 'success'
-                ? 'bg-green-100 text-green-800'
-                : banner.type === 'error'
-                ? 'bg-red-100 text-red-800'
-                : 'bg-blue-100 text-blue-800'
-            }`}
-          >
+          <div role="status" aria-live="polite" className={`mb-4 p-3 rounded-lg text-sm ${
+            banner.type === 'success' ? 'bg-green-100 text-green-800'
+              : banner.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
             {banner.text}
           </div>
         )}
 
-        <form
-          autoComplete="off"
-          className="space-y-6"
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleLogin();
-          }}
-        >
-          {/* Email Input with saved emails */}
+        <form autoComplete="off" className="space-y-6" onSubmit={(e)=>{e.preventDefault();handleLogin();}}>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
-                type="email"
-                list="email-options"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                type="email" list="email-options" value={email}
+                onChange={(e)=>setEmail(e.target.value)} onKeyDown={handleKeyDown}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter your email"
               />
               <datalist id="email-options">
-                {savedEmails.map((savedEmail, index) => (
-                  <option key={index} value={savedEmail} />
-                ))}
+                {savedEmails.map((s,i)=><option key={i} value={s} />)}
               </datalist>
             </div>
           </div>
 
-          {/* Password Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                type={showPassword ? 'text' : 'password'} autoComplete="new-password"
+                value={password} onChange={(e)=>setPassword(e.target.value)} onKeyDown={handleKeyDown}
+                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter your password"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
+              <button type="button" onClick={()=>setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}>
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
           </div>
 
-          {/* Remember Me + Forgot Password */}
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
+              <input type="checkbox" checked={rememberMe} onChange={e=>setRememberMe(e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
               <span className="text-sm text-gray-700">Remember me</span>
             </label>
             <div className="text-sm">
-              <a href="#" className="text-blue-600 hover:text-blue-700 font-medium">
-                Forgot password?
-              </a>
+              <a href="#" className="text-blue-600 hover:text-blue-700 font-medium">Forgot password?</a>
             </div>
           </div>
 
-          {/* Login Button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-          >
-            {isLoading ? (
-              <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Signing in...
-              </div>
-            ) : 'Sign In'}
+          <button type="submit" disabled={isLoading}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
+            {isLoading
+              ? <span className="flex items-center justify-center">
+                  <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></span>
+                  Signing in...
+                </span>
+              : 'Sign In'}
           </button>
         </form>
 
-        {/* Sign Up Link */}
         <div className="mt-8 text-center">
           <p className="text-gray-600">
             Don't have an account?{' '}
-            <a href="/deliverysignup" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">
-              Sign up here
-            </a>
+            <a href="/deliverysignup" className="text-blue-600 font-semibold hover:text-blue-700">Sign up here</a>
           </p>
         </div>
       </div>
     </div>
   );
-};
-
-export default DeliveryLoginPage;
+}

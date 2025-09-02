@@ -1,29 +1,23 @@
 'use client';
-
 import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle } from 'lucide-react';
 
 const API_BASE = '/api';
 const NOTIFICATION_ICON = '/favicon.ico';
 const DASHBOARD_PATH = '/deliverydashboard';
-const LOGOUT_REDIRECT = '/deliverylogin'; // fallback handled in logout()
+const LOGOUT_REDIRECT = '/deliverylogin';
 
-// --- Tabs ---
 function Tabs({ defaultValue, children }) {
   const [activeTab, setActiveTab] = useState(defaultValue);
   return (
     <div>
       <div className="flex gap-2">
         {React.Children.map(children, (child) =>
-          child.type === TabsList
-            ? React.cloneElement(child, { activeTab, setActiveTab })
-            : null
+          child.type === TabsList ? React.cloneElement(child, { activeTab, setActiveTab }) : null
         )}
       </div>
       {React.Children.map(children, (child) =>
-        child.type === TabsContent && child.props.value === activeTab
-          ? child.props.children
-          : null
+        child.type === TabsContent && child.props.value === activeTab ? child.props.children : null
       )}
     </div>
   );
@@ -32,92 +26,93 @@ function TabsList({ children, activeTab, setActiveTab }) {
   return (
     <div className="flex gap-2">
       {React.Children.map(children, (child) =>
-        React.cloneElement(child, {
-          active: activeTab === child.props.value,
-          onClick: () => setActiveTab(child.props.value),
-        })
+        React.cloneElement(child, { active: activeTab === child.props.value, onClick: () => setActiveTab(child.props.value) })
       )}
     </div>
   );
 }
 function TabsTrigger({ value, children, active, onClick }) {
   return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 rounded-xl ${
-        active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
-      }`}
-    >
+    <button onClick={onClick} className={`px-4 py-2 rounded-xl ${active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
       {children}
     </button>
   );
 }
-function TabsContent({ children }) {
-  return <div className="mt-4">{children}</div>;
-}
+function TabsContent({ children }) { return <div className="mt-4">{children}</div>; }
+
+const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+const getAuthHeaders = (token) => (token ? { Authorization: `Bearer ${token}` } : {});
+const normalizeOrderType = (val) => { const s = val == null ? 'online' : String(val).trim().toLowerCase(); return s === '' ? 'online' : s; };
 
 export default function DeliveryDashboard() {
   const [deliveries, setDeliveries] = useState([]);
   const [history, setHistory] = useState([]);
   const [profile, setProfile] = useState(null);
-
-  const [banner, setBanner] = useState(null); // { type: 'success'|'error'|'info', text: string }
-  const [notifPermission, setNotifPermission] = useState(null); // 'granted' | 'denied' | 'default' | null
+  const [banner, setBanner] = useState(null);
+  const [notifPermission, setNotifPermission] = useState(null);
 
   const audioRef = useRef(null);
   const seenIdsRef = useRef(new Set());
   const initialLoadRef = useRef(true);
 
-  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
-  const getAuthHeaders = (token) => (token ? { Authorization: `Bearer ${token}` } : {});
-
   const safeFetch = async (url, options = {}) => {
     const res = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      cache: 'no-store',
     });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    const text = await res.text();
+    let json = null; try { json = JSON.parse(text); } catch {}
+    if (!res.ok) { const msg = json?.message || json?.error || text || `HTTP ${res.status}`; throw new Error(msg); }
+    return json ?? {};
   };
 
-  // === FETCH ORDERS ===
+  // Active (assigned/in-transit/etc.) — online only
   const fetchDeliveries = async () => {
-    const token = getToken();
-    const data = await safeFetch(`${API_BASE}/delivery/orders/assigned`, {
-      headers: getAuthHeaders(token),
-    });
-    const list = Array.isArray(data) ? data : data.orders || [];
-    const onlyOnline = list.filter((o) => o.orderType === 'online'); // ✅ filter online orders only
+    try {
+      const token = getToken();
+      const data = await safeFetch(`${API_BASE}/delivery/orders/assigned`, { headers: getAuthHeaders(token) });
+      const list = Array.isArray(data) ? data : data.orders || [];
+      const onlyOnline = list.filter((o) => normalizeOrderType(o?.orderType) === 'online');
 
-    if (initialLoadRef.current) {
-      onlyOnline.forEach((o) => seenIdsRef.current.add(o._id));
-      initialLoadRef.current = false;
-    } else {
-      const newOnes = onlyOnline.filter((o) => !seenIdsRef.current.has(o._id));
-      newOnes.forEach((o) => notifyNewAssignment(o));
-      newOnes.forEach((o) => seenIdsRef.current.add(o._id));
+      if (initialLoadRef.current) {
+        onlyOnline.forEach((o) => seenIdsRef.current.add(o._id));
+        initialLoadRef.current = false;
+      } else {
+        const newOnes = onlyOnline.filter((o) => !seenIdsRef.current.has(o._id));
+        newOnes.forEach((o) => notifyNewAssignment(o));
+        newOnes.forEach((o) => seenIdsRef.current.add(o._id));
+      }
+
+      setDeliveries(onlyOnline.filter((o) => String(o.status).toLowerCase() !== 'delivered'));
+    } catch (e) {
+      setBanner({ type: 'error', text: `Could not load orders: ${e.message}` });
     }
-    setDeliveries(onlyOnline.filter((o) => o.status !== 'delivered'));
-    setHistory(onlyOnline.filter((o) => o.status === 'delivered'));
   };
 
-  // === FETCH PROFILE ===
+  // PERSISTED HISTORY from backend — online only
+  const fetchHistory = async () => {
+    try {
+      const token = getToken();
+      const data = await safeFetch(`${API_BASE}/delivery/orders/history`, { headers: getAuthHeaders(token) });
+      const list = Array.isArray(data) ? data : data.orders || [];
+      const onlyOnline = list.filter((o) => normalizeOrderType(o?.orderType) === 'online');
+      // newest first
+      onlyOnline.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+      setHistory(onlyOnline);
+    } catch (e) {
+      setBanner({ type: 'error', text: `Could not load history: ${e.message}` });
+    }
+  };
+
   const fetchProfile = async () => {
     try {
       const token = getToken();
-      const data = await safeFetch(`${API_BASE}/delivery/profile`, {
-        headers: getAuthHeaders(token),
-      });
+      const data = await safeFetch(`${API_BASE}/delivery/profile`, { headers: getAuthHeaders(token) });
       setProfile(data);
-    } catch {
-      setProfile(null);
-    }
+    } catch { setProfile(null); }
   };
 
-  // === ORDER ACTIONS ===
   const callAction = async (orderId, action) => {
     try {
       const updated = await safeFetch(`${API_BASE}/delivery/orders/${orderId}/${action}`, {
@@ -127,20 +122,22 @@ export default function DeliveryDashboard() {
 
       // Update active list
       setDeliveries((prev) =>
-        prev.map((o) => (o._id === orderId ? updated : o)).filter((o) => o.status !== 'delivered')
+        prev
+          .map((o) => (o._id === orderId ? updated : o))
+          .filter((o) => String(o.status).toLowerCase() !== 'delivered')
       );
 
-      // Push to history if delivered
-      if (updated.status === 'delivered') {
-        setHistory((prev) => [updated, ...prev]);
-        // Success banner
-        setBanner({
-          type: 'success',
-          text: `Order delivered to ${updated.customerName || 'customer'} (₦${updated.total}).`,
+      // If delivered → persist in history state (dedup + sort desc)
+      if (String(updated.status).toLowerCase() === 'delivered') {
+        setHistory((prev) => {
+          const map = new Map(prev.map((x) => [String(x._id), x]));
+          map.set(String(updated._id), updated);
+          const arr = Array.from(map.values());
+          arr.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+          return arr;
         });
-        // System notification (optional)
+        setBanner({ type: 'success', text: `Order delivered to ${updated.customerName || 'customer'} (₦${updated.total}).` });
         notifyDelivered(updated);
-        // Haptic
         if ('vibrate' in navigator) navigator.vibrate([120, 60, 120]);
       }
     } catch (e) {
@@ -148,38 +145,18 @@ export default function DeliveryDashboard() {
     }
   };
 
-  // === NOTIFICATIONS ===
   const notifyNewAssignment = (order) => {
-    try {
-      if (audioRef.current) audioRef.current.play();
-    } catch {}
+    try { if (audioRef.current) audioRef.current.play(); } catch {}
     if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      const n = new Notification('📦 New Order Assigned!', {
-        body: `${order.customerName || 'Customer'} — ₦${order.total}`,
-        icon: NOTIFICATION_ICON,
-        tag: order._id,
-      });
-      n.onclick = () => {
-        window.focus();
-        window.location.assign(DASHBOARD_PATH);
-        n.close();
-      };
+      const n = new Notification('📦 New Order Assigned!', { body: `${order.customerName || 'Customer'} — ₦${order.total}`, icon: NOTIFICATION_ICON, tag: order._id });
+      n.onclick = () => { window.focus(); window.location.assign(DASHBOARD_PATH); n.close(); };
     }
   };
-
   const notifyDelivered = (order) => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      const n = new Notification('✅ Order Delivered', {
-        body: `${order.customerName || 'Customer'} — ₦${order.total}`,
-        icon: NOTIFICATION_ICON,
-        tag: `delivered-${order._id}`,
-      });
-      n.onclick = () => {
-        window.focus();
-        window.location.assign(DASHBOARD_PATH);
-        n.close();
-      };
+      const n = new Notification('✅ Order Delivered', { body: `${order.customerName || 'Customer'} — ₦${order.total}`, icon: NOTIFICATION_ICON, tag: `delivered-${order._id}` });
+      n.onclick = () => { window.focus(); window.location.assign(DASHBOARD_PATH); n.close(); };
     }
   };
 
@@ -188,83 +165,47 @@ export default function DeliveryDashboard() {
     try {
       const perm = await Notification.requestPermission();
       setNotifPermission(perm);
-      if (perm === 'granted') {
-        setBanner({ type: 'success', text: 'Notifications enabled.' });
-      } else if (perm === 'denied') {
-        setBanner({ type: 'error', text: 'Notifications blocked in browser settings.' });
-      }
-    } catch {
-      // ignore
-    }
+      if (perm === 'granted') setBanner({ type: 'success', text: 'Notifications enabled.' });
+      else if (perm === 'denied') setBanner({ type: 'error', text: 'Notifications blocked in browser settings.' });
+    } catch {}
   };
 
-  // === LOGOUT ===
-  const logout = () => {
-    try {
-      localStorage.removeItem('token');
-    } catch {}
-    // best-effort redirect
-    if (typeof window !== 'undefined') {
-      window.location.assign(LOGOUT_REDIRECT || '/');
-    }
-  };
+  const logout = () => { try { localStorage.removeItem('token'); } catch {} if (typeof window !== 'undefined') window.location.assign(LOGOUT_REDIRECT || '/'); };
 
   useEffect(() => {
     audioRef.current = new Audio('/sound/notification.wav');
     audioRef.current.preload = 'auto';
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotifPermission(Notification.permission);
-    }
+    if (typeof window !== 'undefined' && 'Notification' in window) { setNotifPermission(Notification.permission); }
     fetchDeliveries();
+    fetchHistory();   // ⬅️ load persisted history on mount
     fetchProfile();
-    const interval = setInterval(fetchDeliveries, 10000);
+
+    const interval = setInterval(() => {
+      fetchDeliveries();
+      fetchHistory(); // ⬅️ keep history fresh
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-dismiss banner
-  useEffect(() => {
-    if (!banner) return;
-    const t = setTimeout(() => setBanner(null), 4000);
-    return () => clearTimeout(t);
-  }, [banner]);
+  useEffect(() => { if (!banner) return; const t = setTimeout(() => setBanner(null), 4000); return () => clearTimeout(t); }, [banner]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6">
       <div className="max-w-6xl mx-auto">
-        {/* Top bar: Title + actions */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold">Deliveryman Dashboard</h1>
           <div className="flex items-center gap-2">
             {typeof window !== 'undefined' && 'Notification' in window && notifPermission !== 'granted' && (
-              <button
-                onClick={requestNotifications}
-                className="px-3 py-2 rounded-xl bg-yellow-500 text-white hover:opacity-95"
-              >
-                Enable Notifications
-              </button>
+              <button onClick={requestNotifications} className="px-3 py-2 rounded-xl bg-yellow-500 text-white hover:opacity-95">Enable Notifications</button>
             )}
-            <button
-              onClick={logout}
-              className="px-3 py-2 rounded-xl bg-gray-800 text-white hover:opacity-95"
-            >
-              Logout
-            </button>
+            <button onClick={logout} className="px-3 py-2 rounded-xl bg-gray-800 text-white hover:opacity-95">Logout</button>
           </div>
         </div>
 
-        {/* Banner */}
         {banner && (
-          <div
-            role="status"
-            aria-live="polite"
-            className={`mb-4 p-3 rounded-xl shadow ${
-              banner.type === 'success'
-                ? 'bg-green-100 text-green-800'
-                : banner.type === 'error'
-                ? 'bg-red-100 text-red-800'
-                : 'bg-blue-100 text-blue-800'
-            }`}
-          >
+          <div role="status" aria-live="polite" className={`mb-4 p-3 rounded-xl shadow ${
+            banner.type === 'success' ? 'bg-green-100 text-green-800'
+            : banner.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
             {banner.text}
           </div>
         )}
@@ -276,7 +217,6 @@ export default function DeliveryDashboard() {
             <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
 
-          {/* Active Deliveries */}
           <TabsContent value="deliveries">
             <div className="grid gap-4">
               {deliveries.map((o) => (
@@ -284,9 +224,7 @@ export default function DeliveryDashboard() {
                   <div className="flex justify-between">
                     <div>
                       <p className="font-bold">{o.customerName}</p>
-                      <p className="text-sm">
-                        {o.houseNumber} {o.street}
-                      </p>
+                      <p className="text-sm">{o.houseNumber} {o.street}</p>
                       <p className="text-sm">{o.phone}</p>
                     </div>
                     <div className="text-right">
@@ -295,38 +233,20 @@ export default function DeliveryDashboard() {
                     </div>
                   </div>
 
-                  {/* ACTION BUTTONS */}
-                  {o.status === 'assigned' && (
+                  {String(o.status).toLowerCase() === 'assigned' && (
                     <div className="mt-3 flex gap-2">
-                      <button
-                        onClick={() => callAction(o._id, 'accept')}
-                        className="bg-green-500 text-white px-3 py-1 rounded"
-                      >
-                        Accept
-                      </button>
-                      <button
-                        onClick={() => callAction(o._id, 'decline')}
-                        className="bg-red-500 text-white px-3 py-1 rounded"
-                      >
-                        Decline
-                      </button>
+                      <button onClick={() => callAction(o._id, 'accept')} className="bg-green-500 text-white px-3 py-1 rounded">Accept</button>
+                      <button onClick={() => callAction(o._id, 'decline')} className="bg-red-500 text-white px-3 py-1 rounded">Decline</button>
                     </div>
                   )}
 
-                  {/* After Accept → Start Delivery */}
-                  {o.status === 'accepted' && (
+                  {String(o.status).toLowerCase() === 'accepted' && (
                     <div className="mt-3">
-                      <button
-                        onClick={() => callAction(o._id, 'in-transit')}
-                        className="bg-blue-500 text-white px-3 py-1 rounded"
-                      >
-                        Start Delivery
-                      </button>
+                      <button onClick={() => callAction(o._id, 'in-transit')} className="bg-blue-500 text-white px-3 py-1 rounded">Start Delivery</button>
                     </div>
                   )}
 
-                  {/* After Start Delivery → Navigate + Delivered */}
-                  {o.status === 'in-transit' && (
+                  {String(o.status).toLowerCase() === 'in-transit' && (
                     <div className="mt-3 flex gap-2">
                       <button
                         onClick={() => {
@@ -335,15 +255,8 @@ export default function DeliveryDashboard() {
                           window.open(url, '_blank');
                         }}
                         className="bg-gray-500 text-white px-3 py-1 rounded"
-                      >
-                        Navigate
-                      </button>
-                      <button
-                        onClick={() => callAction(o._id, 'deliver')}
-                        className="bg-green-700 text-white px-3 py-1 rounded"
-                      >
-                        Mark as Delivered
-                      </button>
+                      >Navigate</button>
+                      <button onClick={() => callAction(o._id, 'deliver')} className="bg-green-700 text-white px-3 py-1 rounded">Mark as Delivered</button>
                     </div>
                   )}
                 </div>
@@ -351,7 +264,6 @@ export default function DeliveryDashboard() {
             </div>
           </TabsContent>
 
-          {/* History */}
           <TabsContent value="history">
             {history.length === 0 ? (
               <p>No completed deliveries yet</p>
@@ -361,9 +273,7 @@ export default function DeliveryDashboard() {
                   <div key={o._id} className="bg-white p-4 rounded-xl shadow flex justify-between">
                     <div>
                       <p className="font-bold">{o.customerName}</p>
-                      <p className="text-sm">
-                        {o.houseNumber} {o.street}
-                      </p>
+                      <p className="text-sm">{o.houseNumber} {o.street}</p>
                     </div>
                     <div className="flex items-center gap-2 text-green-600">
                       <CheckCircle className="w-5 h-5" /> Delivered
@@ -374,7 +284,6 @@ export default function DeliveryDashboard() {
             )}
           </TabsContent>
 
-          {/* Profile */}
           <TabsContent value="profile">
             {profile ? (
               <div className="bg-white p-4 rounded-xl shadow">
@@ -382,14 +291,10 @@ export default function DeliveryDashboard() {
                 <p>{profile.email}</p>
                 <p>{profile.phone}</p>
                 <p>{profile.address}</p>
-                {profile.dateOfBirth && (
-                  <p>DOB: {new Date(profile.dateOfBirth).toLocaleDateString()}</p>
-                )}
+                {profile.dateOfBirth && <p>DOB: {new Date(profile.dateOfBirth).toLocaleDateString()}</p>}
                 <p>Status: {profile.isOnline ? '🟢 Online' : '🔴 Offline'}</p>
               </div>
-            ) : (
-              <p>No profile data</p>
-            )}
+            ) : <p>No profile data</p>}
           </TabsContent>
         </Tabs>
       </div>

@@ -22,7 +22,9 @@ export default function AdminDashboard() {
   const [removing, setRemoving] = useState(false);
 
   const pageSize = 10;
+  const PACK_PRICE = 200;
 
+  // ---------- helpers for packaging ----------
   const money = (n) =>
     `₦${Number(n || 0).toLocaleString("en-NG", {
       minimumFractionDigits: 2,
@@ -46,6 +48,39 @@ export default function AdminDashboard() {
     return dt
       ? dt.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" })
       : "-";
+  };
+
+  // detect if an item is a drink
+  const isDrinkItem = (it) => {
+    if (!it) return false;
+    if (it.isDrink === true) return true; // explicit flag if present
+    const name = String(it?.name || "").toLowerCase();
+    const cat = String(it?.category || "").toLowerCase();
+
+    // quick heuristics (won't catch all, but won't misclassify foods)
+    const drinkName = /(drink|juice|smoothie|water|coke|cola|fanta|sprite|malt|soda|pepsi|mirinda|chapman|zobo|beer)\b/;
+    const drinkCat = /(drink|beverage|juice|smoothie|water|soda|soft|beverages)\b/;
+
+    return drinkName.test(name) || drinkCat.test(cat);
+  };
+
+  // detect if an item is already a packaging "pack" line, to avoid double counting
+  const isPackagingItem = (it) => {
+    const name = String(it?.name || "").toLowerCase().trim();
+    return /\b(pack|packs|packaging|container|take\s*away|takeaway|bag)\b/.test(name);
+  };
+
+  // compute packaging count for a single order (sum of food quantities only)
+  const computePackCount = (order) => {
+    const items = Array.isArray(order?.items) ? order.items : [];
+    let count = 0;
+    for (const it of items) {
+      if (isPackagingItem(it)) continue; // skip existing "pack" rows if any
+      if (isDrinkItem(it)) continue;     // drinks don't need packs
+      const qty = Number(it?.quantity ?? 0) || 0;
+      count += qty;
+    }
+    return count;
   };
 
   // Fetch (with abort + mounted guard)
@@ -214,6 +249,8 @@ export default function AdminDashboard() {
       if (!d || d < startOfToday) continue;
       const type = (o?.orderType || "").toLowerCase();
       const items = Array.isArray(o?.items) ? o.items : [];
+
+      // Count normal items
       for (const it of items) {
         const raw = String(it?.name || "Item").trim();
         if (!raw) continue;
@@ -223,6 +260,16 @@ export default function AdminDashboard() {
         all.set(key, (all.get(key) || 0) + qty);
         if (type === "online") online.set(key, (online.get(key) || 0) + qty);
         if (type === "instore") instore.set(key, (instore.get(key) || 0) + qty);
+      }
+
+      // Add virtual "Pack" line (food-only quantities)
+      const packQty = computePackCount(o);
+      if (packQty > 0) {
+        const pKey = "pack";
+        if (!display.has(pKey)) display.set(pKey, "Pack");
+        all.set(pKey, (all.get(pKey) || 0) + packQty);
+        if (type === "online") online.set(pKey, (online.get(pKey) || 0) + packQty);
+        if (type === "instore") instore.set(pKey, (instore.get(pKey) || 0) + packQty);
       }
     }
 
@@ -348,7 +395,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* ITEM TOTALS TABLE (Today) — position: AFTER the buttons above */}
+      {/* ITEM TOTALS TABLE (Today) — now includes Pack */}
       <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
@@ -436,6 +483,10 @@ export default function AdminDashboard() {
 
               const isOpen = selectedOrder && String(selectedOrder?._id) === String(order?._id);
 
+              // compute packaging for this order
+              const packQty = computePackCount(order);
+              const packagingCost = packQty * PACK_PRICE;
+
               return (
                 <Fragment key={order?._id || idx}>
                   <tr
@@ -488,6 +539,11 @@ export default function AdminDashboard() {
                                 : order?.paymentMode) || "--"}
                             </p>
                             <p><strong>Total:</strong> {money(order?.total)}</p>
+
+                            {/* Packaging details (computed) */}
+                            <p><strong>Packaging Packs:</strong> {packQty}</p>
+                            <p><strong>Packaging Cost:</strong> {money(packagingCost)}</p>
+
                             <p><strong>Date:</strong> {fmtDate(order?.createdAt)}</p>
                             <p><strong>Time:</strong> {fmtTime(order?.createdAt)}</p>
                           </div>
@@ -499,6 +555,12 @@ export default function AdminDashboard() {
                                 {item?.name || "Item"} — {Number(item?.quantity || 0)} × {money(item?.price)}
                               </li>
                             ))}
+                            {/* Virtual pack line (only if there are food items) */}
+                            {packQty > 0 && (
+                              <li className="text-gray-700">
+                                Pack — {packQty} × {money(PACK_PRICE)} = <strong>{money(packagingCost)}</strong>
+                              </li>
+                            )}
                           </ul>
 
                           <div className="mt-6 flex justify-end">
