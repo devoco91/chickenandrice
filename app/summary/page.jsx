@@ -1,11 +1,51 @@
 // app/summary/page.jsx
 "use client";
+
 import { useSelector, useDispatch } from "react-redux";
 import { incrementQuantity2, decrementQuantity2, removeItemCart2 } from "@/store/cartSlice2";
 import { useRouter } from "next/navigation";
 import { Trash2, Plus, Minus, ArrowLeft, ArrowRight, CreditCard } from "lucide-react";
 import { useState, useMemo } from "react";
 import { addToTodaysSales } from "../utils/salesTracker";
+
+/* Optional: point directly at your backend in prod
+   e.g. NEXT_PUBLIC_BACKEND_URL=https://fastfolderbackend.fly.dev
+   If unset, it will use the Next.js rewrite/proxy at /api
+*/
+const BACKEND_BASE =
+  (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
+const ORDERS_ENDPOINT = BACKEND_BASE ? `${BACKEND_BASE}/api/orders` : "/api/orders";
+
+// Robust POST that won’t crash if the server returns HTML/text
+async function postJson(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
+
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  let data = null;
+
+  if (ct.includes("application/json")) {
+    data = await res.json();
+  } else {
+    // Non-JSON response (proxy error, HTML, etc.)
+    const text = await res.text().catch(() => "");
+    if (!res.ok) {
+      const snippet = (text || "").slice(0, 160);
+      throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet}` : ""}`);
+    }
+    // ok but empty / not json
+    data = {};
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.error || `HTTP ${res.status} ${res.statusText}`);
+  }
+  return data;
+}
 
 export default function SummaryPage() {
   const cart = useSelector((state) => state.cart2.cartItem);
@@ -14,7 +54,7 @@ export default function SummaryPage() {
   const [loading, setLoading] = useState(false);
   const [paymentMode, setPaymentMode] = useState("");
 
-  const money = (n) => `₦${(Number(n || 0)).toLocaleString()}`;
+  const money = (n) => `₦${Number(n || 0).toLocaleString()}`;
 
   const total = useMemo(() => {
     return cart.reduce((sum, item) => {
@@ -35,7 +75,8 @@ export default function SummaryPage() {
         _id: item._id,
       }));
 
-      const normalizedPM = paymentMode === "transfer" ? "upi" : paymentMode;
+      // Keep 'transfer' as 'transfer' — do not map to 'upi'
+      const normalizedPM = String(paymentMode || "").toLowerCase(); // 'cash' | 'card' | 'transfer'
 
       const payload = {
         orderType: "instore",
@@ -45,22 +86,13 @@ export default function SummaryPage() {
         customerName: "Walk-in Customer",
       };
 
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify(payload),
-      });
+      const data = await postJson(ORDERS_ENDPOINT, payload);
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
-      if (!res.ok) throw new Error(data?.error || "Failed to submit order");
-
+      // Only update local “Today’s Sales” after confirmed success
       addToTodaysSales(total);
 
       if (typeof window !== "undefined") {
-        const pmForReceipt = normalizedPM === "upi" ? "transfer" : normalizedPM;
-        sessionStorage.setItem("paymentMode", pmForReceipt);
+        sessionStorage.setItem("paymentMode", normalizedPM);
         const orderId = data?.orderId || data?._id || data?.id || "";
         if (orderId) sessionStorage.setItem("lastOrderId", String(orderId));
       }
@@ -110,7 +142,8 @@ export default function SummaryPage() {
                           : `${item.quantity} ${item.quantity > 1 ? "pieces" : "piece"} of ${item.name}`}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {money(item.price)} each — <span className="font-semibold">{money(subtotal)}</span>
+                        {money(item.price)} each —{" "}
+                        <span className="font-semibold">{money(subtotal)}</span>
                       </p>
                     </div>
 
