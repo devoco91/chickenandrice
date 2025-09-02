@@ -1,22 +1,18 @@
-// app/summary/page.jsx
 "use client";
 
 import { useSelector, useDispatch } from "react-redux";
-import { incrementQuantity2, decrementQuantity2, removeItemCart2 } from "@/store/cartSlice2";
+import {
+  incrementQuantity2,
+  decrementQuantity2,
+  removeItemCart2,
+} from "@/store/cartSlice2";
 import { useRouter } from "next/navigation";
 import { Trash2, Plus, Minus, ArrowLeft, ArrowRight, CreditCard } from "lucide-react";
 import { useState, useMemo } from "react";
 import { addToTodaysSales } from "../utils/salesTracker";
+import { API_BASE } from "../utils/apiBase"; // ✅ use the same API base as Admin
 
-/* Optional: point directly at your backend in prod
-   e.g. NEXT_PUBLIC_BACKEND_URL=https://fastfolderbackend.fly.dev
-   If unset, it will use the Next.js rewrite/proxy at /api
-*/
-const BACKEND_BASE =
-  (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
-const ORDERS_ENDPOINT = BACKEND_BASE ? `${BACKEND_BASE}/api/orders` : "/api/orders";
-
-// Robust POST that won’t crash if the server returns HTML/text
+// POST helper that tolerates non-JSON responses and shows readable errors
 async function postJson(url, body) {
   const res = await fetch(url, {
     method: "POST",
@@ -26,25 +22,17 @@ async function postJson(url, body) {
   });
 
   const ct = (res.headers.get("content-type") || "").toLowerCase();
-  let data = null;
-
   if (ct.includes("application/json")) {
-    data = await res.json();
-  } else {
-    // Non-JSON response (proxy error, HTML, etc.)
-    const text = await res.text().catch(() => "");
-    if (!res.ok) {
-      const snippet = (text || "").slice(0, 160);
-      throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet}` : ""}`);
-    }
-    // ok but empty / not json
-    data = {};
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status} ${res.statusText}`);
+    return data;
   }
 
-  if (!res.ok) {
-    throw new Error(data?.error || `HTTP ${res.status} ${res.statusText}`);
-  }
-  return data;
+  // Non-JSON (HTML error, proxy page, etc.)
+  const text = await res.text().catch(() => "");
+  const snippet = (text || "").slice(0, 180);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet}` : ""}`);
+  return {}; // ok but empty
 }
 
 export default function SummaryPage() {
@@ -75,7 +63,6 @@ export default function SummaryPage() {
         _id: item._id,
       }));
 
-      // Keep 'transfer' as 'transfer' — do not map to 'upi'
       const normalizedPM = String(paymentMode || "").toLowerCase(); // 'cash' | 'card' | 'transfer'
 
       const payload = {
@@ -86,9 +73,10 @@ export default function SummaryPage() {
         customerName: "Walk-in Customer",
       };
 
-      const data = await postJson(ORDERS_ENDPOINT, payload);
+      // ✅ call your backend (e.g. https://fastfolderbackend.fly.dev/api/orders)
+      const endpoint = `${API_BASE}/orders`;
+      const data = await postJson(endpoint, payload);
 
-      // Only update local “Today’s Sales” after confirmed success
       addToTodaysSales(total);
 
       if (typeof window !== "undefined") {
@@ -149,7 +137,9 @@ export default function SummaryPage() {
 
                     <div className="flex gap-2 items-center">
                       <button
-                        onClick={() => dispatch(decrementQuantity2({ id: item._id, category: item.category }))}
+                        onClick={() =>
+                          dispatch(decrementQuantity2({ id: item._id, category: item.category }))
+                        }
                         className="h-9 w-9 flex items-center justify-center rounded-full border border-gray-300 bg-white hover:bg-gray-100 active:scale-95 transition"
                         title="Decrease"
                       >
@@ -159,14 +149,18 @@ export default function SummaryPage() {
                         {unitCount}
                       </span>
                       <button
-                        onClick={() => dispatch(incrementQuantity2({ id: item._id, category: item.category }))}
+                        onClick={() =>
+                          dispatch(incrementQuantity2({ id: item._id, category: item.category }))
+                        }
                         className="h-9 w-9 flex items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-600 text-white hover:brightness-110 active:scale-95 shadow-sm transition"
                         title="Increase"
                       >
                         <Plus size={16} />
                       </button>
                       <button
-                        onClick={() => dispatch(removeItemCart2({ id: item._id, category: item.category }))}
+                        onClick={() =>
+                          dispatch(removeItemCart2({ id: item._id, category: item.category }))
+                        }
                         className="h-9 w-9 flex items-center justify-center rounded-full bg-red-100 text-red-700 hover:bg-red-200 active:scale-95 transition"
                         title="Remove"
                       >
@@ -225,7 +219,11 @@ export default function SummaryPage() {
             disabled={loading || cart.length === 0 || !paymentMode}
             className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-emerald-600 to-green-600 shadow-lg hover:opacity-95 active:scale-95 disabled:opacity-50 transition"
           >
-            {loading ? "Processing..." : <>Continue <ArrowRight size={18} /></>}
+            {loading ? "Processing..." : (
+              <>
+                Continue <ArrowRight size={18} />
+              </>
+            )}
           </button>
         </div>
       </div>
