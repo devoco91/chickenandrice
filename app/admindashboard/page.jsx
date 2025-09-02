@@ -1,12 +1,30 @@
+// ===================== PART 1/3 – Imports, state, helpers, fetch (NO LOGIC CHANGE) =====================
 "use client";
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { API_BASE } from "../utils/apiBase";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
+
+  // Date range filter (affects Orders list only)
+  const [dateFrom, setDateFrom] = useState(""); // YYYY-MM-DD
+  const [dateTo, setDateTo] = useState(""); // YYYY-MM-DD
 
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showSummary, setShowSummary] = useState(false);
@@ -80,6 +98,7 @@ export default function AdminDashboard() {
   const abortRef = useRef(null);
   const mountedRef = useRef(true);
 
+  // Fetch – unchanged from your working version
   const fetchOrders = async () => {
     try {
       setLoading(true);
@@ -133,9 +152,38 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Helpers for range filter (orders table only)
+  const startOfDay = (d) => {
+    const dt = new Date(d);
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+  };
+  const endOfDay = (d) => {
+    const dt = new Date(d);
+    dt.setHours(23, 59, 59, 999);
+    return dt;
+  };
+
+  // Type + date range filter (orders list only)
   const filteredOrders = useMemo(() => {
-    const list =
+    let list =
       filter === "all" ? orders : orders.filter((o) => (o?.orderType || "").toLowerCase() === filter);
+
+    if (dateFrom) {
+      const from = startOfDay(new Date(dateFrom));
+      list = list.filter((o) => {
+        const d = safeDate(o?.createdAt);
+        return d && d >= from;
+      });
+    }
+    if (dateTo) {
+      const to = endOfDay(new Date(dateTo));
+      list = list.filter((o) => {
+        const d = safeDate(o?.createdAt);
+        return d && d <= to;
+      });
+    }
+
     return [...list].sort((a, b) => {
       const ad = safeDate(a?.createdAt)?.getTime() ?? 0;
       const bd = safeDate(b?.createdAt)?.getTime() ?? 0;
@@ -144,7 +192,7 @@ export default function AdminDashboard() {
       const bid = String(b?._id || "");
       return bid.localeCompare(aid);
     });
-  }, [orders, filter]);
+  }, [orders, filter, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
 
@@ -157,6 +205,7 @@ export default function AdminDashboard() {
     return filteredOrders.slice(start, start + pageSize);
   }, [filteredOrders, page]);
 
+  // KPIs (unchanged – full dataset)
   const totalOrders = orders.length;
   const totalAmount = orders.reduce((sum, o) => sum + Number(o?.total || 0), 0);
   const onlineOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "online").length;
@@ -171,7 +220,7 @@ export default function AdminDashboard() {
   const startOfWeek = useMemo(() => {
     const n = new Date();
     const s = new Date(n);
-    s.setDate(n.getDate() - n.getDay());
+    s.setDate(n.getDate() - n.getDay()); // Sunday start
     s.setHours(0, 0, 0, 0);
     return s;
   }, []);
@@ -268,7 +317,7 @@ export default function AdminDashboard() {
       instore: instore.get(k) || 0,
     }));
 
-    rows.sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
+    rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
     return rows;
   }, [orders, startOfToday]);
 
@@ -292,6 +341,249 @@ export default function AdminDashboard() {
       setRemoving(false);
     }
   };
+
+  // ======== CHART DATA (unchanged logic; derived from full orders dataset) ========
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const ym = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+  const startOfWeekLikeApp = (d) => {
+    const n = new Date(d);
+    const s = new Date(n);
+    s.setDate(n.getDate() - n.getDay()); // Sunday
+    s.setHours(0, 0, 0, 0);
+    return s;
+  };
+  const labelWeek = (d) => {
+    const dt = startOfWeekLikeApp(d);
+    return dt.toLocaleDateString("en-NG", { month: "short", day: "numeric" });
+  };
+  const labelMonth = (d) =>
+    new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString("en-NG", {
+      month: "short",
+      year: "2-digit",
+    });
+
+  const dailySeries = useMemo(() => {
+    const days = [];
+    const today = startOfDay(new Date());
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      days.push(d);
+    }
+    const map = new Map(
+      days.map((d) => [
+        ymd(d),
+        {
+          date: ymd(d),
+          label: d.toLocaleDateString("en-NG", { month: "short", day: "numeric" }),
+          online: 0,
+          instore: 0,
+          total: 0,
+        },
+      ])
+    );
+
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d) continue;
+      const key = ymd(d);
+      if (!map.has(key)) continue; // ignore out of window
+      const t = Number(o?.total || 0);
+      const type = (o?.orderType || "").toLowerCase();
+      const row = map.get(key);
+      if (type === "online") row.online += t;
+      if (type === "instore") row.instore += t;
+      row.total += t;
+    }
+    return Array.from(map.values());
+  }, [orders]);
+
+  const weeklySeries = useMemo(() => {
+    const weeks = [];
+    const start = startOfWeekLikeApp(new Date());
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(start);
+      d.setDate(start.getDate() - i * 7);
+      weeks.push(d);
+    }
+    const map = new Map(
+      weeks.map((d) => [ymd(d), { date: ymd(d), label: labelWeek(d), online: 0, instore: 0, total: 0 }])
+    );
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d) continue;
+      const wk = startOfWeekLikeApp(d);
+      const key = ymd(wk);
+      if (!map.has(key)) continue;
+      const t = Number(o?.total || 0);
+      const type = (o?.orderType || "").toLowerCase();
+      const row = map.get(key);
+      if (type === "online") row.online += t;
+      if (type === "instore") row.instore += t;
+      row.total += t;
+    }
+    return Array.from(map.values());
+  }, [orders]);
+
+  const monthlySeries = useMemo(() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      d.setMonth(d.getMonth() - i);
+      months.push(d);
+    }
+    const map = new Map(
+      months.map((d) => [ym(d), { date: ym(d), label: labelMonth(d), online: 0, instore: 0, total: 0 }])
+    );
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d) continue;
+      const key = ym(d);
+      if (!map.has(key)) continue;
+      const t = Number(o?.total || 0);
+      const type = (o?.orderType || "").toLowerCase();
+      const row = map.get(key);
+      if (type === "online") row.online += t;
+      if (type === "instore") row.instore += t;
+      row.total += t;
+    }
+    return Array.from(map.values());
+  }, [orders]);
+
+  const todayPieData = useMemo(
+    () => [
+      { name: "Online", value: dailyOnlineTotal },
+      { name: "Shop", value: dailyShopTotal },
+    ],
+    [dailyOnlineTotal, dailyShopTotal]
+  );
+
+  // ======== EXPORTS (CSV / PDF) – respects current filters; no pagination) ========
+  const ordersForExport = filteredOrders;
+  const csvEscape = (v) => {
+    const s = String(v ?? "");
+    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const exportCSV = () => {
+    const headers = [
+      "Order ID",
+      "Order Name",
+      "Price",
+      "Order Type",
+      "Mode of Payment",
+      "Customer Name",
+      "Address",
+      "Date",
+      "Time",
+    ];
+    const lines = [headers.join(",")];
+    for (const order of ordersForExport) {
+      const items = Array.isArray(order?.items) ? order.items : [];
+      const firstName = items[0]?.name || "No items";
+      const extra = items.length > 1 ? ` +${items.length - 1} more` : "";
+      const orderName = firstName + extra;
+      const type = (order?.orderType || "").toLowerCase();
+      const address =
+        type === "online"
+          ? `${order?.houseNumber || ""} ${order?.street || ""} ${order?.landmark || ""}`.trim()
+          : "In-store";
+      const row = [
+        csvEscape(order?._id || "-"),
+        csvEscape(orderName),
+        csvEscape(money(order?.total)),
+        csvEscape(type || "-"),
+        csvEscape(
+          String(order?.paymentMode || "--").toLowerCase() === "upi" ? "transfer" : order?.paymentMode || "--"
+        ),
+        csvEscape(order?.customerName || "-"),
+        csvEscape(address || "-"),
+        csvEscape(fmtDate(order?.createdAt)),
+        csvEscape(fmtTime(order?.createdAt)),
+      ];
+      lines.push(row.join(","));
+    }
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders_export_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const exportPDF = () => {
+    const w = window.open("", "_blank");
+    if (!w) return alert("Popup blocked. Allow popups to export PDF.");
+    const rowsHtml = ordersForExport
+      .map((order) => {
+        const items = Array.isArray(order?.items) ? order.items : [];
+        const firstName = items[0]?.name || "No items";
+        const extra = items.length > 1 ? ` +${items.length - 1} more` : "";
+        const orderName = firstName + extra;
+        const type = (order?.orderType || "").toLowerCase();
+        const address =
+          type === "online"
+            ? `${order?.houseNumber || ""} ${order?.street || ""} ${order?.landmark || ""}`.trim()
+            : "In-store";
+        return `<tr>
+          <td>${order?._id || "-"}</td>
+          <td>${orderName}</td>
+          <td>${money(order?.total)}</td>
+          <td>${type || "-"}</td>
+          <td>${(String(order?.paymentMode || "").toLowerCase() === "upi" ? "transfer" : order?.paymentMode) || "--"}</td>
+          <td>${order?.customerName || "-"}</td>
+          <td>${address || "-"}</td>
+          <td>${fmtDate(order?.createdAt)}</td>
+          <td>${fmtTime(order?.createdAt)}</td>
+        </tr>`;
+      })
+      .join("");
+    w.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Orders Export</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; }
+    h1 { margin: 0 0 12px; }
+    .meta { color: #555; font-size: 12px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; }
+    th { background: #f5f5f5; text-align: left; }
+    tr:nth-child(even) td { background: #fcfcfc; }
+  </style>
+</head>
+<body>
+  <h1>Orders Export</h1>
+  <div class="meta">Generated: ${new Date().toLocaleString()} • Rows: ${ordersForExport.length}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Order ID</th>
+        <th>Order Name</th>
+        <th>Price</th>
+        <th>Order Type</th>
+        <th>Mode of Payment</th>
+        <th>Customer Name</th>
+        <th>Address</th>
+        <th>Date</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+  <script>
+    window.onload = () => setTimeout(() => { window.print(); }, 300);
+  </script>
+</body>
+</html>`);
+    w.document.close();
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
@@ -318,6 +610,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Total Orders</h2>
@@ -341,6 +634,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Today splits */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="px-4 py-3 bg-indigo-500 text-white rounded-2xl shadow">
           Today Online: <span className="font-bold">{money(dailyOnlineTotal)}</span>
@@ -353,6 +647,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Weekly splits */}
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="px-4 py-3 bg-orange-500 text-white rounded-2xl shadow">
           Weekly Online: <span className="font-bold">{money(weeklyOnlineTotal)}</span>
@@ -365,6 +660,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Payment mode quick view */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold shadow">
           💵 Cash Today: {money(cashToday)}
@@ -377,7 +673,78 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
+      {/* CHARTS SECTION */}
+      <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4">
+          <h3 className="font-bold mb-2">Today’s Sales Split</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip formatter={(v) => money(v)} />
+                <Legend />
+                <Pie dataKey="value" nameKey="name" data={todayPieData} outerRadius={100} label />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4 lg:col-span-2">
+          <h3 className="font-bold mb-2">Daily Sales (last 14 days)</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={dailySeries} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v) => money(v)} />
+                <Legend />
+                <Line type="monotone" dataKey="total" strokeWidth={2} />
+                <Line type="monotone" dataKey="online" strokeWidth={2} />
+                <Line type="monotone" dataKey="instore" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4 lg:col-span-3">
+          <h3 className="font-bold mb-2">Weekly Sales (last 12 weeks)</h3>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={weeklySeries} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v) => money(v)} />
+                <Legend />
+                <Line type="monotone" dataKey="total" strokeWidth={2} />
+                <Line type="monotone" dataKey="online" strokeWidth={2} />
+                <Line type="monotone" dataKey="instore" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4 lg:col-span-3">
+          <h3 className="font-bold mb-2">Monthly Sales (last 12 months)</h3>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={monthlySeries} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v) => money(v)} />
+                <Legend />
+                <Line type="monotone" dataKey="total" strokeWidth={2} />
+                <Line type="monotone" dataKey="online" strokeWidth={2} />
+                <Line type="monotone" dataKey="instore" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Items sold today */}
+      <div className="mt-6 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
             <tr>
@@ -406,22 +773,55 @@ export default function AdminDashboard() {
         </table>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-8">
-        <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
-        <select
-          value={filter}
-          onChange={(e) => {
-            setFilter(e.target.value);
-            setPage(1);
-          }}
-          className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
-        >
-          <option value="all">All Orders</option>
-          <option value="online">Online Orders</option>
-          <option value="instore">Shop Orders</option>
-        </select>
+      {/* Orders header + filters + export */}
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mt-8">
+        <div className="flex-1">
+          <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
+          <p className="text-sm text-gray-500">Type & date filters affect only the Orders list.</p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-700">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-700">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
+          <button
+            onClick={() => { setDateFrom(""); setDateTo(""); setPage(1); }}
+            className="px-3 py-2 rounded-xl bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Clear
+          </button>
+          <select
+            value={filter}
+            onChange={(e) => { setFilter(e.target.value); setPage(1); }}
+            className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+          >
+            <option value="all">All Orders</option>
+            <option value="online">Online Orders</option>
+            <option value="instore">Shop Orders</option>
+          </select>
+          <div className="flex gap-2">
+            <button onClick={exportCSV} className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-semibold shadow hover:opacity-95">Export CSV</button>
+            <button onClick={exportPDF} className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-semibold shadow hover:opacity-95">Export PDF</button>
+          </div>
+        </div>
       </div>
 
+
+            {/* Orders table */}
       <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
@@ -561,6 +961,7 @@ export default function AdminDashboard() {
         </table>
       </div>
 
+      {/* Pagination */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
         <button
           className="px-4 py-2 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50"
@@ -626,3 +1027,4 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
