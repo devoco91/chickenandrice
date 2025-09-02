@@ -57,18 +57,50 @@ const DeliveryLoginPage = () => {
       setIsLoading(true);
       setBanner(null);
 
-      // Choose endpoint by email hint (kept from your logic)
+      // Choose endpoint by email hint (kept)
       const isAdmin = email.includes("admin") || email.endsWith("@admin.com");
       const endpoint = isAdmin ? "/api/admin/login" : "/api/delivery/login";
 
-      const res = await axios.post(endpoint, { email, password });
-      const token = res.data && res.data.token;
-      const role  = res.data && res.data.user && res.data.user.role;
+      // cache-bust + require JSON; keep axios for your stack
+      const url = `${endpoint}?ts=${Date.now()}`;
+      const res = await axios.post(
+        url,
+        { email, password },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          // never send cached/stale responses
+          withCredentials: false,
+          validateStatus: () => true, // we'll handle status below
+        }
+      );
 
-      if (!token || !role) throw new Error("Login response missing token or role");
+      if (res.status < 200 || res.status >= 300) {
+        const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data || {});
+        throw new Error(`Login failed (${res.status}) ${res.statusText || ''} ${body?.slice?.(0,140) || ''}`);
+      }
+
+      // Some backends mislabel content-type; normalize to object
+      let data = res.data;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch {}
+      }
+
+      const token = data?.token;
+      const role  = data?.user?.role ?? data?.role;
+
+      if (!token || !role) {
+        throw new Error("Login response missing token or role");
+      }
 
       // Save token (cookie + localStorage)
-      Cookies.set("token", token, { expires: 7 });
+      Cookies.set("token", token, {
+        expires: 7,
+        sameSite: "Lax",
+        secure: typeof window !== "undefined" && window.location.protocol === "https:",
+      });
       localStorage.setItem("token", token);
 
       // Save email only if "remember me"
@@ -86,7 +118,7 @@ const DeliveryLoginPage = () => {
 
       setBanner({ type: 'success', text: 'Login successful. Redirecting…' });
 
-      // Redirect by role
+      // Redirect by role (kept)
       if (role === "admin") {
         router.push("/dispatchCenter");
       } else if (role === "deliveryman") {
@@ -97,10 +129,11 @@ const DeliveryLoginPage = () => {
 
     } catch (err) {
       console.error("❌ Login error:", err);
-      const msg =
-        (err && err.response && (err.response.data?.message || err.response.data?.error)) ||
-        err?.message ||
-        "Login failed";
+      const axiosMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        (typeof err?.response?.data === 'string' ? err.response.data : null);
+      const msg = axiosMsg || err?.message || "Login failed";
       setBanner({ type: 'error', text: msg });
       alert(msg); // keep your original alert behavior
     } finally {
