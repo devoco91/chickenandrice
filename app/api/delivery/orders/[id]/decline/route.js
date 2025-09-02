@@ -1,4 +1,4 @@
-import { BACKEND } from "../../../../../_lib/backend";
+import { BACKEND } from "../../../../_lib/backend";
 export async function POST(req, { params }) {
   const url = `${BACKEND}/api/delivery/orders/${encodeURIComponent(params.id)}/decline`;
   const auth = req.headers.get("authorization") || "";
