@@ -52,22 +52,43 @@ export default function AdminDashboard() {
   const abortRef = useRef(null);
   const mountedRef = useRef(true);
 
+  // 🔒 Hardened fetch for production (handles non-JSON, gzip, cached HTML, etc.)
   const fetchOrders = async () => {
     try {
       setLoading(true);
+      // cancel any in-flight request
       if (abortRef.current) abortRef.current.abort();
       const ac = new AbortController();
       abortRef.current = ac;
 
-      const res = await fetch("/api/orders", { signal: ac.signal, cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch orders");
+      // cache-bust param to avoid CDN/proxy serving stale HTML
+      const url = `/api/orders?ts=${Date.now()}`;
+      const res = await fetch(url, {
+        signal: ac.signal,
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+
+      if (!res.ok) {
+        const snippet = await res.text().catch(() => "");
+        throw new Error(
+          `HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 140)}` : ""}`
+        );
+      }
+
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
+      if (!ct.includes("application/json")) {
+        const snippet = await res.text().catch(() => "");
+        throw new Error(`Expected JSON, got ${ct || "unknown"} – ${snippet.slice(0, 140)}`);
+      }
+
       const data = await res.json();
       if (!mountedRef.current) return;
 
       setOrders(Array.isArray(data) ? data : []);
     } catch (err) {
       if (err.name !== "AbortError") {
-        console.error(err);
+        console.error("fetchOrders failed:", err);
         alert("Failed to load orders.");
       }
     } finally {
