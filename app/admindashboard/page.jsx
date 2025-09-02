@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { API_BASE } from "../utils/apiBase";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
 
-  const [selectedOrder, setSelectedOrder] = useState(null); // inline dropdown
+  const [selectedOrder, setSelectedOrder] = useState(null);
   const [showSummary, setShowSummary] = useState(false);
 
   const [weeklyOnlineTotal, setWeeklyOnlineTotal] = useState(0);
@@ -24,7 +25,6 @@ export default function AdminDashboard() {
   const pageSize = 10;
   const PACK_PRICE = 200;
 
-  // ---------- helpers for packaging ----------
   const money = (n) =>
     `₦${Number(n || 0).toLocaleString("en-NG", {
       minimumFractionDigits: 2,
@@ -50,54 +50,44 @@ export default function AdminDashboard() {
       : "-";
   };
 
-  // detect if an item is a drink
   const isDrinkItem = (it) => {
     if (!it) return false;
-    if (it.isDrink === true) return true; // explicit flag if present
+    if (it.isDrink === true) return true;
     const name = String(it?.name || "").toLowerCase();
     const cat = String(it?.category || "").toLowerCase();
-
-    // quick heuristics (won't catch all, but won't misclassify foods)
     const drinkName = /(drink|juice|smoothie|water|coke|cola|fanta|sprite|malt|soda|pepsi|mirinda|chapman|zobo|beer)\b/;
     const drinkCat = /(drink|beverage|juice|smoothie|water|soda|soft|beverages)\b/;
-
     return drinkName.test(name) || drinkCat.test(cat);
   };
 
-  // detect if an item is already a packaging "pack" line, to avoid double counting
   const isPackagingItem = (it) => {
     const name = String(it?.name || "").toLowerCase().trim();
     return /\b(pack|packs|packaging|container|take\s*away|takeaway|bag)\b/.test(name);
   };
 
-  // compute packaging count for a single order (sum of food quantities only)
   const computePackCount = (order) => {
     const items = Array.isArray(order?.items) ? order.items : [];
     let count = 0;
     for (const it of items) {
-      if (isPackagingItem(it)) continue; // skip existing "pack" rows if any
-      if (isDrinkItem(it)) continue;     // drinks don't need packs
+      if (isPackagingItem(it)) continue;
+      if (isDrinkItem(it)) continue;
       const qty = Number(it?.quantity ?? 0) || 0;
       count += qty;
     }
     return count;
   };
 
-  // Fetch (with abort + mounted guard)
   const abortRef = useRef(null);
   const mountedRef = useRef(true);
 
-  // 🔒 Hardened fetch for production (handles non-JSON, gzip, cached HTML, etc.)
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      // cancel any in-flight request
       if (abortRef.current) abortRef.current.abort();
       const ac = new AbortController();
       abortRef.current = ac;
 
-      // cache-bust param to avoid CDN/proxy serving stale HTML
-      const url = `/api/orders?ts=${Date.now()}`;
+      const url = `${API_BASE}/orders?ts=${Date.now()}`;
       const res = await fetch(url, {
         signal: ac.signal,
         cache: "no-store",
@@ -181,7 +171,7 @@ export default function AdminDashboard() {
   const startOfWeek = useMemo(() => {
     const n = new Date();
     const s = new Date(n);
-    s.setDate(n.getDate() - n.getDay()); // week starts Sunday
+    s.setDate(n.getDate() - n.getDay());
     s.setHours(0, 0, 0, 0);
     return s;
   }, []);
@@ -237,7 +227,6 @@ export default function AdminDashboard() {
     return { cashToday: cash, cardToday: card, transferToday: transfer };
   }, [orders, startOfToday]);
 
-  // TODAY item totals (resets 12 AM): per item + split online/instore
   const itemTotalsToday = useMemo(() => {
     const all = new Map();
     const online = new Map();
@@ -250,7 +239,6 @@ export default function AdminDashboard() {
       const type = (o?.orderType || "").toLowerCase();
       const items = Array.isArray(o?.items) ? o.items : [];
 
-      // Count normal items
       for (const it of items) {
         const raw = String(it?.name || "Item").trim();
         if (!raw) continue;
@@ -262,7 +250,6 @@ export default function AdminDashboard() {
         if (type === "instore") instore.set(key, (instore.get(key) || 0) + qty);
       }
 
-      // Add virtual "Pack" line (food-only quantities)
       const packQty = computePackCount(o);
       if (packQty > 0) {
         const pKey = "pack";
@@ -291,7 +278,7 @@ export default function AdminDashboard() {
     if (!ok) return;
     try {
       setRemoving(true);
-      const res = await fetch(`/api/orders/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(`${API_BASE}/orders/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
         throw new Error(e?.error || `Failed to remove order (status ${res.status})`);
@@ -308,7 +295,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
-      {/* Header actions */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-6">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
           Admin Dashboard
@@ -332,7 +318,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Top Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Total Orders</h2>
@@ -356,7 +341,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Daily totals */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="px-4 py-3 bg-indigo-500 text-white rounded-2xl shadow">
           Today Online: <span className="font-bold">{money(dailyOnlineTotal)}</span>
@@ -369,7 +353,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Weekly totals */}
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="px-4 py-3 bg-orange-500 text-white rounded-2xl shadow">
           Weekly Online: <span className="font-bold">{money(weeklyOnlineTotal)}</span>
@@ -382,7 +365,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Quick Summary Buttons */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold shadow">
           💵 Cash Today: {money(cashToday)}
@@ -395,7 +377,6 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* ITEM TOTALS TABLE (Today) — now includes Pack */}
       <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
@@ -425,7 +406,6 @@ export default function AdminDashboard() {
         </table>
       </div>
 
-      {/* Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-8">
         <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
         <select
@@ -442,7 +422,6 @@ export default function AdminDashboard() {
         </select>
       </div>
 
-      {/* Table */}
       <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
@@ -483,7 +462,6 @@ export default function AdminDashboard() {
 
               const isOpen = selectedOrder && String(selectedOrder?._id) === String(order?._id);
 
-              // compute packaging for this order
               const packQty = computePackCount(order);
               const packagingCost = packQty * PACK_PRICE;
 
@@ -515,7 +493,6 @@ export default function AdminDashboard() {
                   {isOpen && (
                     <tr className="bg-white/90">
                       <td className="p-3 border-b" colSpan={9}>
-                        {/* Clicking anywhere in dropdown closes it */}
                         <div
                           className="bg-white w-full p-6 rounded-2xl shadow-xl relative border border-gray-200 cursor-pointer"
                           onClick={() => setSelectedOrder(null)}
@@ -540,7 +517,6 @@ export default function AdminDashboard() {
                             </p>
                             <p><strong>Total:</strong> {money(order?.total)}</p>
 
-                            {/* Packaging details (computed) */}
                             <p><strong>Packaging Packs:</strong> {packQty}</p>
                             <p><strong>Packaging Cost:</strong> {money(packagingCost)}</p>
 
@@ -555,7 +531,6 @@ export default function AdminDashboard() {
                                 {item?.name || "Item"} — {Number(item?.quantity || 0)} × {money(item?.price)}
                               </li>
                             ))}
-                            {/* Virtual pack line (only if there are food items) */}
                             {packQty > 0 && (
                               <li className="text-gray-700">
                                 Pack — {packQty} × {money(PACK_PRICE)} = <strong>{money(packagingCost)}</strong>
@@ -586,7 +561,6 @@ export default function AdminDashboard() {
         </table>
       </div>
 
-      {/* Pagination */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
         <button
           className="px-4 py-2 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50"
@@ -605,7 +579,6 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Summary Modal (unchanged) */}
       {showSummary && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white w-11/12 md:w-[520px] p-6 rounded-2xl shadow-xl relative">
