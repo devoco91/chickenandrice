@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -83,6 +83,13 @@ async function safeNotify(title, options = {}) {
     console.warn('Notification suppressed:', e?.message || e);
   }
 }
+
+/* -----------------------------
+   Earnings helpers (10% cut)
+   ----------------------------- */
+const toNumber = (v) => Number(v || 0);
+const calcEarning = (orderTotal) => toNumber(orderTotal) * 0.10; // 10%
+const money = (n) => `₦${toNumber(n).toLocaleString()}`;
 
 export default function DeliveryDashboard() {
   const [deliveries, setDeliveries] = useState([]);
@@ -241,6 +248,12 @@ export default function DeliveryDashboard() {
 
   useEffect(() => { if (!banner) return; const t = setTimeout(() => setBanner(null), 4000); return () => clearTimeout(t); }, [banner]);
 
+  // ----- Earnings derived from delivered history -----
+  const totalEarnings = useMemo(
+    () => history.reduce((sum, o) => sum + calcEarning(o?.total), 0),
+    [history]
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6">
       <div className="max-w-6xl mx-auto">
@@ -266,56 +279,63 @@ export default function DeliveryDashboard() {
           <TabsList>
             <TabsTrigger value="deliveries">Active Deliveries</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="earnings">Earnings</TabsTrigger>{/* NEW TAB */}
             <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
 
+          {/* Active */}
           <TabsContent value="deliveries">
             <div className="grid gap-4">
-              {deliveries.map((o) => (
-                <div key={o._id} className="bg-white p-4 rounded-xl shadow">
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="font-bold">{o.customerName}</p>
-                      <p className="text-sm">{o.houseNumber} {o.street}</p>
-                      <p className="text-sm">{o.phone}</p>
+              {deliveries.map((o) => {
+                const earning = calcEarning(o?.total);
+                return (
+                  <div key={o._id} className="bg-white p-4 rounded-xl shadow">
+                    <div className="flex justify-between">
+                      <div>
+                        <p className="font-bold">{o.customerName}</p>
+                        <p className="text-sm">{o.houseNumber} {o.street}</p>
+                        <p className="text-sm">{o.phone}</p>
+                      </div>
+                      <div className="text-right">
+                        {/* Show 10% earning IN PLACE of total */}
+                        <p className="text-green-600 font-bold">{money(earning)}</p>
+                        <p className="text-sm">{o.status}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-green-600 font-bold">₦{o.total}</p>
-                      <p className="text-sm">{o.status}</p>
-                    </div>
+
+                    {String(o.status).toLowerCase() === 'assigned' && (
+                      <div className="mt-3 flex gap-2">
+                        <button onClick={() => callAction(o._id, 'accept')} className="bg-green-500 text-white px-3 py-1 rounded">Accept</button>
+                        <button onClick={() => callAction(o._id, 'decline')} className="bg-red-500 text-white px-3 py-1 rounded">Decline</button>
+                      </div>
+                    )}
+
+                    {String(o.status).toLowerCase() === 'accepted' && (
+                      <div className="mt-3">
+                        <button onClick={() => callAction(o._id, 'in-transit')} className="bg-blue-500 text-white px-3 py-1 rounded">Start Delivery</button>
+                      </div>
+                    )}
+
+                    {String(o.status).toLowerCase() === 'in-transit' && (
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => {
+                            const addr = [o.houseNumber, o.street, o.landmark].filter(Boolean).join(' ');
+                            const url = `https://maps.google.com/?q=${encodeURIComponent(addr)}`;
+                            window.open(url, '_blank');
+                          }}
+                          className="bg-gray-500 text-white px-3 py-1 rounded"
+                        >Navigate</button>
+                        <button onClick={() => callAction(o._id, 'deliver')} className="bg-green-700 text-white px-3 py-1 rounded">Mark as Delivered</button>
+                      </div>
+                    )}
                   </div>
-
-                  {String(o.status).toLowerCase() === 'assigned' && (
-                    <div className="mt-3 flex gap-2">
-                      <button onClick={() => callAction(o._id, 'accept')} className="bg-green-500 text-white px-3 py-1 rounded">Accept</button>
-                      <button onClick={() => callAction(o._id, 'decline')} className="bg-red-500 text-white px-3 py-1 rounded">Decline</button>
-                    </div>
-                  )}
-
-                  {String(o.status).toLowerCase() === 'accepted' && (
-                    <div className="mt-3">
-                      <button onClick={() => callAction(o._id, 'in-transit')} className="bg-blue-500 text-white px-3 py-1 rounded">Start Delivery</button>
-                    </div>
-                  )}
-
-                  {String(o.status).toLowerCase() === 'in-transit' && (
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        onClick={() => {
-                          const addr = [o.houseNumber, o.street, o.landmark].filter(Boolean).join(' ');
-                          const url = `https://maps.google.com/?q=${encodeURIComponent(addr)}`;
-                          window.open(url, '_blank');
-                        }}
-                        className="bg-gray-500 text-white px-3 py-1 rounded"
-                      >Navigate</button>
-                      <button onClick={() => callAction(o._id, 'deliver')} className="bg-green-700 text-white px-3 py-1 rounded">Mark as Delivered</button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </TabsContent>
 
+          {/* History */}
           <TabsContent value="history">
             {history.length === 0 ? (
               <p>No completed deliveries yet</p>
@@ -336,6 +356,41 @@ export default function DeliveryDashboard() {
             )}
           </TabsContent>
 
+          {/* NEW: Earnings */}
+          <TabsContent value="earnings">
+            <div className="grid gap-4">
+              <div className="bg-white p-4 rounded-xl shadow flex items-center justify-between">
+                <p className="font-bold text-gray-800">Total Earnings</p>
+                <p className="text-green-600 font-extrabold text-xl">{money(totalEarnings)}</p>
+              </div>
+
+              {history.length === 0 ? (
+                <p>No earnings yet</p>
+              ) : (
+                <div className="grid gap-3">
+                  {history.map((o) => {
+                    const earning = calcEarning(o?.total);
+                    return (
+                      <div key={`earn-${o._id}`} className="bg-white p-4 rounded-xl shadow flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold">{o.customerName || 'Customer'}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(o.updatedAt || o.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-green-700 font-bold">{money(earning)}</p>
+                          <p className="text-xs text-gray-500">Order: {money(o.total)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Profile */}
           <TabsContent value="profile">
             {profile ? (
               <div className="bg-white p-4 rounded-xl shadow">
