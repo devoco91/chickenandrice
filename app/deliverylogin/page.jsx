@@ -271,7 +271,7 @@ const DeliveryLoginPage = () => {
         <div className="mt-8 text-center">
           <p className="text-gray-600">
             Don't have an account?{' '}
-            <a href="/signup" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">
+            <a href="/deliverysignup" className="text-blue-600 font-semibold hover:text-blue-700 transition-colors">
               Sign up here
             </a>
           </p>
