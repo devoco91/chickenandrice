@@ -44,6 +44,46 @@ const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('to
 const getAuthHeaders = (token) => (token ? { Authorization: `Bearer ${token}` } : {});
 const normalizeOrderType = (val) => { const s = val == null ? 'online' : String(val).trim().toLowerCase(); return s === '' ? 'online' : s; };
 
+/* -----------------------------
+   Safe Notifications (no throws)
+   ----------------------------- */
+async function safeNotify(title, options = {}) {
+  try {
+    if (typeof window === 'undefined') return;
+
+    // Request permission best-effort (if supported)
+    let perm = 'default';
+    if ('Notification' in window) {
+      perm = Notification.permission;
+      if (perm === 'default') {
+        try { perm = await Notification.requestPermission(); } catch {}
+      }
+    }
+
+    // Prefer Service Worker notifications (works on mobile/iOS/PWA)
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration =
+          (await navigator.serviceWorker.getRegistration()) ||
+          (await navigator.serviceWorker.ready).registration;
+
+        if (registration && typeof registration.showNotification === 'function' && perm === 'granted') {
+          await registration.showNotification(title, options);
+          return;
+        }
+      } catch {}
+    }
+
+    // Fallback to window Notification where allowed
+    if ('Notification' in window && perm === 'granted') {
+      try { new Notification(title, options); } catch {}
+    }
+  } catch (e) {
+    // Never break the app for notification failures
+    console.warn('Notification suppressed:', e?.message || e);
+  }
+}
+
 export default function DeliveryDashboard() {
   const [deliveries, setDeliveries] = useState([]);
   const [history, setHistory] = useState([]);
@@ -145,25 +185,37 @@ export default function DeliveryDashboard() {
     }
   };
 
+  // ---- Notification callers (use safeNotify) ----
   const notifyNewAssignment = (order) => {
-    try { if (audioRef.current) audioRef.current.play(); } catch {}
+    try { audioRef.current?.play()?.catch(() => {}); } catch {}
     if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      const n = new Notification('📦 New Order Assigned!', { body: `${order.customerName || 'Customer'} — ₦${order.total}`, icon: NOTIFICATION_ICON, tag: order._id });
-      n.onclick = () => { window.focus(); window.location.assign(DASHBOARD_PATH); n.close(); };
-    }
+    safeNotify('📦 New Order Assigned!', {
+      body: `${order.customerName || 'Customer'} — ₦${order.total}`,
+      icon: NOTIFICATION_ICON,
+      tag: String(order._id || ''),
+      data: { url: DASHBOARD_PATH },
+    });
   };
   const notifyDelivered = (order) => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      const n = new Notification('✅ Order Delivered', { body: `${order.customerName || 'Customer'} — ₦${order.total}`, icon: NOTIFICATION_ICON, tag: `delivered-${order._id}` });
-      n.onclick = () => { window.focus(); window.location.assign(DASHBOARD_PATH); n.close(); };
-    }
+    safeNotify('✅ Order Delivered', {
+      body: `${order.customerName || 'Customer'} — ₦${order.total}`,
+      icon: NOTIFICATION_ICON,
+      tag: `delivered-${String(order._id || '')}`,
+      data: { url: DASHBOARD_PATH },
+    });
   };
 
   const requestNotifications = async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (typeof window === 'undefined') return;
+    if (!('Notification' in window) && !('serviceWorker' in navigator)) return;
     try {
-      const perm = await Notification.requestPermission();
+      let perm = 'default';
+      if ('Notification' in window) {
+        perm = Notification.permission;
+        if (perm === 'default') {
+          try { perm = await Notification.requestPermission(); } catch {}
+        }
+      }
       setNotifPermission(perm);
       if (perm === 'granted') setBanner({ type: 'success', text: 'Notifications enabled.' });
       else if (perm === 'denied') setBanner({ type: 'error', text: 'Notifications blocked in browser settings.' });
@@ -177,12 +229,12 @@ export default function DeliveryDashboard() {
     audioRef.current.preload = 'auto';
     if (typeof window !== 'undefined' && 'Notification' in window) { setNotifPermission(Notification.permission); }
     fetchDeliveries();
-    fetchHistory();   // ⬅️ load persisted history on mount
+    fetchHistory();   // load persisted history on mount
     fetchProfile();
 
     const interval = setInterval(() => {
       fetchDeliveries();
-      fetchHistory(); // ⬅️ keep history fresh
+      fetchHistory(); // keep history fresh
     }, 10000);
     return () => clearInterval(interval);
   }, []);

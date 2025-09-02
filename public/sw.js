@@ -54,6 +54,18 @@ self.addEventListener("fetch", (event) => {
     return; // do nothing
   }
 
+
+
+  self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/deliverydashboard';
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of clients) { try { await c.focus(); c.navigate && c.navigate(url); return; } catch {} }
+    self.clients.openWindow && self.clients.openWindow(url);
+  })());
+});
+
   // Only intercept navigations that accept HTML
   if (request.mode === "navigate" && request.headers.get("accept")?.includes("text/html")) {
     console.log("[SW] Handling navigation request:", url.pathname);
