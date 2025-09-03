@@ -1,4 +1,4 @@
-// ===================== PART 1/3 – Imports, state, helpers, fetch (NO LOGIC CHANGE) =====================
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
@@ -83,12 +83,12 @@ export default function AdminDashboard() {
     return /\b(pack|packs|packaging|container|take\s*away|takeaway|bag)\b/.test(name);
   };
 
+  // FIX: Only count packaging items that actually exist in the order.
   const computePackCount = (order) => {
     const items = Array.isArray(order?.items) ? order.items : [];
     let count = 0;
     for (const it of items) {
-      if (isPackagingItem(it)) continue;
-      if (isDrinkItem(it)) continue;
+      if (!isPackagingItem(it)) continue;
       const qty = Number(it?.quantity ?? 0) || 0;
       count += qty;
     }
@@ -276,6 +276,7 @@ export default function AdminDashboard() {
     return { cashToday: cash, cardToday: card, transferToday: transfer };
   }, [orders, startOfToday]);
 
+  // Items sold today – uses real items only; no synthetic packs.
   const itemTotalsToday = useMemo(() => {
     const all = new Map();
     const online = new Map();
@@ -298,15 +299,7 @@ export default function AdminDashboard() {
         if (type === "online") online.set(key, (online.get(key) || 0) + qty);
         if (type === "instore") instore.set(key, (instore.get(key) || 0) + qty);
       }
-
-      const packQty = computePackCount(o);
-      if (packQty > 0) {
-        const pKey = "pack";
-        if (!display.has(pKey)) display.set(pKey, "Pack");
-        all.set(pKey, (all.get(pKey) || 0) + packQty);
-        if (type === "online") online.set(pKey, (online.get(pKey) || 0) + packQty);
-        if (type === "instore") instore.set(pKey, (instore.get(pKey) || 0) + packQty);
-      }
+      // NOTE: removed synthetic Pack injection; counts only if item exists.
     }
 
     const rows = Array.from(all.keys()).map((k) => ({
@@ -584,8 +577,7 @@ export default function AdminDashboard() {
     w.document.close();
   };
 
-
-  return (
+    return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-6">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
@@ -821,7 +813,7 @@ export default function AdminDashboard() {
       </div>
 
 
-            {/* Orders table */}
+      {/* Orders table */}
       <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
@@ -862,6 +854,7 @@ export default function AdminDashboard() {
 
               const isOpen = selectedOrder && String(selectedOrder?._id) === String(order?._id);
 
+              // FIX now reflects only actual pack items present:
               const packQty = computePackCount(order);
               const packagingCost = packQty * PACK_PRICE;
 
@@ -1027,4 +1020,5 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
 
