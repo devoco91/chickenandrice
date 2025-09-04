@@ -77,7 +77,7 @@ export default function ReceiptPage() {
             <div className="text-center">
               <div className="mx-auto mb-3 rounded-2xl inline-flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100 p-2 print:bg-transparent">
                 <Image
-                  src="/favicon.ico"
+                  src="/receipt.jpg"
                   alt="Logo"
                   width={72}
                   height={72}
