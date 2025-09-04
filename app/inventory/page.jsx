@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE } from "../utils/apiBase";
 
-const fmtNum = (n) => (Number(n || 0)).toLocaleString("en-NG");
+const fmtNum = (n) => Number(n || 0).toLocaleString("en-NG");
 const fmtGram = (g) => {
   const n = Number(g || 0);
   if (n >= 1000) return `${(n / 1000).toFixed(2)} kg`;
@@ -21,7 +21,9 @@ async function getJSON(url, signal) {
   const res = await fetch(url, { cache: "no-store", signal });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0,160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`
+    );
   }
   return tryJson(res);
 }
@@ -33,7 +35,9 @@ async function postJSON(url, body) {
   });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0,160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`
+    );
   }
   return tryJson(res);
 }
@@ -45,7 +49,9 @@ async function patchJSON(url, body) {
   });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0,160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`
+    );
   }
   return tryJson(res);
 }
@@ -53,7 +59,9 @@ async function del(url) {
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0,160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`
+    );
   }
   return tryJson(res);
 }
@@ -63,6 +71,18 @@ const safeAbort = (controller) => {
   try {
     if (!controller.signal.aborted) controller.abort();
   } catch {}
+};
+
+// helper to choose kind for piece items created from inferred rows
+const pieceKind = (name = "") => {
+  const sl = String(name).toLowerCase();
+  // treat these piece items as FOOD (pcs)
+  if (/moimoi|moi|moi-?moi|plantain|dodo|pack|packs/.test(sl)) return "food";
+  // proteins remain protein (pcs)
+  if (/(chicken|beef|goat|turkey|fish|meat|protein|gizzard|ponmo|shaki|kote|cowleg|egg)/.test(sl))
+    return "protein";
+  // everything else piece-like defaults to drinks
+  return "drink";
 };
 
 export default function InventoryPage() {
@@ -145,10 +165,22 @@ export default function InventoryPage() {
 
   const rowClick = (row) => {
     if (!row?._id) {
-      // this row came from orders (not configured yet). Offer to create it pre-filled
-      setEditItem({ _id: null, name: row.sku, kind: row.unit === "gram" ? "food" : "drink", unit: row.unit, aliases: [] });
+      // inferred row from orders — prefill creation
+      setEditItem({
+        _id: null,
+        name: row.sku,
+        kind: row.unit === "gram" ? "food" : pieceKind(row.sku),
+        unit: row.unit,
+        aliases: [],
+      });
     } else {
-      setEditItem({ _id: row._id, name: row.sku, kind: row.unit === "gram" ? "food" : "drink", unit: row.unit, aliases: [] });
+      setEditItem({
+        _id: row._id,
+        name: row.sku,
+        kind: row.unit === "gram" ? "food" : row.kind || pieceKind(row.sku),
+        unit: row.unit,
+        aliases: [],
+      });
     }
   };
 
@@ -211,11 +243,11 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Tables (NO "Added" column) */}
+      {/* Tables */}
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Food (grams) */}
+        {/* Food (can be grams OR pieces per row) */}
         <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4">
-          <h3 className="font-bold mb-2">Food (grams)</h3>
+          <h3 className="font-bold mb-2">Food</h3>
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead className="bg-gray-100 text-left">
@@ -233,8 +265,12 @@ export default function InventoryPage() {
                     onClick={() => rowClick(r)}
                   >
                     <td className="p-3 border-b">{r?.sku || "-"}</td>
-                    <td className="p-3 border-b">{fmtGram(r?.remaining)}</td>
-                    <td className="p-3 border-b">{fmtGram(r?.used)}</td>
+                    <td className="p-3 border-b">
+                      {r?.unit === "gram" ? fmtGram(r?.remaining) : `${fmtNum(r?.remaining)} pcs`}
+                    </td>
+                    <td className="p-3 border-b">
+                      {r?.unit === "gram" ? fmtGram(r?.used) : `${fmtNum(r?.used)} pcs`}
+                    </td>
                   </tr>
                 ))}
                 {(!summary?.food || summary.food.length === 0) && (
@@ -372,7 +408,10 @@ function AddItemModal({ onClose, onSaved }) {
       sku: name.trim(),
       kind,
       unit,
-      aliases: aliases.split(",").map((s) => s.trim()).filter(Boolean),
+      aliases: aliases
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
     };
     try {
       setLoading(true);

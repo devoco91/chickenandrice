@@ -316,6 +316,16 @@ export default function Dashboard() {
     <div className="min-h-screen bg-red-50 p-6 text-gray-900">
       <h1 className="text-3xl font-bold mb-6 text-red-700">Dashboard</h1>
 
+
+      <div className="relative inline-block mb-6">
+        <Link
+          href="/inventory"
+          className="inline-flex items-center gap-2 mx-3 bg-gradient-to-r from-orange-500 to-red-500 text-white px-5 py-3 rounded-2xl shadow hover:shadow-lg transition"
+        >
+          Inventory <ArrowRightCircle className="w-5 h-5" />
+        </Link>
+      </div>
+
       {/* Populate button */}
       <div className="relative inline-block mb-6">
         <Link
