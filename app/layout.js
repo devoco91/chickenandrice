@@ -1,11 +1,9 @@
-
-
-
 // app/layout.js
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ReduxProvider from "./store/ReduxProvider";
 import Script from "next/script";
+import PWARegister from "./components/PWARegister"; // ⬅️ register SW
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -61,7 +59,10 @@ export default function RootLayout({ children }) {
         {/* ✅ Redux store available everywhere */}
         <ReduxProvider>{children}</ReduxProvider>
 
-        {/* ✅ Lazy load Google Maps API */}
+        {/* ✅ PWA: registers /sw.js (kept minimal; does not affect other code) */}
+        <PWARegister />
+
+        {/* ✅ Lazy load Google Maps API (kept to avoid breaking pages that rely on it) */}
         <Script
           src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
           strategy="lazyOnload"

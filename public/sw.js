@@ -37,6 +37,19 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// ✅ Moved to top level (was incorrectly inside fetch previously)
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/deliverydashboard";
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of clients) {
+      try { await c.focus(); if (c.navigate) c.navigate(url); return; } catch {}
+    }
+    if (self.clients.openWindow) self.clients.openWindow(url);
+  })());
+});
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
@@ -54,18 +67,6 @@ self.addEventListener("fetch", (event) => {
     return; // do nothing
   }
 
-
-
-  self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || '/deliverydashboard';
-  event.waitUntil((async () => {
-    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const c of clients) { try { await c.focus(); c.navigate && c.navigate(url); return; } catch {} }
-    self.clients.openWindow && self.clients.openWindow(url);
-  })());
-});
-
   // Only intercept navigations that accept HTML
   if (request.mode === "navigate" && request.headers.get("accept")?.includes("text/html")) {
     console.log("[SW] Handling navigation request:", url.pathname);
@@ -76,7 +77,7 @@ self.addEventListener("fetch", (event) => {
           const response = await fetch(request);
           if (!response.ok) {
             console.warn("[SW] Network returned error status:", response.status, url.pathname);
-            return response; // don’t fallback, just return real error
+            return response; // return the actual error page (no offline fallback)
           }
           return response;
         } catch (err) {
