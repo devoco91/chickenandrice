@@ -3,7 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ReduxProvider from "./store/ReduxProvider";
 import Script from "next/script";
-import PWARegister from "./components/PWARegister"; // ⬅️ register SW
+import PWARegister from "./components/PWARegister";
+import InstallPWAButton from "./components/InstallPWAButton";
+import IOSA2HSBanner from "./components/IOSA2HSBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -59,10 +61,16 @@ export default function RootLayout({ children }) {
         {/* ✅ Redux store available everywhere */}
         <ReduxProvider>{children}</ReduxProvider>
 
-        {/* ✅ PWA: registers /sw.js (kept minimal; does not affect other code) */}
+        {/* iOS Safari hint (only shows on iOS + not already installed) */}
+        <IOSA2HSBanner />
+
+        {/* Install button (Android/Desktop; hidden if already installed) */}
+        <InstallPWAButton className="fixed bottom-4 right-4 px-4 py-2 rounded-xl bg-gray-900 text-white shadow" />
+
+        {/* Registers /sw.js (safe, no effect on API/images) */}
         <PWARegister />
 
-        {/* ✅ Lazy load Google Maps API (kept to avoid breaking pages that rely on it) */}
+        {/* ✅ Lazy load Google Maps API (kept) */}
         <Script
           src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
           strategy="lazyOnload"

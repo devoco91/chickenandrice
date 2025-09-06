@@ -73,26 +73,28 @@ const safeAbort = (controller) => {
   } catch {}
 };
 
-// helper to choose kind for piece items created from inferred rows
+// decide bucket for piece-type inferred items
 const pieceKind = (name = "") => {
   const sl = String(name).toLowerCase();
-  // treat these piece items as FOOD (pcs)
-  if (/moimoi|moi|moi-?moi|plantain|dodo|pack|packs/.test(sl)) return "food";
-  // proteins remain protein (pcs)
+  if (/moimoi|moi|moi-?moi|plantain|dodo|pack|packs/.test(sl)) return "food"; // food in pieces
   if (/(chicken|beef|goat|turkey|fish|meat|protein|gizzard|ponmo|shaki|kote|cowleg|egg)/.test(sl))
     return "protein";
-  // everything else piece-like defaults to drinks
   return "drink";
 };
 
 export default function InventoryPage() {
   const [summary, setSummary] = useState(null);
   const [movements, setMovements] = useState([]);
+  const [stockEntries, setStockEntries] = useState([]);
+  const [items, setItems] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [editItem, setEditItem] = useState(null); // {_id, sku, unit, ...}
+  const [showRestock, setShowRestock] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [editStock, setEditStock] = useState(null);
   const [pollMs, setPollMs] = useState(20000);
 
   const abortRef = useRef(null);
@@ -105,14 +107,23 @@ export default function InventoryPage() {
       const ac = new AbortController();
       abortRef.current = ac;
 
-      const s = await getJSON(`${API_BASE}/inventory/summary?ts=${Date.now()}`, ac.signal);
+      const [s, m, st, it] = await Promise.all([
+        getJSON(`${API_BASE}/inventory/summary?ts=${Date.now()}`, ac.signal),
+        getJSON(`${API_BASE}/inventory/movements?limit=50&ts=${Date.now()}`, ac.signal).catch(
+          () => ({ items: [] })
+        ),
+        getJSON(`${API_BASE}/inventory/stock?ts=${Date.now()}`, ac.signal).catch(() => ({
+          entries: [],
+        })),
+        getJSON(`${API_BASE}/inventory/items?ts=${Date.now()}`, ac.signal).catch(() => ({
+          items: [],
+        })),
+      ]);
+
       setSummary(s || {});
-      try {
-        const m = await getJSON(`${API_BASE}/inventory/movements?limit=50&ts=${Date.now()}`, ac.signal);
-        setMovements(Array.isArray(m?.items) ? m.items : Array.isArray(m) ? m : []);
-      } catch {
-        setMovements([]);
-      }
+      setMovements(Array.isArray(m?.items) ? m.items : []);
+      setStockEntries(Array.isArray(st?.entries) ? st.entries : []);
+      setItems(Array.isArray(it?.items) ? it.items : []);
       setLastUpdated(new Date());
     } catch (e) {
       if (e?.name === "AbortError") return;
@@ -135,15 +146,54 @@ export default function InventoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollMs]);
 
+  const itemByName = useMemo(() => {
+    const map = new Map();
+    for (const it of items) map.set(String(it.name || "").trim(), it);
+    return map;
+  }, [items]);
+
+  // Sum all stock entries (carry-over; NOT reset at midnight)
+  const totalStockBySlug = useMemo(() => {
+    const acc = new Map();
+    for (const e of stockEntries) {
+      const it = itemByName.get(String(e?.sku || "").trim());
+      const slug = it?.slug || null;
+      if (!slug) continue;
+      const qty = Number(e?.qty || 0) || 0;
+      if (!qty) continue;
+      acc.set(slug, (acc.get(slug) || 0) + qty);
+    }
+    return acc;
+  }, [stockEntries, itemByName]);
+
+  // Join totals + used to compute remaining
+  const rows = useMemo(() => {
+    const bucket = (arr = []) =>
+      arr.map((r) => {
+        const slug = r?.slug;
+        const unit = r?.unit;
+        const used = Number(r?.used || 0);
+        const totalIn = Number(totalStockBySlug.get(slug) || 0);
+        const remaining = Math.max(totalIn - used, 0);
+        return { ...r, unit, used, totalIn, remaining };
+      });
+
+    return {
+      food: bucket(Array.isArray(summary?.food) ? summary.food : []),
+      drinks: bucket(Array.isArray(summary?.drinks) ? summary.drinks : []),
+      proteins: bucket(Array.isArray(summary?.proteins) ? summary.proteins : []),
+    };
+  }, [summary, totalStockBySlug]);
+
   const totals = useMemo(() => {
-    const food = Array.isArray(summary?.food) ? summary.food : [];
-    const drinks = Array.isArray(summary?.drinks) ? summary.drinks : [];
-    const proteins = Array.isArray(summary?.proteins) ? summary.proteins : [];
-    const foodRemainG = food.reduce((s, r) => s + Number(r?.remaining || 0), 0);
-    const drinkRemain = drinks.reduce((s, r) => s + Number(r?.remaining || 0), 0);
-    const proteinRemain = proteins.reduce((s, r) => s + Number(r?.remaining || 0), 0);
-    return { foodRemainG, drinkRemain, proteinRemain };
-  }, [summary]);
+    const sumRemain = (arr) => arr.reduce((s, r) => s + Number(r?.remaining || 0), 0);
+    return {
+      foodRemainG: sumRemain(rows.food.filter((r) => r.unit === "gram")),
+      foodRemainPcs: sumRemain(rows.food.filter((r) => r.unit === "piece")),
+      drinkRemain: sumRemain(rows.drinks),
+      proteinRemain: sumRemain(rows.proteins),
+    };
+  }, [rows]);
 
   const onItemSaved = async () => {
     setShowAdd(false);
@@ -152,8 +202,8 @@ export default function InventoryPage() {
   };
 
   const onItemDelete = async (row) => {
-    if (!row?._id) return alert("Cannot delete an inferred row. Edit after creating the item.");
-    const ok = confirm(`Delete "${row.sku}"? This removes it from today's inventory.`);
+    if (!row?._id) return alert("Cannot delete an inferred row. Create it first.");
+    const ok = confirm(`Delete "${row.sku}"? This also removes its stock entries.`);
     if (!ok) return;
     try {
       await del(`${API_BASE}/inventory/items/${row._id}`);
@@ -165,13 +215,11 @@ export default function InventoryPage() {
 
   const rowClick = (row) => {
     if (!row?._id) {
-      // inferred row from orders — prefill creation
       setEditItem({
         _id: null,
         name: row.sku,
         kind: row.unit === "gram" ? "food" : pieceKind(row.sku),
         unit: row.unit,
-        aliases: [],
       });
     } else {
       setEditItem({
@@ -179,16 +227,36 @@ export default function InventoryPage() {
         name: row.sku,
         kind: row.unit === "gram" ? "food" : row.kind || pieceKind(row.sku),
         unit: row.unit,
-        aliases: [],
       });
+    }
+  };
+
+  // Stock entry actions
+  const onStockEdit = (entry) => setEditStock(entry);
+  const onStockDeleted = async (entry) => {
+    const ok = confirm(`Delete stock entry for "${entry.sku}" (${entry.qty} ${entry.unit})?`);
+    if (!ok) return;
+    try {
+      await del(`${API_BASE}/inventory/stock/${entry._id}`);
+      await fetchAll();
+    } catch (e) {
+      alert(e.message || "Failed to delete stock entry.");
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">Inventory</h1>
+        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
+          Inventory
+        </h1>
         <div className="flex gap-2">
+          <button
+            onClick={() => setShowRestock(true)}
+            className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-amber-600 to-yellow-600 shadow hover:opacity-95 active:scale-95"
+          >
+            Add Inventory / Restock
+          </button>
           <button
             onClick={() => setShowAdd(true)}
             className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-emerald-600 to-green-600 shadow hover:opacity-95 active:scale-95"
@@ -211,7 +279,10 @@ export default function InventoryPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-green-500 to-emerald-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Food Remaining</h2>
-          <p className="text-2xl font-extrabold">{fmtGram(totals.foodRemainG)}</p>
+          <p className="text-sm opacity-90">(grams + pieces)</p>
+          <p className="text-2xl font-extrabold">
+            {fmtGram(totals.foodRemainG)} &nbsp; / &nbsp; {fmtNum(totals.foodRemainPcs)} pcs
+          </p>
         </div>
         <div className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Drinks Remaining</h2>
@@ -245,7 +316,7 @@ export default function InventoryPage() {
 
       {/* Tables */}
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Food (can be grams OR pieces per row) */}
+        {/* Food (grams or pieces) */}
         <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4">
           <h3 className="font-bold mb-2">Food</h3>
           <div className="overflow-x-auto">
@@ -253,12 +324,13 @@ export default function InventoryPage() {
               <thead className="bg-gray-100 text-left">
                 <tr>
                   <th className="p-3 border-b">Item</th>
-                  <th className="p-3 border-b">Remaining</th>
+                  <th className="p-3 border-b">Total In</th>
                   <th className="p-3 border-b">Used</th>
+                  <th className="p-3 border-b">Remaining</th>
                 </tr>
               </thead>
               <tbody>
-                {(Array.isArray(summary?.food) ? summary.food : []).map((r, i) => (
+                {(rows.food || []).map((r, i) => (
                   <tr
                     key={r?.slug || i}
                     className={`${i % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100 cursor-pointer`}
@@ -266,15 +338,18 @@ export default function InventoryPage() {
                   >
                     <td className="p-3 border-b">{r?.sku || "-"}</td>
                     <td className="p-3 border-b">
-                      {r?.unit === "gram" ? fmtGram(r?.remaining) : `${fmtNum(r?.remaining)} pcs`}
+                      {r?.unit === "gram" ? fmtGram(r?.totalIn) : `${fmtNum(r?.totalIn)} pcs`}
                     </td>
                     <td className="p-3 border-b">
                       {r?.unit === "gram" ? fmtGram(r?.used) : `${fmtNum(r?.used)} pcs`}
                     </td>
+                    <td className="p-3 border-b">
+                      {r?.unit === "gram" ? fmtGram(r?.remaining) : `${fmtNum(r?.remaining)} pcs`}
+                    </td>
                   </tr>
                 ))}
-                {(!summary?.food || summary.food.length === 0) && (
-                  <tr><td className="p-3 border-b text-gray-500" colSpan={3}>No food rows.</td></tr>
+                {(!rows.food || rows.food.length === 0) && (
+                  <tr><td className="p-3 border-b text-gray-500" colSpan={4}>No food rows.</td></tr>
                 )}
               </tbody>
             </table>
@@ -289,24 +364,26 @@ export default function InventoryPage() {
               <thead className="bg-gray-100 text-left">
                 <tr>
                   <th className="p-3 border-b">Item</th>
-                  <th className="p-3 border-b">Remaining</th>
+                  <th className="p-3 border-b">Total In</th>
                   <th className="p-3 border-b">Used</th>
+                  <th className="p-3 border-b">Remaining</th>
                 </tr>
               </thead>
               <tbody>
-                {(Array.isArray(summary?.drinks) ? summary.drinks : []).map((r, i) => (
+                {(rows.drinks || []).map((r, i) => (
                   <tr
                     key={r?.slug || i}
                     className={`${i % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100 cursor-pointer`}
                     onClick={() => rowClick(r)}
                   >
                     <td className="p-3 border-b">{r?.sku || "-"}</td>
-                    <td className="p-3 border-b">{fmtNum(r?.remaining)} pcs</td>
+                    <td className="p-3 border-b">{fmtNum(r?.totalIn)} pcs</td>
                     <td className="p-3 border-b">{fmtNum(r?.used)} pcs</td>
+                    <td className="p-3 border-b">{fmtNum(r?.remaining)} pcs</td>
                   </tr>
                 ))}
-                {(!summary?.drinks || summary.drinks.length === 0) && (
-                  <tr><td className="p-3 border-b text-gray-500" colSpan={3}>No drinks rows.</td></tr>
+                {(!rows.drinks || rows.drinks.length === 0) && (
+                  <tr><td className="p-3 border-b text-gray-500" colSpan={4}>No drinks rows.</td></tr>
                 )}
               </tbody>
             </table>
@@ -321,24 +398,26 @@ export default function InventoryPage() {
               <thead className="bg-gray-100 text-left">
                 <tr>
                   <th className="p-3 border-b">Item</th>
-                  <th className="p-3 border-b">Remaining</th>
+                  <th className="p-3 border-b">Total In</th>
                   <th className="p-3 border-b">Used</th>
+                  <th className="p-3 border-b">Remaining</th>
                 </tr>
               </thead>
               <tbody>
-                {(Array.isArray(summary?.proteins) ? summary.proteins : []).map((r, i) => (
+                {(rows.proteins || []).map((r, i) => (
                   <tr
                     key={r?.slug || i}
                     className={`${i % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100 cursor-pointer`}
                     onClick={() => rowClick(r)}
                   >
                     <td className="p-3 border-b">{r?.sku || "-"}</td>
-                    <td className="p-3 border-b">{fmtNum(r?.remaining)} pcs</td>
+                    <td className="p-3 border-b">{fmtNum(r?.totalIn)} pcs</td>
                     <td className="p-3 border-b">{fmtNum(r?.used)} pcs</td>
+                    <td className="p-3 border-b">{fmtNum(r?.remaining)} pcs</td>
                   </tr>
                 ))}
-                {(!summary?.proteins || summary.proteins.length === 0) && (
-                  <tr><td className="p-3 border-b text-gray-500" colSpan={3}>No protein rows.</td></tr>
+                {(!rows.proteins || rows.proteins.length === 0) && (
+                  <tr><td className="p-3 border-b text-gray-500" colSpan={4}>No protein rows.</td></tr>
                 )}
               </tbody>
             </table>
@@ -377,7 +456,80 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      {/* Stock entries */}
+      <div className="mt-8 bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold">All Stock Entries</h3>
+          <button
+            onClick={() => setShowRestock(true)}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700"
+          >
+            Add Entry
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse">
+            <thead className="bg-gray-100 text-left">
+              <tr>
+                <th className="p-3 border-b">When</th>
+                <th className="p-3 border-b">SKU</th>
+                <th className="p-3 border-b">Qty</th>
+                <th className="p-3 border-b">Unit</th>
+                <th className="p-3 border-b">Note</th>
+                <th className="p-3 border-b">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockEntries.length === 0 ? (
+                <tr>
+                  <td className="p-3 border-b text-gray-500" colSpan={6}>
+                    No stock entries yet.
+                  </td>
+                </tr>
+              ) : (
+                stockEntries.map((e, i) => (
+                  <tr key={e?._id || i} className={i % 2 === 0 ? "bg-gray-50/60" : "bg-white"}>
+                    <td className="p-3 border-b">
+                      {e?.createdAt ? new Date(e.createdAt).toLocaleString() : "-"}
+                    </td>
+                    <td className="p-3 border-b">{e?.sku || "-"}</td>
+                    <td className="p-3 border-b">{fmtNum(e?.qty)}</td>
+                    <td className="p-3 border-b">{e?.unit}</td>
+                    <td className="p-3 border-b">{e?.note || "-"}</td>
+                    <td className="p-3 border-b">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onStockEdit(e)}
+                          className="px-3 py-1 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => onStockDeleted(e)}
+                          className="px-3 py-1 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showRestock && (
+        <RestockModal
+          items={items}
+          onClose={() => setShowRestock(false)}
+          onSaved={fetchAll}
+        />
+      )}
+
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onSaved={onItemSaved} />}
+
       {editItem && (
         <EditItemModal
           item={editItem}
@@ -386,6 +538,113 @@ export default function InventoryPage() {
           onDelete={onItemDelete}
         />
       )}
+
+      {editStock && (
+        <EditStockModal
+          entry={editStock}
+          onClose={() => setEditStock(null)}
+          onSaved={fetchAll}
+        />
+      )}
+    </div>
+  );
+}
+
+function RestockModal({ items, onClose, onSaved }) {
+  const [sku, setSku] = useState("");
+  const [qty, setQty] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (!sku.trim()) return setErr("Select an item.");
+    const n = Number(qty);
+    if (!Number.isFinite(n) || n <= 0) return setErr("Enter a positive quantity.");
+    try {
+      setLoading(true);
+      const r = await postJSON(`${API_BASE}/inventory/stock`, { sku, qty: n, note: note.trim() });
+      if (r?.error) throw new Error(r.error);
+      onSaved?.();
+      onClose?.();
+    } catch (e) {
+      setErr(e?.message || "Failed to add entry.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white w-11/12 md:w-[520px] p-6 rounded-2xl shadow-xl relative">
+        <button
+          className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300"
+          onClick={onClose}
+        >
+          ✕
+        </button>
+        <h2 className="text-xl font-extrabold mb-4 text-gray-900">Add Inventory / Restock</h2>
+
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="text-sm text-gray-700">Item</label>
+            <select
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400"
+            >
+              <option value="">— Select —</option>
+              {items.map((it) => (
+                <option key={it._id} value={it.name}>
+                  {it.name} {it.unit === "gram" ? "(g)" : "(pcs)"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Quantity to add</label>
+            <input
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              type="number"
+              min="0"
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400"
+              placeholder="e.g. 1000 (grams) or 24 (pcs)"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Note (optional)</label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400"
+              placeholder="Morning prep, restock at 2pm, etc."
+            />
+          </div>
+        </div>
+
+        {err && <div className="mt-3 text-rose-600 text-sm font-semibold">{err}</div>}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={loading}
+            className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
+              loading ? "bg-gray-400 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-700"
+            }`}
+          >
+            {loading ? "Saving..." : "Add Entry"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -394,7 +653,6 @@ function AddItemModal({ onClose, onSaved }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState("food");
   const [unit, setUnit] = useState("gram");
-  const [aliases, setAliases] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -408,10 +666,6 @@ function AddItemModal({ onClose, onSaved }) {
       sku: name.trim(),
       kind,
       unit,
-      aliases: aliases
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
     };
     try {
       setLoading(true);
@@ -439,7 +693,7 @@ function AddItemModal({ onClose, onSaved }) {
           <div>
             <label className="text-sm text-gray-700">Kind</label>
             <select value={kind} onChange={(e) => setKind(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400">
-              <option value="food">Food (grams)</option>
+              <option value="food">Food (grams or pieces)</option>
               <option value="drink">Drink (pieces)</option>
               <option value="protein">Protein (pieces)</option>
             </select>
@@ -450,10 +704,6 @@ function AddItemModal({ onClose, onSaved }) {
               <option value="gram">Gram</option>
               <option value="piece">Piece</option>
             </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="text-sm text-gray-700">Aliases (comma-separated)</label>
-            <input value={aliases} onChange={(e) => setAliases(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400" placeholder="fried rice,fried-rice,fr rice" />
           </div>
         </div>
 
@@ -472,7 +722,6 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
   const [name, setName] = useState(item?.name ?? item?.sku ?? "");
   const [kind, setKind] = useState(item?.kind || (item?.unit === "gram" ? "food" : "drink"));
   const [unit, setUnit] = useState(item?.unit || "gram");
-  const [aliases, setAliases] = useState(Array.isArray(item?.aliases) ? item.aliases.join(", ") : "");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -482,17 +731,13 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
       name: String(name || "").trim(),
       kind,
       unit,
-      aliases: String(aliases || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
     };
     try {
       setLoading(true);
       if (item?._id) {
         await patchJSON(`${API_BASE}/inventory/items/${item._id}`, body);
       } else {
-        await postJSON(`${API_BASE}/inventory/items`, { sku: body.name, kind, unit, aliases: body.aliases });
+        await postJSON(`${API_BASE}/inventory/items`, { sku: body.name, kind, unit });
       }
       onSaved?.();
     } catch (e) {
@@ -521,7 +766,7 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
           <div>
             <label className="text-sm text-gray-700">Kind</label>
             <select value={kind} onChange={(e) => setKind(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400">
-              <option value="food">Food (grams)</option>
+              <option value="food">Food (grams or pieces)</option>
               <option value="drink">Drink (pieces)</option>
               <option value="protein">Protein (pieces)</option>
             </select>
@@ -533,10 +778,6 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
               <option value="piece">Piece</option>
             </select>
           </div>
-          <div className="sm:col-span-2">
-            <label className="text-sm text-gray-700">Aliases (comma-separated)</label>
-            <input value={aliases} onChange={(e) => setAliases(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400" />
-          </div>
         </div>
 
         {err && <div className="mt-3 text-rose-600 text-sm font-semibold">{err}</div>}
@@ -547,6 +788,92 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
             <button onClick={onClose} className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50" disabled={loading}>Cancel</button>
             <button onClick={save} disabled={loading} className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"}`}>{loading ? "Saving..." : "Save"}</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditStockModal({ entry, onClose, onSaved }) {
+  const [qty, setQty] = useState(entry?.qty ?? 0);
+  const [note, setNote] = useState(entry?.note ?? "");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  const save = async () => {
+    setErr("");
+    const n = Number(qty);
+    if (!Number.isFinite(n) || n < 0) return setErr("Enter a valid quantity.");
+    try {
+      setLoading(true);
+      await patchJSON(`${API_BASE}/inventory/stock/${entry._id}`, { qty: n, note });
+      onSaved?.();
+      onClose?.();
+    } catch (e) {
+      setErr(e?.message || "Failed to save.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white w-11/12 md:w-[520px] p-6 rounded-2xl shadow-xl relative">
+        <button
+          className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300"
+          onClick={onClose}
+        >
+          ✕
+        </button>
+        <h2 className="text-xl font-extrabold mb-4 text-gray-900">Edit Stock Entry</h2>
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="text-sm text-gray-700">Item</label>
+            <input
+              value={`${entry?.sku || ""} (${entry?.unit || ""})`}
+              disabled
+              className="w-full border rounded-xl px-3 py-2 bg-gray-100"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Quantity</label>
+            <input
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              type="number"
+              min="0"
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Note</label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+        </div>
+
+        {err && <div className="mt-3 text-rose-600 text-sm font-semibold">{err}</div>}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={loading}
+            className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
+              loading ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"
+            }`}
+          >
+            {loading ? "Saving..." : "Save Changes"}
+          </button>
         </div>
       </div>
     </div>
