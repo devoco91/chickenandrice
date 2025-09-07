@@ -1,7 +1,8 @@
 // public/sw.js
-// v9 – robust offline fallback for navigations only.
+// v9.1 – robust offline fallback for navigations only + iOS Safari redirect fix
 // - Never touches /api, /_next/image, or /uploads
 // - Uses navigation preload for speed when online
+// - Works around Safari error: “Response served by service worker has redirections”
 // - Falls back to cached /offline, then to inline HTML if needed
 
 const CACHE = "crl-pwa-v9";
@@ -15,7 +16,6 @@ self.addEventListener("install", (event) => {
       const cache = await caches.open(CACHE);
       await cache.add(new Request(OFFLINE_URL, { cache: "reload" }));
     } catch (err) {
-      // If precache fails (first install or network issue), we’ll still render inline HTML later
       console.warn("[SW] Could not precache /offline:", err);
     }
   })());
@@ -67,6 +67,27 @@ function inlineOfflineHTML() {
   );
 }
 
+// --- iOS Safari redirect fix helpers ---
+// If a navigation response is a redirect (or opaqueredirect), refetch its final URL
+// and return a non-redirected 200 OK so Safari doesn’t complain.
+async function followRedirects(res) {
+  if (!res) return res;
+
+  // Avoid serving redirect-like responses from the SW
+  if (res.type === "opaqueredirect") throw new Error("opaqueredirect");
+
+  let out = res;
+  let hops = 0;
+
+  while (out && out.redirected && hops < 5) {
+    // Re-fetch the final URL directly; keep credentials for auth’d pages.
+    out = await fetch(out.url, { credentials: "include", cache: "no-store" });
+    hops++;
+  }
+
+  return out;
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -74,9 +95,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   // Never intercept APIs, Next image optimizer, or uploads
-  if (url.pathname.startsWith("/api/") ||
-      url.pathname.startsWith("/_next/image") ||
-      url.pathname.startsWith("/uploads/")) {
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/_next/image") ||
+    url.pathname.startsWith("/uploads/")
+  ) {
     return;
   }
 
@@ -84,19 +107,29 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith((async () => {
       try {
-        // If nav preload is available, it's the fastest path
+        // Fast path: use navigation preload if present
         const preload = await event.preloadResponse;
-        if (preload) return preload;
+        if (preload) {
+          const fixed = await followRedirects(preload);
+          if (fixed && fixed.ok && !fixed.redirected) return fixed;
+        }
 
-        const res = await fetch(request);
-        // If server returns 5xx or no response, use offline fallback
-        if (!res || res.status >= 500) throw new Error("network/status fail");
+        // Network fetch for the navigation
+        let res = await fetch(request, { cache: "no-store" });
+        res = await followRedirects(res);
+
+        if (!res || !res.ok || res.redirected || res.status >= 500) {
+          throw new Error("network/status fail");
+        }
         return res;
       } catch {
         // Try cached /offline, then inline fallback
-        const cache = await caches.open(CACHE);
-        const cached = await cache.match(OFFLINE_URL);
-        return cached || inlineOfflineHTML();
+        try {
+          const cache = await caches.open(CACHE);
+          const cached = await cache.match(OFFLINE_URL);
+          if (cached) return cached;
+        } catch {}
+        return inlineOfflineHTML();
       }
     })());
   }

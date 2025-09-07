@@ -5,7 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE } from "../utils/apiBase";
 
 const fmtNum = (n) => Number(n || 0).toLocaleString("en-NG");
-const fmtQty = (unit, v) => (unit === "gram" ? (Number(v) >= 1000 ? `${(Number(v)/1000).toFixed(2)} kg` : `${fmtNum(v)} g`) : `${fmtNum(v)} pcs`);
+const fmtQty = (unit, v) =>
+  unit === "gram"
+    ? Number(v) >= 1000
+      ? `${(Number(v) / 1000).toFixed(2)} kg`
+      : `${fmtNum(v)} g`
+    : `${fmtNum(v)} pcs`;
 
 const tryJson = async (res) => {
   const ct = (res.headers.get("content-type") || "").toLowerCase();
@@ -17,7 +22,11 @@ async function getJSON(url, signal) {
   const res = await fetch(url, { cache: "no-store", signal });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${
+        snippet ? ` – ${snippet.slice(0, 160)}` : ""
+      }`
+    );
   }
   return tryJson(res);
 }
@@ -29,7 +38,11 @@ async function postJSON(url, body) {
   });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${
+        snippet ? ` – ${snippet.slice(0, 160)}` : ""
+      }`
+    );
   }
   return tryJson(res);
 }
@@ -41,7 +54,11 @@ async function patchJSON(url, body) {
   });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${
+        snippet ? ` – ${snippet.slice(0, 160)}` : ""
+      }`
+    );
   }
   return tryJson(res);
 }
@@ -49,15 +66,35 @@ async function del(url) {
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {
     const snippet = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet ? ` – ${snippet.slice(0, 160)}` : ""}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${
+        snippet ? ` – ${snippet.slice(0, 160)}` : ""
+      }`
+    );
   }
   return tryJson(res);
 }
 
 const safeAbort = (controller) => {
   if (!controller) return;
-  try { if (!controller.signal.aborted) controller.abort(); } catch {}
+  try {
+    if (!controller.signal.aborted) controller.abort();
+  } catch {}
 };
+
+// ---- keep tables unique & filter "extra" rows ----
+const uniqBy = (rows = []) => {
+  const seen = new Set();
+  return rows.filter((r) => {
+    const k = `${r?.slug || r?.sku || ""}|${r?.unit || ""}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+const isExtra = (name = "") =>
+  /extra/.test(String(name).toLowerCase()) &&
+  /(jollof|fried)/.test(String(name).toLowerCase());
 
 export default function InventoryPage() {
   const [summary, setSummary] = useState(null);
@@ -87,9 +124,16 @@ export default function InventoryPage() {
 
       const [s, m, st, it] = await Promise.all([
         getJSON(`${API_BASE}/inventory/summary?ts=${Date.now()}`, ac.signal),
-        getJSON(`${API_BASE}/inventory/movements?limit=80&ts=${Date.now()}`, ac.signal).catch(() => ({ items: [] })),
-        getJSON(`${API_BASE}/inventory/stock?ts=${Date.now()}`, ac.signal).catch(() => ({ entries: [] })),
-        getJSON(`${API_BASE}/inventory/items?ts=${Date.now()}`, ac.signal).catch(() => ({ items: [] })),
+        getJSON(
+          `${API_BASE}/inventory/movements?limit=80&ts=${Date.now()}`,
+          ac.signal
+        ).catch(() => ({ items: [] })),
+        getJSON(`${API_BASE}/inventory/stock?ts=${Date.now()}`, ac.signal).catch(
+          () => ({ entries: [] })
+        ),
+        getJSON(`${API_BASE}/inventory/items?ts=${Date.now()}`, ac.signal).catch(
+          () => ({ items: [] })
+        ),
       ]);
 
       setSummary(s || {});
@@ -109,19 +153,32 @@ export default function InventoryPage() {
   useEffect(() => {
     fetchAll();
     const id = pollMs > 0 ? setInterval(fetchAll, pollMs) : null;
-    return () => { if (id) clearInterval(id); const c = abortRef.current; abortRef.current = null; safeAbort(c); };
+    return () => {
+      if (id) clearInterval(id);
+      const c = abortRef.current;
+      abortRef.current = null;
+      safeAbort(c);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollMs]);
 
   const totals = useMemo(() => {
-    const sumRemain = (rows=[]) => rows.reduce((s,r)=>s+Number(r?.remaining||0),0);
-    const food = Array.isArray(summary?.food) ? summary.food.filter(r=>!r?._extra) : [];
-    const drinks = Array.isArray(summary?.drinks) ? summary.drinks : [];
-    const proteins = Array.isArray(summary?.proteins) ? summary.proteins : [];
+    const sumRemain = (rows = []) =>
+      rows.reduce((s, r) => s + Number(r?.remaining || 0), 0);
+
+    const foodRows = uniqBy(Array.isArray(summary?.food) ? summary.food : []);
+    const drinksRows = uniqBy(
+      Array.isArray(summary?.drinks) ? summary.drinks : []
+    );
+    const proteinRows = uniqBy(
+      Array.isArray(summary?.proteins) ? summary.proteins : []
+    );
+
+    const foodFiltered = foodRows.filter((r) => !isExtra(r?.sku));
     return {
-      foodRemain: sumRemain(food),
-      drinkRemain: sumRemain(drinks),
-      proteinRemain: sumRemain(proteins),
+      foodRemain: sumRemain(foodFiltered),
+      drinkRemain: sumRemain(drinksRows),
+      proteinRemain: sumRemain(proteinRows),
     };
   }, [summary]);
 
@@ -132,53 +189,78 @@ export default function InventoryPage() {
   };
 
   const onItemDelete = async (row) => {
-    if (!row?._id) return alert("Cannot delete an inferred row. Create it first from the row click.");
-    const ok = confirm(`Delete "${row.sku}"? This removes the item and today's stock entries.`);
+    if (!row?._id)
+      return alert(
+        "Cannot delete an inferred row. Create it first from the row click."
+      );
+    const ok = confirm(
+      `Delete "${row.sku}"? This removes the item and today's stock entries.`
+    );
     if (!ok) return;
-    try { await del(`${API_BASE}/inventory/items/${row._id}`); await fetchAll(); }
-    catch (e) { alert(e.message || "Failed to delete."); }
+    try {
+      await del(`${API_BASE}/inventory/items/${row._id}`);
+      await fetchAll();
+    } catch (e) {
+      alert(e.message || "Failed to delete.");
+    }
   };
 
   const rowClick = (row) => {
-    // quick create/edit
     if (!row?._id) {
-      // inferred
-      const kind = row?.unit === "gram" ? "food" : (row?.kind || "drink");
-      setEditItem({ _id:null, name: row.sku, kind, unit: row.unit });
+      const kind = row?.unit === "gram" ? "food" : row?.kind || "drink";
+      setEditItem({ _id: null, name: row.sku, kind, unit: row.unit });
     } else {
-      setEditItem({ _id: row._id, name: row.sku, kind: row.kind || (row.unit === "gram" ? "food" : "drink"), unit: row.unit });
+      setEditItem({
+        _id: row._id,
+        name: row.sku,
+        kind: row.kind || (row.unit === "gram" ? "food" : "drink"),
+        unit: row.unit,
+      });
     }
   };
 
   const onStockDeleted = async (entry) => {
     if (!entry?._id) return;
-    const ok = confirm(`Delete stock entry for "${entry.sku}" (+${entry.qty} ${entry.unit})?`);
+    const ok = confirm(
+      `Delete stock entry for "${entry.sku}" (+${entry.qty} ${entry.unit})?`
+    );
     if (!ok) return;
-    try { await del(`${API_BASE}/inventory/stock/${entry._id}`); await fetchAll(); }
-    catch (e) { alert(e.message || "Failed to delete entry."); }
+    try {
+      await del(`${API_BASE}/inventory/stock/${entry._id}`);
+      await fetchAll();
+    } catch (e) {
+      alert(e.message || "Failed to delete entry.");
+    }
   };
 
-  const onStockEdit = (entry)=> setEditStock(entry);
+  const onStockEdit = (entry) => setEditStock(entry);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">Inventory</h1>
+        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
+          Inventory
+        </h1>
         <div className="flex gap-2">
           <button
             onClick={() => setShowRestock(true)}
-            className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-amber-600 to-yellow-600 shadow hover:opacity-95 active:scale-95">
+            className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-amber-600 to-yellow-600 shadow hover:opacity-95 active:scale-95"
+          >
             Add Inventory / Restock
           </button>
           <button
             onClick={() => setShowAdd(true)}
-            className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-emerald-600 to-green-600 shadow hover:opacity-95 active:scale-95">
+            className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-emerald-600 to-green-600 shadow hover:opacity-95 active:scale-95"
+          >
             Add Stock Item
           </button>
           <button
             onClick={fetchAll}
             disabled={loading}
-            className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"}`}>
+            className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
+              loading ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"
+            }`}
+          >
             {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
@@ -188,15 +270,21 @@ export default function InventoryPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-green-500 to-emerald-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Food Remaining</h2>
-          <p className="text-2xl font-extrabold">{fmtQty("gram", totals.foodRemain)}</p>
+          <p className="text-2xl font-extrabold">
+            {fmtQty("gram", totals.foodRemain)}
+          </p>
         </div>
         <div className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Drinks Remaining</h2>
-          <p className="text-2xl font-extrabold">{fmtNum(totals.drinkRemain)} pcs</p>
+          <p className="text-2xl font-extrabold">
+            {fmtNum(totals.drinkRemain)} pcs
+          </p>
         </div>
         <div className="bg-gradient-to-br from-rose-500 to-red-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Proteins Remaining</h2>
-          <p className="text-2xl font-extrabold">{fmtNum(totals.proteinRemain)} pcs</p>
+          <p className="text-2xl font-extrabold">
+            {fmtNum(totals.proteinRemain)} pcs
+          </p>
         </div>
       </div>
 
@@ -206,7 +294,11 @@ export default function InventoryPage() {
         <div className="text-sm text-gray-600">
           Last updated: {lastUpdated ? lastUpdated.toLocaleString() : "—"}
           <span className="ml-3">Auto-refresh:</span>
-          <select value={pollMs} onChange={(e)=>setPollMs(Number(e.target.value))} className="ml-2 border rounded-lg px-2 py-1 bg-white">
+          <select
+            value={pollMs}
+            onChange={(e) => setPollMs(Number(e.target.value))}
+            className="ml-2 border rounded-lg px-2 py-1 bg-white"
+          >
             <option value={0}>Off</option>
             <option value={10000}>10s</option>
             <option value={20000}>20s</option>
@@ -232,16 +324,34 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {(Array.isArray(summary?.food) ? summary.food : []).map((r, i) => (
-                  <tr key={r?.slug || i} className={`${i % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100 cursor-pointer`} onClick={()=>rowClick(r)}>
-                    <td className="p-3 border-b">{r?.sku || "-"}</td>
-                    <td className="p-3 border-b">{r?._extra ? "—" : fmtQty(r.unit, r?.added)}</td>
-                    <td className="p-3 border-b">{r?._extra ? "—" : fmtQty(r.unit, r?.remaining)}</td>
-                    <td className="p-3 border-b">{fmtQty(r.unit, r?.used)}</td>
-                  </tr>
-                ))}
+                {uniqBy(Array.isArray(summary?.food) ? summary.food : []).map(
+                  (r, i) => (
+                    <tr
+                      key={`${r?.slug || r?.sku || i}-${r?.unit}`}
+                      className={`${
+                        i % 2 === 0 ? "bg-gray-50/60" : "bg-white"
+                      } hover:bg-gray-100 cursor-pointer`}
+                      onClick={() => rowClick(r)}
+                    >
+                      <td className="p-3 border-b">{r?.sku || "-"}</td>
+                      <td className="p-3 border-b">
+                        {isExtra(r?.sku) ? "—" : fmtQty(r.unit, r?.added)}
+                      </td>
+                      <td className="p-3 border-b">
+                        {isExtra(r?.sku) ? "—" : fmtQty(r.unit, r?.remaining)}
+                      </td>
+                      <td className="p-3 border-b">
+                        {fmtQty(r.unit, r?.used)}
+                      </td>
+                    </tr>
+                  )
+                )}
                 {(!summary?.food || summary.food.length === 0) && (
-                  <tr><td className="p-3 border-b text-gray-500" colSpan={4}>No food rows.</td></tr>
+                  <tr>
+                    <td className="p-3 border-b text-gray-500" colSpan={4}>
+                      No food rows.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -262,16 +372,30 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {(Array.isArray(summary?.drinks) ? summary.drinks : []).map((r, i) => (
-                  <tr key={r?.slug || i} className={`${i % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100 cursor-pointer`} onClick={()=>rowClick(r)}>
+                {uniqBy(
+                  Array.isArray(summary?.drinks) ? summary.drinks : []
+                ).map((r, i) => (
+                  <tr
+                    key={`${r?.slug || r?.sku || i}-${r?.unit}`}
+                    className={`${
+                      i % 2 === 0 ? "bg-gray-50/60" : "bg-white"
+                    } hover:bg-gray-100 cursor-pointer`}
+                    onClick={() => rowClick(r)}
+                  >
                     <td className="p-3 border-b">{r?.sku || "-"}</td>
                     <td className="p-3 border-b">{fmtQty(r.unit, r?.added)}</td>
-                    <td className="p-3 border-b">{fmtQty(r.unit, r?.remaining)}</td>
+                    <td className="p-3 border-b">
+                      {fmtQty(r.unit, r?.remaining)}
+                    </td>
                     <td className="p-3 border-b">{fmtQty(r.unit, r?.used)}</td>
                   </tr>
                 ))}
                 {(!summary?.drinks || summary.drinks.length === 0) && (
-                  <tr><td className="p-3 border-b text-gray-500" colSpan={4}>No drinks rows.</td></tr>
+                  <tr>
+                    <td className="p-3 border-b text-gray-500" colSpan={4}>
+                      No drinks rows.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -292,16 +416,30 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {(Array.isArray(summary?.proteins) ? summary.proteins : []).map((r, i) => (
-                  <tr key={r?.slug || i} className={`${i % 2 === 0 ? "bg-gray-50/60" : "bg-white"} hover:bg-gray-100 cursor-pointer`} onClick={()=>rowClick(r)}>
+                {uniqBy(
+                  Array.isArray(summary?.proteins) ? summary.proteins : []
+                ).map((r, i) => (
+                  <tr
+                    key={`${r?.slug || r?.sku || i}-${r?.unit}`}
+                    className={`${
+                      i % 2 === 0 ? "bg-gray-50/60" : "bg-white"
+                    } hover:bg-gray-100 cursor-pointer`}
+                    onClick={() => rowClick(r)}
+                  >
                     <td className="p-3 border-b">{r?.sku || "-"}</td>
                     <td className="p-3 border-b">{fmtQty(r.unit, r?.added)}</td>
-                    <td className="p-3 border-b">{fmtQty(r.unit, r?.remaining)}</td>
+                    <td className="p-3 border-b">
+                      {fmtQty(r.unit, r?.remaining)}
+                    </td>
                     <td className="p-3 border-b">{fmtQty(r.unit, r?.used)}</td>
                   </tr>
                 ))}
                 {(!summary?.proteins || summary.proteins.length === 0) && (
-                  <tr><td className="p-3 border-b text-gray-500" colSpan={4}>No protein rows.</td></tr>
+                  <tr>
+                    <td className="p-3 border-b text-gray-500" colSpan={4}>
+                      No protein rows.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -325,11 +463,22 @@ export default function InventoryPage() {
             </thead>
             <tbody>
               {movements.length === 0 ? (
-                <tr><td className="p-3 border-b text-gray-500" colSpan={5}>No movements yet.</td></tr>
+                <tr>
+                  <td className="p-3 border-b text-gray-500" colSpan={5}>
+                    No movements yet.
+                  </td>
+                </tr>
               ) : (
                 movements.map((m, i) => (
-                  <tr key={m?._id || i} className={i % 2 === 0 ? "bg-gray-50/60" : "bg-white"}>
-                    <td className="p-3 border-b">{m?.createdAt ? new Date(m.createdAt).toLocaleString() : "-"}</td>
+                  <tr
+                    key={m?._id || i}
+                    className={i % 2 === 0 ? "bg-gray-50/60" : "bg-white"}
+                  >
+                    <td className="p-3 border-b">
+                      {m?.createdAt
+                        ? new Date(m.createdAt).toLocaleString()
+                        : "-"}
+                    </td>
                     <td className="p-3 border-b capitalize">{m?.type || "-"}</td>
                     <td className="p-3 border-b">{m?.sku || "-"}</td>
                     <td className="p-3 border-b">{m?.unit || "-"}</td>
@@ -346,7 +495,10 @@ export default function InventoryPage() {
       <div className="mt-8 bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-bold">Today’s Stock Entries</h3>
-          <button onClick={()=>setShowRestock(true)} className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700">
+          <button
+            onClick={() => setShowRestock(true)}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700"
+          >
             Add Entry
           </button>
         </div>
@@ -364,88 +516,191 @@ export default function InventoryPage() {
             </thead>
             <tbody>
               {stockEntries.length === 0 ? (
-                <tr><td className="p-3 border-b text-gray-500" colSpan={6}>No entries for today.</td></tr>
-              ) : stockEntries.map((e,i)=>(
-                <tr key={e?._id || i} className={i % 2 === 0 ? "bg-gray-50/60" : "bg-white"}>
-                  <td className="p-3 border-b">{e?.createdAt ? new Date(e.createdAt).toLocaleString() : "-"}</td>
-                  <td className="p-3 border-b">{e?.sku || "-"}</td>
-                  <td className="p-3 border-b">{fmtNum(e?.qty)}</td>
-                  <td className="p-3 border-b">{e?.unit}</td>
-                  <td className="p-3 border-b">{e?.note || "-"}</td>
-                  <td className="p-3 border-b">
-                    <div className="flex gap-2">
-                      <button onClick={()=>onStockEdit(e)} className="px-3 py-1 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">Edit</button>
-                      <button onClick={()=>onStockDeleted(e)} className="px-3 py-1 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700">Delete</button>
-                    </div>
+                <tr>
+                  <td className="p-3 border-b text-gray-500" colSpan={6}>
+                    No entries for today.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                stockEntries.map((e, i) => (
+                  <tr
+                    key={e?._id || i}
+                    className={i % 2 === 0 ? "bg-gray-50/60" : "bg-white"}
+                  >
+                    <td className="p-3 border-b">
+                      {e?.createdAt
+                        ? new Date(e.createdAt).toLocaleString()
+                        : "-"}
+                    </td>
+                    <td className="p-3 border-b">{e?.sku || "-"}</td>
+                    <td className="p-3 border-b">{fmtNum(e?.qty)}</td>
+                    <td className="p-3 border-b">{e?.unit}</td>
+                    <td className="p-3 border-b">{e?.note || "-"}</td>
+                    <td className="p-3 border-b">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onStockEdit(e)}
+                          className="px-3 py-1 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => onStockDeleted(e)}
+                          className="px-3 py-1 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
       {/* Modals */}
-      {showRestock && <RestockModal items={items} onClose={()=>setShowRestock(false)} onSaved={fetchAll} />}
-      {showAdd && <AddItemModal onClose={()=>setShowAdd(false)} onSaved={onItemSaved} />}
-      {editItem && <EditItemModal item={editItem} onClose={()=>setEditItem(null)} onSaved={onItemSaved} onDelete={onItemDelete} />}
-      {editStock && <EditStockModal entry={editStock} onClose={()=>setEditStock(null)} onSaved={fetchAll} />}
+      {showRestock && (
+        <RestockModal
+          items={items}
+          onClose={() => setShowRestock(false)}
+          onSaved={fetchAll}
+        />
+      )}
+      {showAdd && (
+        <AddItemModal onClose={() => setShowAdd(false)} onSaved={onItemSaved} />
+      )}
+      {editItem && (
+        <EditItemModal
+          item={editItem}
+          onClose={() => setEditItem(null)}
+          onSaved={onItemSaved}
+          onDelete={onItemDelete}
+        />
+      )}
+      {editStock && (
+        <EditStockModal
+          entry={editStock}
+          onClose={() => setEditStock(null)}
+          onSaved={fetchAll}
+        />
+      )}
     </div>
   );
 }
 
 function RestockModal({ items, onClose, onSaved }) {
-  const [sku, setSku] = useState("");
+  // CHANGED: select stores itemId (not name)
+  const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const selected = items.find((i) => i._id === itemId);
+  const unit = selected?.unit || "piece";
+
   const submit = async () => {
     setErr("");
-    if (!sku.trim()) return setErr("Select an item.");
+    if (!itemId) return setErr("Select an item.");
     const n = Number(qty);
-    if (!Number.isFinite(n) || n <= 0) return setErr("Enter a positive quantity.");
+    if (!Number.isFinite(n) || n <= 0)
+      return setErr("Enter a positive quantity.");
     try {
       setLoading(true);
-      const r = await postJSON(`${API_BASE}/inventory/stock`, { sku, qty: n, note: note.trim() });
+      // CHANGED: send itemId (plus friendly fallbacks)
+      const body = {
+        itemId,
+        qty: n,
+        note: note.trim(),
+        // helpful fallbacks if backend accepts them:
+        sku: selected?.name,
+        slug: selected?.slug,
+      };
+      const r = await postJSON(`${API_BASE}/inventory/stock`, body);
       if (r?.error) throw new Error(r.error);
-      onSaved?.(); onClose?.();
-    } catch (e) { setErr(e?.message || "Failed to add entry."); }
-    finally { setLoading(false); }
+      onSaved?.();
+      onClose?.();
+    } catch (e) {
+      setErr(e?.message || "Failed to add entry.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white w-11/12 md:w-[520px] p-6 rounded-2xl shadow-xl relative">
-        <button className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300" onClick={onClose}>✕</button>
-        <h2 className="text-xl font-extrabold mb-4 text-gray-900">Add Inventory / Restock</h2>
+        <button
+          className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300"
+          onClick={onClose}
+        >
+          ✕
+        </button>
+        <h2 className="text-xl font-extrabold mb-4 text-gray-900">
+          Add Inventory / Restock
+        </h2>
 
         <div className="grid grid-cols-1 gap-3">
           <div>
             <label className="text-sm text-gray-700">Item</label>
-            <select value={sku} onChange={(e)=>setSku(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400">
+            <select
+              value={itemId}
+              onChange={(e) => setItemId(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400"
+            >
               <option value="">— Select —</option>
-              {items.map((it)=>(
-                <option key={it._id} value={it.name}>{it.name} {it.unit === "gram" ? "(g)" : "(pcs)"}</option>
+              {items.map((it) => (
+                <option key={it._id} value={it._id}>
+                  {it.name} {it.unit === "gram" ? "(g)" : "(pcs)"}
+                </option>
               ))}
             </select>
           </div>
           <div>
-            <label className="text-sm text-gray-700">Quantity to add {sku ? items.find(i=>i.name===sku)?.unit === "gram" ? "(grams)" : "(pieces)" : ""}</label>
-            <input value={qty} onChange={(e)=>setQty(e.target.value)} type="number" min="0" className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400" placeholder="e.g. 1000 (grams) or 24 (pcs)" />
+            <label className="text-sm text-gray-700">
+              Quantity to add {selected ? (unit === "gram" ? "(grams)" : "(pieces)") : ""}
+            </label>
+            <input
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              type="number"
+              min="0"
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400"
+              placeholder={unit === "gram" ? "e.g. 1000 (grams)" : "e.g. 24 (pcs)"}
+            />
           </div>
           <div>
             <label className="text-sm text-gray-700">Note (optional)</label>
-            <input value={note} onChange={(e)=>setNote(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400" placeholder="Morning prep, 2pm restock, etc." />
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-amber-400"
+              placeholder="Morning prep, 2pm restock, etc."
+            />
           </div>
         </div>
 
         {err && <div className="mt-3 text-rose-600 text-sm font-semibold">{err}</div>}
 
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50" disabled={loading}>Cancel</button>
-          <button onClick={submit} disabled={loading} className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-700"}`}>{loading ? "Saving..." : "Add Entry"}</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={loading}
+            className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
+              loading ? "bg-gray-400 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-700"
+            }`}
+          >
+            {loading ? "Saving..." : "Add Entry"}
+          </button>
         </div>
       </div>
     </div>
@@ -456,41 +711,128 @@ function AddItemModal({ onClose, onSaved }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState("food");
   const [unit, setUnit] = useState("gram");
-  const [qty, setQty] = useState("");            // NEW: required initial quantity
-  const [note, setNote] = useState("");          // optional
+  const [qty, setQty] = useState("");
+  const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  // helpers for robust resolving
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const normKey = (s) => String(s || "").toLowerCase().replace(/[\s\-_]/g, "");
+
+  // CHANGED: resolve the FULL item object (_id, name, slug, unit)
+  const resolveItemOnServer = async (typed) => {
+    const deadline = Date.now() + 5000; // poll up to 5s
+    let attempt = 0;
+    while (Date.now() < deadline) {
+      try {
+        const it = await getJSON(`${API_BASE}/inventory/items?ts=${Date.now()}`);
+        const list = Array.isArray(it?.items) ? it.items : [];
+        const found =
+          list.find((x) => normKey(x?.name) === normKey(typed)) ||
+          list.find((x) => normKey(x?.sku) === normKey(typed)) ||
+          list.find((x) =>
+            (Array.isArray(x?.aliases) ? x.aliases : []).some(
+              (a) => normKey(a) === normKey(typed)
+            )
+          );
+        if (found?._id) return found;
+      } catch {}
+      attempt += 1;
+      await sleep(Math.min(150 + attempt * 150, 600));
+    }
+    return null;
+  };
 
   const submit = async () => {
     setErr("");
 
-    const trimmed = name.trim();
-    if (!trimmed) return setErr("Enter the item name/SKU.");
+    const typed = name.trim();
+    if (!typed) return setErr("Enter the item name/SKU.");
 
     const n = Number(qty);
     if (!Number.isFinite(n) || n <= 0) {
-      return setErr(`Enter a positive ${unit === "gram" ? "grams" : "pieces"} quantity.`);
+      return setErr(
+        `Enter a positive ${unit === "gram" ? "grams" : "pieces"} quantity.`
+      );
     }
+
+    let lastServerMessage = "";
+
+    // 1) Create (treat 409 as “exists”)
+    try {
+      await postJSON(`${API_BASE}/inventory/items`, { sku: typed, kind, unit });
+    } catch (e) {
+      const msg = String(e?.message || "");
+      if (!/HTTP\s+409/.test(msg) && !/already exists/i.test(msg)) {
+        setErr(msg);
+        return;
+      }
+    }
+
+    // 2) Resolve canonical item object from server
+    let itemObj = await resolveItemOnServer(typed);
+
+    // 3) Try to add stock using itemId first, then fallbacks
+    const tryAddStock = async (payloads) => {
+      for (const body of payloads) {
+        try {
+          const r = await postJSON(`${API_BASE}/inventory/stock`, body);
+          return { ok: true, r };
+        } catch (e) {
+          const msg = String(e?.message || "");
+          lastServerMessage = msg;
+          // If 404, try next payload; otherwise bubble up
+          if (!/HTTP\s+404/.test(msg)) throw e;
+        }
+      }
+      return { ok: false };
+    };
 
     try {
       setLoading(true);
 
-      // 1) Create (or upsert) the item — no aliases field shown to users
-      const created = await postJSON(`${API_BASE}/inventory/items`, {
-        sku: trimmed,
-        kind,
-        unit,
-      });
-      if (created?.error) throw new Error(created.error);
+      // (re)poll quickly if we didn't resolve yet
+      if (!itemObj) itemObj = await resolveItemOnServer(typed);
 
-      // 2) Add initial stock so deductions can begin immediately
-      await postJSON(`${API_BASE}/inventory/stock`, {
-        sku: created?.name || trimmed,
+      // build candidate payloads, best → worst
+      const candidates = [];
+      if (itemObj?._id) {
+        candidates.push({
+          itemId: itemObj._id,
+          qty: n,
+          note: note?.trim() || "Initial stock",
+          // complements (harmless if unused by backend)
+          sku: itemObj.name,
+          slug: itemObj.slug,
+        });
+      }
+      // fallback to slug
+      if (itemObj?.slug) {
+        candidates.push({
+          slug: itemObj.slug,
+          qty: n,
+          note: note?.trim() || "Initial stock",
+        });
+      }
+      // final fallback to user-typed name/sku
+      candidates.push({
+        sku: typed,
         qty: n,
         note: note?.trim() || "Initial stock",
       });
 
-      onSaved?.(); // refresh list
+      const attempt = await tryAddStock(candidates);
+      if (!attempt.ok) {
+        setErr(
+          lastServerMessage
+            ? `Could not add stock. Server said: ${lastServerMessage}`
+            : "Could not add stock for this item. Please refresh and try again."
+        );
+        return;
+      }
+
+      onSaved?.();
       onClose?.();
     } catch (e) {
       setErr(e?.message || "Failed to add item.");
@@ -502,12 +844,7 @@ function AddItemModal({ onClose, onSaved }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white w-11/12 md:w-[540px] p-6 rounded-2xl shadow-xl relative">
-        <button
-          className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300"
-          onClick={onClose}
-        >
-          ✕
-        </button>
+        <button className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300" onClick={onClose}>✕</button>
         <h2 className="text-xl font-extrabold mb-4 text-gray-900">Add Stock Item</h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -520,7 +857,6 @@ function AddItemModal({ onClose, onSaved }) {
               placeholder="e.g. Fried Rice"
             />
           </div>
-
           <div>
             <label className="text-sm text-gray-700">Kind</label>
             <select
@@ -533,7 +869,6 @@ function AddItemModal({ onClose, onSaved }) {
               <option value="protein">Protein (pieces)</option>
             </select>
           </div>
-
           <div>
             <label className="text-sm text-gray-700">Unit</label>
             <select
@@ -545,7 +880,6 @@ function AddItemModal({ onClose, onSaved }) {
               <option value="piece">Piece</option>
             </select>
           </div>
-
           <div>
             <label className="text-sm text-gray-700">
               Initial Quantity <span className="text-rose-600">*</span>
@@ -559,7 +893,6 @@ function AddItemModal({ onClose, onSaved }) {
               placeholder={unit === "gram" ? "e.g. 5000 (grams)" : "e.g. 24 (pcs)"}
             />
           </div>
-
           <div className="sm:col-span-2">
             <label className="text-sm text-gray-700">Note (optional)</label>
             <input
@@ -596,10 +929,11 @@ function AddItemModal({ onClose, onSaved }) {
   );
 }
 
-
 function EditItemModal({ item, onClose, onSaved, onDelete }) {
   const [name, setName] = useState(item?.name ?? item?.sku ?? "");
-  const [kind, setKind] = useState(item?.kind || (item?.unit === "gram" ? "food" : "drink"));
+  const [kind, setKind] = useState(
+    item?.kind || (item?.unit === "gram" ? "food" : "drink")
+  );
   const [unit, setUnit] = useState(item?.unit || "gram");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -609,12 +943,20 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
     const body = { name: String(name || "").trim(), kind, unit };
     try {
       setLoading(true);
-      if (item?._id) await patchJSON(`${API_BASE}/inventory/items/${item._id}`, body);
-      else await postJSON(`${API_BASE}/inventory/items`, { sku: body.name, kind, unit });
+      if (item?._id)
+        await patchJSON(`${API_BASE}/inventory/items/${item._id}`, body);
+      else
+        await postJSON(`${API_BASE}/inventory/items`, {
+          sku: body.name,
+          kind,
+          unit,
+        });
       onSaved?.();
     } catch (e) {
       setErr(e?.message || "Failed to save.");
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const doDelete = async () => {
@@ -625,17 +967,32 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white w-11/12 md:w-[540px] p-6 rounded-2xl shadow-xl relative">
-        <button className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300" onClick={onClose}>✕</button>
-        <h2 className="text-xl font-extrabold mb-4 text-gray-900">{item?._id ? "Edit Item" : "Create Item"}</h2>
+        <button
+          className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300"
+          onClick={onClose}
+        >
+          ✕
+        </button>
+        <h2 className="text-xl font-extrabold mb-4 text-gray-900">
+          {item?._id ? "Edit Item" : "Create Item"}
+        </h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-sm text-gray-700">SKU / Name</label>
-            <input value={name} onChange={(e)=>setName(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400" />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+            />
           </div>
           <div>
             <label className="text-sm text-gray-700">Kind</label>
-            <select value={kind} onChange={(e)=>setKind(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400">
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+            >
               <option value="food">Food</option>
               <option value="drink">Drink</option>
               <option value="protein">Protein</option>
@@ -643,7 +1000,11 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
           </div>
           <div>
             <label className="text-sm text-gray-700">Unit</label>
-            <select value={unit} onChange={(e)=>setUnit(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400">
+            <select
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+            >
               <option value="gram">Gram</option>
               <option value="piece">Piece</option>
             </select>
@@ -653,10 +1014,29 @@ function EditItemModal({ item, onClose, onSaved, onDelete }) {
         {err && <div className="mt-3 text-rose-600 text-sm font-semibold">{err}</div>}
 
         <div className="mt-6 flex justify-between">
-          <button onClick={doDelete} className="px-4 py-2 rounded-xl font-semibold text-white bg-red-600 hover:bg-red-700">Delete</button>
+          <button
+            onClick={doDelete}
+            className="px-4 py-2 rounded-xl font-semibold text-white bg-red-600 hover:bg-red-700"
+          >
+            Delete
+          </button>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50" disabled={loading}>Cancel</button>
-            <button onClick={save} disabled={loading} className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"}`}>{loading ? "Saving..." : "Save"}</button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={loading}
+              className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
+                loading ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
+            >
+              {loading ? "Saving..." : "Save"}
+            </button>
           </div>
         </div>
       </div>
@@ -674,35 +1054,80 @@ function EditStockModal({ entry, onClose, onSaved }) {
     setErr("");
     const n = Number(qty);
     if (!Number.isFinite(n) || n < 0) return setErr("Enter a valid quantity.");
-    try { setLoading(true); await patchJSON(`${API_BASE}/inventory/stock/${entry._id}`, { qty: n, note }); onSaved?.(); onClose?.(); }
-    catch (e) { setErr(e?.message || "Failed to save."); }
-    finally { setLoading(false); }
+    try {
+      setLoading(true);
+      await patchJSON(`${API_BASE}/inventory/stock/${entry._id}`, {
+        qty: n,
+        note,
+      });
+      onSaved?.();
+      onClose?.();
+    } catch (e) {
+      setErr(e?.message || "Failed to save.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white w-11/12 md:w-[520px] p-6 rounded-2xl shadow-xl relative">
-        <button className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300" onClick={onClose}>✕</button>
-        <h2 className="text-xl font-extrabold mb-4 text-gray-900">Edit Stock Entry</h2>
+        <button
+          className="absolute top-3 right-3 bg-gray-200 text-gray-800 px-3 py-1 rounded-lg hover:bg-gray-300"
+          onClick={onClose}
+        >
+          ✕
+        </button>
+        <h2 className="text-xl font-extrabold mb-4 text-gray-900">
+          Edit Stock Entry
+        </h2>
         <div className="grid grid-cols-1 gap-3">
           <div>
             <label className="text-sm text-gray-700">Item</label>
-            <input value={`${entry?.sku || ""} (${entry?.unit || ""})`} disabled className="w-full border rounded-xl px-3 py-2 bg-gray-100" />
+            <input
+              value={`${entry?.sku || ""} (${entry?.unit || ""})`}
+              disabled
+              className="w-full border rounded-xl px-3 py-2 bg-gray-100"
+            />
           </div>
           <div>
             <label className="text-sm text-gray-700">Quantity</label>
-            <input value={qty} onChange={(e)=>setQty(e.target.value)} type="number" min="0" className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-indigo-400" />
+            <input
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              type="number"
+              min="0"
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-indigo-400"
+            />
           </div>
           <div>
             <label className="text-sm text-gray-700">Note</label>
-            <input value={note} onChange={(e)=>setNote(e.target.value)} className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-indigo-400" />
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-indigo-400"
+            />
           </div>
         </div>
 
         {err && <div className="mt-3 text-rose-600 text-sm font-semibold">{err}</div>}
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50" disabled={loading}>Cancel</button>
-          <button onClick={save} disabled={loading} className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"}`}>{loading ? "Saving..." : "Save Changes"}</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={loading}
+            className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
+              loading ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"
+            }`}
+          >
+            {loading ? "Saving..." : "Save Changes"}
+          </button>
         </div>
       </div>
     </div>
