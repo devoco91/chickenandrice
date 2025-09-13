@@ -4,8 +4,17 @@ import { useEffect, useState } from "react";
 export default function InstallPWAButton({ className = "" }) {
   const [deferred, setDeferred] = useState(null);
   const [canInstall, setCanInstall] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
+    const ua = navigator.userAgent || "";
+    setIsIOS(/iPhone|iPad|iPod/i.test(ua));
+    setIsStandalone(
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true
+    );
+
     const onBeforeInstall = (e) => {
       e.preventDefault();
       setDeferred(e);
@@ -23,11 +32,8 @@ export default function InstallPWAButton({ className = "" }) {
     setCanInstall(false);
   };
 
-  const isStandalone =
-    typeof window !== "undefined" &&
-    (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone);
-
-  if (!canInstall || isStandalone) return null;
+  // Show this button only where the event exists (Android/desktop). iOS never shows it.
+  if (isIOS || isStandalone || !canInstall) return null;
 
   return (
     <button

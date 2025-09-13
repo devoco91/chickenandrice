@@ -29,6 +29,14 @@ export const metadata = {
   description: "Best Naija Jollof fried & coconut rice",
   icons: {
     icon: "/favicon.ico?v=123",
+    // ✅ iOS Add-to-Home-Screen uses this (you already have it in /public)
+    apple: "/apple-touch-icon-180x180.png",
+  },
+  // ✅ iOS PWA meta (Next will emit the proper Apple tags)
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "chickenandrice",
   },
   openGraph: {
     title: "chickenandrice",

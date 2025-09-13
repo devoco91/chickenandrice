@@ -8,7 +8,7 @@ import {
 } from "@/store/cartSlice2";
 import { useRouter } from "next/navigation";
 import { Trash2, Plus, Minus, ArrowLeft, ArrowRight, CreditCard } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react"; // <-- ADDED useEffect
 import { addToTodaysSales } from "../utils/salesTracker";
 import { API_BASE } from "../utils/apiBase"; // ✅ use the same API base as Admin
 
@@ -42,6 +42,17 @@ export default function SummaryPage() {
   const [loading, setLoading] = useState(false);
   const [paymentMode, setPaymentMode] = useState("");
 
+  // ---- ADDED: read orderType persisted by Order page's Chowdeck button
+  const [orderType, setOrderType] = useState("instore");
+  useEffect(() => {
+    try {
+      const saved = typeof window !== "undefined" ? sessionStorage.getItem("orderType") : null;
+      if (saved === "chowdeck") setOrderType("chowdeck");
+      else setOrderType("instore");
+    } catch {}
+  }, []);
+  // ---- END ADDED
+
   const money = (n) => `₦${Number(n || 0).toLocaleString()}`;
 
   const total = useMemo(() => {
@@ -63,13 +74,19 @@ export default function SummaryPage() {
         _id: item._id,
       }));
 
-      const normalizedPM = String(paymentMode || "").toLowerCase(); // 'cash' | 'card' | 'transfer'
+      // ---- ADDED: honor Chowdeck (force transfer; tag orderType)
+      const ot = orderType === "chowdeck" ? "chowdeck" : "instore";
+      const normalizedPM =
+        ot === "chowdeck"
+          ? "transfer"
+          : String(paymentMode || "").toLowerCase(); // 'cash' | 'card' | 'transfer'
+      // ---- END ADDED
 
       const payload = {
-        orderType: "instore",
+        orderType: ot,           // <-- "chowdeck" when toggle was on
         items,
         total,
-        paymentMode: normalizedPM,
+        paymentMode: normalizedPM, // <-- forced to "transfer" for chowdeck
         customerName: "Walk-in Customer",
       };
 
@@ -81,6 +98,7 @@ export default function SummaryPage() {
 
       if (typeof window !== "undefined") {
         sessionStorage.setItem("paymentMode", normalizedPM);
+        sessionStorage.setItem("orderType", ot); // keep for receipt page header
         const orderId = data?.orderId || data?._id || data?.id || "";
         if (orderId) sessionStorage.setItem("lastOrderId", String(orderId));
       }

@@ -25,6 +25,21 @@ export default function OrderPage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // --- ADDED: Chowdeck mode (persisted for summary/print)
+  const [isChowdeck, setIsChowdeck] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("orderType");
+      if (saved === "chowdeck") setIsChowdeck(true);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("orderType", isChowdeck ? "chowdeck" : "instore");
+    } catch {}
+  }, [isChowdeck]);
+  // --- END ADDED
+
   const cart = useSelector((state) => state.cart2.cartItem);
   const dispatch = useDispatch();
   const router = useRouter();
@@ -271,7 +286,21 @@ export default function OrderPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10 pb-28">
-      <h1 className="text-3xl md:text-4xl font-extrabold mb-6 text-gray-900">Cashier Order Page</h1>
+      <h1 className="text-3xl md:text-4xl font-extrabold mb-4 text-gray-900">Cashier Order Page</h1>
+
+      {/* ADDED: Chowdeck toggle button at the very top */}
+      <div className="mb-4">
+        <button
+          onClick={() => setIsChowdeck((v) => !v)}
+          className={`px-3 py-2 rounded-xl border shadow-sm ${
+            isChowdeck ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-900 border-gray-300"
+          }`}
+          title="Toggle Chowdeck mode (orders will save as chowdeck)"
+        >
+          Chowdeck
+        </button>
+      </div>
+      {/* END ADDED */}
 
       {/* Today’s Sales */}
       <motion.div

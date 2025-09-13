@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
@@ -32,10 +31,12 @@ export default function AdminDashboard() {
   const [weeklyOnlineTotal, setWeeklyOnlineTotal] = useState(0);
   const [weeklyShopTotal, setWeeklyShopTotal] = useState(0);
   const [weeklyCombinedTotal, setWeeklyCombinedTotal] = useState(0);
+  const [weeklyChowdeckTotal, setWeeklyChowdeckTotal] = useState(0); // <-- ADDED
 
   const [dailyOnlineTotal, setDailyOnlineTotal] = useState(0);
   const [dailyShopTotal, setDailyShopTotal] = useState(0);
   const [dailyCombinedTotal, setDailyCombinedTotal] = useState(0);
+  const [dailyChowdeckTotal, setDailyChowdeckTotal] = useState(0); // <-- ADDED
 
   const [loading, setLoading] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -225,9 +226,11 @@ export default function AdminDashboard() {
     return s;
   }, []);
 
+  // ---- Weekly totals (include chowdeck) ----
   useEffect(() => {
     let online = 0;
     let instore = 0;
+    let chowdeck = 0; // <-- ADDED
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (d && d >= startOfWeek) {
@@ -235,16 +238,20 @@ export default function AdminDashboard() {
         const type = (o?.orderType || "").toLowerCase();
         if (type === "online") online += t;
         if (type === "instore") instore += t;
+        if (type === "chowdeck") chowdeck += t; // <-- ADDED
       }
     }
     setWeeklyOnlineTotal(online);
     setWeeklyShopTotal(instore);
-    setWeeklyCombinedTotal(online + instore);
+    setWeeklyChowdeckTotal(chowdeck); // <-- ADDED
+    setWeeklyCombinedTotal(online + instore + chowdeck); // <-- ADDED
   }, [orders, startOfWeek]);
 
+  // ---- Daily totals (include chowdeck) ----
   useEffect(() => {
     let online = 0;
     let instore = 0;
+    let chowdeck = 0; // <-- ADDED
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (d && d >= startOfToday) {
@@ -252,11 +259,13 @@ export default function AdminDashboard() {
         const type = (o?.orderType || "").toLowerCase();
         if (type === "online") online += t;
         if (type === "instore") instore += t;
+        if (type === "chowdeck") chowdeck += t; // <-- ADDED
       }
     }
     setDailyOnlineTotal(online);
     setDailyShopTotal(instore);
-    setDailyCombinedTotal(online + instore);
+    setDailyChowdeckTotal(chowdeck); // <-- ADDED
+    setDailyCombinedTotal(online + instore + chowdeck); // <-- ADDED
   }, [orders, startOfToday]);
 
   const { cashToday, cardToday, transferToday } = useMemo(() => {
@@ -335,7 +344,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // ======== CHART DATA (unchanged logic; derived from full orders dataset) ========
+  // ======== CHART DATA (unchanged structure; totals already include all) ========
   const pad2 = (n) => String(n).padStart(2, "0");
   const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const ym = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
@@ -372,6 +381,8 @@ export default function AdminDashboard() {
           label: d.toLocaleDateString("en-NG", { month: "short", day: "numeric" }),
           online: 0,
           instore: 0,
+          // Note: we keep series keys unchanged in charts below (no chowdeck line added),
+          // total already includes chowdeck.
           total: 0,
         },
       ])
@@ -387,6 +398,7 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
+      // total includes everything, including chowdeck:
       row.total += t;
     }
     return Array.from(map.values());
@@ -414,7 +426,7 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t;
+      row.total += t; // includes chowdeck too
     }
     return Array.from(map.values());
   }, [orders]);
@@ -440,17 +452,19 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t;
+      row.total += t; // includes chowdeck too
     }
     return Array.from(map.values());
   }, [orders]);
 
+  // ---- Pie data: add Chowdeck slice ----
   const todayPieData = useMemo(
     () => [
       { name: "Online", value: dailyOnlineTotal },
       { name: "Shop", value: dailyShopTotal },
+      { name: "Chowdeck", value: dailyChowdeckTotal }, // <-- ADDED
     ],
-    [dailyOnlineTotal, dailyShopTotal]
+    [dailyOnlineTotal, dailyShopTotal, dailyChowdeckTotal]
   );
 
   // ======== EXPORTS (CSV / PDF) – respects current filters; no pagination) ========
@@ -577,7 +591,16 @@ export default function AdminDashboard() {
     w.document.close();
   };
 
-    return (
+  // Premium color treatment for Chowdeck slice only (others keep your palette)
+  const colorFor = (name) => {
+    const key = String(name || "").toLowerCase();
+    if (key === "online") return "#2563EB";   // blue-600
+    if (key === "shop") return "#DC2626";     // red-600
+    if (key === "chowdeck") return "url(#chowdeckGrad)"; // gold gradient
+    return "#9CA3AF";
+  };
+
+  return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-6">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
@@ -672,9 +695,20 @@ export default function AdminDashboard() {
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
+                {/* Premium gradient only for Chowdeck */}
+                <defs>
+                  <linearGradient id="chowdeckGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#F59E0B" />   {/* amber-500 */}
+                    <stop offset="100%" stopColor="#D97706" /> {/* amber-600 */}
+                  </linearGradient>
+                </defs>
                 <Tooltip formatter={(v) => money(v)} />
                 <Legend />
-                <Pie dataKey="value" nameKey="name" data={todayPieData} outerRadius={100} label />
+                <Pie dataKey="value" nameKey="name" data={todayPieData} outerRadius={100} label>
+                  {todayPieData.map((entry, idx) => (
+                    <Cell key={`slice-${idx}`} fill={colorFor(entry.name)} />
+                  ))}
+                </Pie>
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -804,6 +838,7 @@ export default function AdminDashboard() {
             <option value="all">All Orders</option>
             <option value="online">Online Orders</option>
             <option value="instore">Shop Orders</option>
+            {/* Intentionally not adding a Chowdeck filter to keep current UI flow */}
           </select>
           <div className="flex gap-2">
             <button onClick={exportCSV} className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-semibold shadow hover:opacity-95">Export CSV</button>
@@ -811,7 +846,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-
 
       {/* Orders table */}
       <div className="mt-4 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
@@ -1020,5 +1054,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-
