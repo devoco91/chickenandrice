@@ -41,6 +41,13 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [removing, setRemoving] = useState(false);
 
+  // ⏰ Lightweight “clock” so monthly/weekly/daily button rows auto-reset at midnight
+  const [clock, setClock] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setClock(Date.now()), 60_000); // tick each minute
+    return () => clearInterval(id);
+  }, []);
+
   const pageSize = 10;
   const PACK_PRICE = 200;
 
@@ -211,6 +218,7 @@ export default function AdminDashboard() {
   const totalAmount = orders.reduce((sum, o) => sum + Number(o?.total || 0), 0);
   const onlineOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "online").length;
   const shopOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "instore").length;
+  const chowdeckOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "chowdeck").length; // <-- ADDED
 
   const startOfToday = useMemo(() => {
     const n = new Date();
@@ -284,6 +292,76 @@ export default function AdminDashboard() {
     }
     return { cashToday: cash, cardToday: card, transferToday: transfer };
   }, [orders, startOfToday]);
+
+  // ===== Additional time anchors for the new Monthly/Weekly/Daily button rows (auto-reset) =====
+  const startOfMonth = useMemo(() => {
+    const n = new Date(clock);
+    const s = new Date(n.getFullYear(), n.getMonth(), 1);
+    s.setHours(0, 0, 0, 0);
+    return s;
+  }, [clock]);
+
+  const startOfWeekMonday = useMemo(() => {
+    const n = new Date(clock);
+    const s = new Date(n);
+    const day = n.getDay(); // 0=Sun..6=Sat
+    const diff = (day + 6) % 7; // days since Monday
+    s.setDate(n.getDate() - diff);
+    s.setHours(0, 0, 0, 0);
+    return s;
+  }, [clock]);
+
+  const startOfTodayDyn = useMemo(() => {
+    const n = new Date(clock);
+    n.setHours(0, 0, 0, 0);
+    return n;
+  }, [clock]);
+
+  // ===== Monthly / Weekly / Daily stats (counts + amount) =====
+  const monthlyStats = useMemo(() => {
+    let countAll = 0, countOnline = 0, countShop = 0, countChow = 0, amount = 0;
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d || d < startOfMonth) continue;
+      const t = (o?.orderType || "").toLowerCase();
+      countAll += 1;
+      if (t === "online") countOnline += 1;
+      if (t === "instore") countShop += 1;
+      if (t === "chowdeck") countChow += 1;
+      amount += Number(o?.total || 0);
+    }
+    return { countAll, countOnline, countShop, countChow, amount };
+  }, [orders, startOfMonth]);
+
+  const weeklyStatsMon = useMemo(() => {
+    let countAll = 0, countOnline = 0, countShop = 0, countChow = 0, amount = 0;
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d || d < startOfWeekMonday) continue;
+      const t = (o?.orderType || "").toLowerCase();
+      countAll += 1;
+      if (t === "online") countOnline += 1;
+      if (t === "instore") countShop += 1;
+      if (t === "chowdeck") countChow += 1;
+      amount += Number(o?.total || 0);
+    }
+    return { countAll, countOnline, countShop, countChow, amount };
+  }, [orders, startOfWeekMonday]);
+
+  const dailyStatsDyn = useMemo(() => {
+    let countAll = 0, countOnline = 0, countShop = 0, countChow = 0, amount = 0;
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d || d < startOfTodayDyn) continue;
+      const t = (o?.orderType || "").toLowerCase();
+      countAll += 1;
+      if (t === "online") countOnline += 1;
+      if (t === "instore") countShop += 1;
+      if (t === "chowdeck") countChow += 1;
+      amount += Number(o?.total || 0);
+    }
+    return { countAll, countOnline, countShop, countChow, amount };
+  }, [orders, startOfTodayDyn]);
 
   // Items sold today – uses real items only; no synthetic packs.
   const itemTotalsToday = useMemo(() => {
@@ -381,8 +459,7 @@ export default function AdminDashboard() {
           label: d.toLocaleDateString("en-NG", { month: "short", day: "numeric" }),
           online: 0,
           instore: 0,
-          // Note: we keep series keys unchanged in charts below (no chowdeck line added),
-          // total already includes chowdeck.
+          // total includes chowdeck too
           total: 0,
         },
       ])
@@ -398,8 +475,7 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      // total includes everything, including chowdeck:
-      row.total += t;
+      row.total += t; // includes chowdeck
     }
     return Array.from(map.values());
   }, [orders]);
@@ -625,8 +701,8 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      {/* KPIs (All-time) */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Total Orders</h2>
           <p className="text-2xl font-extrabold">{totalOrders}</p>
@@ -647,35 +723,71 @@ export default function AdminDashboard() {
           <h2 className="text-lg font-bold opacity-90">Today (All)</h2>
           <p className="text-2xl font-extrabold">{money(dailyCombinedTotal)}</p>
         </div>
-      </div>
-
-      {/* Today splits */}
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="px-4 py-3 bg-indigo-500 text-white rounded-2xl shadow">
-          Today Online: <span className="font-bold">{money(dailyOnlineTotal)}</span>
-        </div>
-        <div className="px-4 py-3 bg-teal-500 text-white rounded-2xl shadow">
-          Today Shop: <span className="font-bold">{money(dailyShopTotal)}</span>
-        </div>
-        <div className="px-4 py-3 bg-pink-600 text-white rounded-2xl shadow">
-          Today Combined: <span className="font-bold">{money(dailyCombinedTotal)}</span>
+        {/* NEW: Chowdeck Orders (all-time, never clears) */}
+        <div className="bg-gradient-to-br from-amber-500 to-yellow-600 text-white p-4 shadow rounded-2xl">
+          <h2 className="text-lg font-bold opacity-90">Chowdeck Orders</h2>
+          <p className="text-2xl font-extrabold">{chowdeckOrders}</p>
         </div>
       </div>
 
-      {/* Weekly splits */}
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="px-4 py-3 bg-orange-500 text-white rounded-2xl shadow">
-          Weekly Online: <span className="font-bold">{money(weeklyOnlineTotal)}</span>
-        </div>
-        <div className="px-4 py-3 bg-red-500 text-white rounded-2xl shadow">
-          Weekly Shop: <span className="font-bold">{money(weeklyShopTotal)}</span>
-        </div>
-        <div className="px-4 py-3 bg-blue-600 text-white rounded-2xl shadow">
-          Weekly Combined: <span className="font-bold">{money(weeklyCombinedTotal)}</span>
-        </div>
+      {/* NEW: Monthly buttons (auto-clear at 12am first day of month) */}
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-5 gap-4">
+        <button className="px-4 py-3 rounded-2xl bg-fuchsia-600 text-white font-semibold shadow">
+          📅 Monthly Orders: <span className="font-extrabold ml-1">{monthlyStats.countAll}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-indigo-600 text-white font-semibold shadow">
+          🌐 Monthly Online: <span className="font-extrabold ml-1">{monthlyStats.countOnline}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-rose-600 text-white font-semibold shadow">
+          🏪 Monthly Shop: <span className="font-extrabold ml-1">{monthlyStats.countShop}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-amber-600 text-white font-semibold shadow">
+          🛵 Monthly Chowdeck: <span className="font-extrabold ml-1">{monthlyStats.countChow}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold shadow">
+          💰 Monthly Amount: <span className="font-extrabold ml-1">{money(monthlyStats.amount)}</span>
+        </button>
       </div>
 
-      {/* Payment mode quick view */}
+      {/* NEW: Weekly buttons (Monday start, auto-clear 12am Mondays) */}
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-5 gap-4">
+        <button className="px-4 py-3 rounded-2xl bg-purple-600 text-white font-semibold shadow">
+          📈 Weekly Orders: <span className="font-extrabold ml-1">{weeklyStatsMon.countAll}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-blue-600 text-white font-semibold shadow">
+          🌐 Weekly Online: <span className="font-extrabold ml-1">{weeklyStatsMon.countOnline}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold shadow">
+          🏪 Weekly Shop: <span className="font-extrabold ml-1">{weeklyStatsMon.countShop}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-yellow-600 text-white font-semibold shadow">
+          🛵 Weekly Chowdeck: <span className="font-extrabold ml-1">{weeklyStatsMon.countChow}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-teal-600 text-white font-semibold shadow">
+          💰 Weekly Amount: <span className="font-extrabold ml-1">{money(weeklyStatsMon.amount)}</span>
+        </button>
+      </div>
+
+      {/* NEW: Daily buttons (auto-clear 12am daily) */}
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-5 gap-4">
+        <button className="px-4 py-3 rounded-2xl bg-sky-600 text-white font-semibold shadow">
+          📍 Today Orders: <span className="font-extrabold ml-1">{dailyStatsDyn.countAll}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-indigo-700 text-white font-semibold shadow">
+          🌐 Today Online: <span className="font-extrabold ml-1">{dailyStatsDyn.countOnline}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-rose-700 text-white font-semibold shadow">
+          🏪 Today Shop: <span className="font-extrabold ml-1">{dailyStatsDyn.countShop}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-amber-700 text-white font-semibold shadow">
+          🛵 Today Chowdeck: <span className="font-extrabold ml-1">{dailyStatsDyn.countChow}</span>
+        </button>
+        <button className="px-4 py-3 rounded-2xl bg-emerald-700 text-white font-semibold shadow">
+          💰 Today Amount: <span className="font-extrabold ml-1">{money(dailyStatsDyn.amount)}</span>
+        </button>
+      </div>
+
+      {/* Payment mode quick view (existing) */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold shadow">
           💵 Cash Today: {money(cashToday)}
@@ -688,7 +800,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* CHARTS SECTION */}
+      {/* CHARTS SECTION (unchanged) */}
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4">
           <h3 className="font-bold mb-2">Today’s Sales Split</h3>
@@ -826,14 +938,14 @@ export default function AdminDashboard() {
           </div>
           <button
             onClick={() => { setDateFrom(""); setDateTo(""); setPage(1); }}
-            className="px-3 py-2 rounded-xl bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+            className="px-3 py-2 rounded-2xl bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Clear
           </button>
           <select
             value={filter}
             onChange={(e) => { setFilter(e.target.value); setPage(1); }}
-            className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+            className="border rounded-2xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
           >
             <option value="all">All Orders</option>
             <option value="online">Online Orders</option>
@@ -841,8 +953,8 @@ export default function AdminDashboard() {
             {/* Intentionally not adding a Chowdeck filter to keep current UI flow */}
           </select>
           <div className="flex gap-2">
-            <button onClick={exportCSV} className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-semibold shadow hover:opacity-95">Export CSV</button>
-            <button onClick={exportPDF} className="px-3 py-2 rounded-xl bg-indigo-600 text-white font-semibold shadow hover:opacity-95">Export PDF</button>
+            <button onClick={exportCSV} className="px-3 py-2 rounded-2xl bg-emerald-600 text-white font-semibold shadow hover:opacity-95">Export CSV</button>
+            <button onClick={exportPDF} className="px-3 py-2 rounded-2xl bg-indigo-600 text-white font-semibold shadow hover:opacity-95">Export PDF</button>
           </div>
         </div>
       </div>
@@ -972,7 +1084,7 @@ export default function AdminDashboard() {
                                 removeOrder(order?._id);
                               }}
                               disabled={removing}
-                              className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-rose-600 to-red-600 shadow hover:opacity-95 active:scale-95 disabled:opacity-50 transition"
+                              className="px-4 py-2 rounded-2xl font-semibold text-white bg-gradient-to-r from-rose-600 to-red-600 shadow hover:opacity-95 active:scale-95 disabled:opacity-50 transition"
                             >
                               {removing ? "Removing..." : "Remove Order"}
                             </button>
@@ -991,7 +1103,7 @@ export default function AdminDashboard() {
       {/* Pagination */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
         <button
-          className="px-4 py-2 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50"
+          className="px-4 py-2 bg-white border border-gray-300 rounded-2xl hover:bg-gray-50 disabled:opacity-50"
           disabled={page === 1}
           onClick={() => setPage((p) => Math.max(p - 1, 1))}
         >
@@ -999,7 +1111,7 @@ export default function AdminDashboard() {
         </button>
         <span className="font-semibold">Page {page} of {totalPages}</span>
         <button
-          className="px-4 py-2 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50"
+          className="px-4 py-2 bg-white border border-gray-300 rounded-2xl hover:bg-gray-50 disabled:opacity-50"
           disabled={page === totalPages || totalPages === 0}
           onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
         >
@@ -1023,15 +1135,15 @@ export default function AdminDashboard() {
             </p>
 
             <div className="grid grid-cols-1 gap-3">
-              <div className="flex items-center justify-between rounded-xl border p-3 bg-emerald-50">
+              <div className="flex items-center justify-between rounded-2xl border p-3 bg-emerald-50">
                 <span className="font-semibold">Cash Total</span>
                 <span className="text-emerald-700 font-extrabold">{money(cashToday)}</span>
               </div>
-              <div className="flex items-center justify-between rounded-xl border p-3 bg-indigo-50">
+              <div className="flex items-center justify-between rounded-2xl border p-3 bg-indigo-50">
                 <span className="font-semibold">Card Total</span>
                 <span className="text-indigo-700 font-extrabold">{money(cardToday)}</span>
               </div>
-              <div className="flex items-center justify-between rounded-xl border p-3 bg-amber-50">
+              <div className="flex items-center justify-between rounded-2xl border p-3 bg-amber-50">
                 <span className="font-semibold">Transfer Total</span>
                 <span className="text-amber-700 font-extrabold">{money(transferToday)}</span>
               </div>
@@ -1043,7 +1155,7 @@ export default function AdminDashboard() {
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setShowSummary(false)}
-                className="px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 active:scale-95 transition"
+                className="px-4 py-2 rounded-2xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 active:scale-95 transition"
               >
                 Close
               </button>
