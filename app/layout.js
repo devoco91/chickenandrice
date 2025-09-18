@@ -1,4 +1,4 @@
-// app/layout.js
+// /app/layout.js
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ReduxProvider from "./store/ReduxProvider";
@@ -6,6 +6,7 @@ import Script from "next/script";
 import PWARegister from "./components/PWARegister";
 import InstallPWAButton from "./components/InstallPWAButton";
 import IOSA2HSBanner from "./components/IOSA2HSBanner";
+import LocalBusinessJsonLd from "./seo/LocalBusinessJsonLd"; // JSON-LD (safe, no UI impact)
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,7 +18,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// ✅ Safe fallback if NEXT_PUBLIC_APP_URL isn’t set
+// Safe fallback if NEXT_PUBLIC_APP_URL isn’t set
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata = {
@@ -29,15 +30,19 @@ export const metadata = {
   description: "Best Naija Jollof fried & coconut rice",
   icons: {
     icon: "/favicon.ico?v=123",
-    // ✅ iOS Add-to-Home-Screen uses this (you already have it in /public)
     apple: "/apple-touch-icon-180x180.png",
   },
-  // ✅ iOS PWA meta (Next will emit the proper Apple tags)
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "chickenandrice",
   },
+  // ✅ added canonical (SEO; no runtime behavior change)
+  alternates: {
+    canonical: appUrl,
+  },
+  // ✅ link web manifest you already expose via /app/manifest.js
+  manifest: "/manifest.webmanifest",
   openGraph: {
     title: "chickenandrice",
     description: "Best Naija Jollof fried & coconut rice",
@@ -66,7 +71,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="antialiased">
-        {/* ✅ Redux store available everywhere */}
+        {/* JSON-LD for Restaurant rich results (harmless script) */}
+        <LocalBusinessJsonLd />
+        {/* Redux store available everywhere */}
         <ReduxProvider>{children}</ReduxProvider>
 
         {/* iOS Safari hint (only shows on iOS + not already installed) */}
@@ -78,7 +85,7 @@ export default function RootLayout({ children }) {
         {/* Registers /sw.js (safe, no effect on API/images) */}
         <PWARegister />
 
-        {/* ✅ Lazy load Google Maps API (kept) */}
+        {/* Lazy load Google Maps API */}
         <Script
           src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
           strategy="lazyOnload"

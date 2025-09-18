@@ -1,4 +1,4 @@
-// app/manifest.js
+// /app/manifest.js
 export default function manifest() {
   return {
     name: "chickenandrice",
