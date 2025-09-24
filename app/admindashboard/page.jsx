@@ -800,32 +800,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 shadow rounded-2xl">
-          <h2 className="text-lg font-bold opacity-90">Total Orders</h2>
-          <p className="text-2xl font-extrabold">{totalOrders}</p>
-        </div>
-        <div className="bg-gradient-to-br from-emerald-500 to-green-600 text-white p-4 shadow rounded-2xl">
-          <h2 className="text-lg font-bold opacity-90">Total Amount</h2>
-          <p className="text-2xl font-extrabold">{money(totalAmount)}</p>
-        </div>
-        <div className="bg-gradient-to-br from-orange-500 to-amber-600 text-white p-4 shadow rounded-2xl">
-          <h2 className="text-lg font-bold opacity-90">Online Orders</h2>
-          <p className="text-2xl font-extrabold">{onlineOrders}</p>
-        </div>
-        <div className="bg-gradient-to-br from-rose-500 to-red-600 text-white p-4 shadow rounded-2xl">
-          <h2 className="text-lg font-bold opacity-90">Shop Orders</h2>
-          <p className="text-2xl font-extrabold">{shopOrders}</p>
-        </div>
-        <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white p-4 shadow rounded-2xl">
-          <h2 className="text-lg font-bold opacity-90">Today (All)</h2>
-          <p className="text-2xl font-extrabold">{money(dailyCombinedTotal)}</p>
-        </div>
-        <div className="bg-gradient-to-br from-amber-500 to-yellow-600 text-white p-4 shadow rounded-2xl">
-          <h2 className="text-lg font-bold opacity-90">Chowdeck Orders</h2>
-          <p className="text-2xl font-extrabold">{chowdeckOrders}</p>
-        </div>
-      </div>
+      
 
       {/* ---------- MONTHLY SUMMARY BANNER ---------- */}
       <div className={styleMode("banner-monthly")}>
