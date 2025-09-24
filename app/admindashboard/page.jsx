@@ -43,11 +43,11 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [removing, setRemoving] = useState(false);
 
-  // NEW: premium top products controls
+  // Premium Top products controls (already added)
   const [rankMetric, setRankMetric] = useState("units"); // 'units' | 'revenue'
   const [compareMode, setCompareMode] = useState("yesterday"); // 'yesterday' | 'last7'
 
-  // auto-tick (for monthly/weekly/daily pill reset)
+  // Auto-tick for time anchors
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setClock(Date.now()), 60_000);
@@ -281,7 +281,7 @@ export default function AdminDashboard() {
     return { cashToday: cash, cardToday: card, transferToday: transfer };
   }, [orders, startOfToday]);
 
-  // Time anchors for auto-reset pills
+  // Time anchors
   const startOfMonth = useMemo(() => {
     const n = new Date(clock);
     const s = new Date(n.getFullYear(), n.getMonth(), 1);
@@ -303,7 +303,7 @@ export default function AdminDashboard() {
     return n;
   }, [clock]);
 
-  // Monthly / Weekly / Daily stat blocks
+  // Monthly / Weekly / Daily stat blocks (counts + amount)
   const monthlyStats = useMemo(() => {
     let countAll = 0,
       countOnline = 0,
@@ -401,7 +401,7 @@ export default function AdminDashboard() {
     return rows;
   }, [orders, startOfToday]);
 
-  // ===== Premium: Top products (Units/Revenue) vs Yesterday/Last 7 days =====
+  // ===== Premium Top products (Units/Revenue) vs Yesterday/Last 7 days =====
   const startOfYesterday = useMemo(() => {
     const y = new Date();
     y.setDate(y.getDate() - 1);
@@ -420,10 +420,10 @@ export default function AdminDashboard() {
     y.setHours(0, 0, 0, 0);
     return y;
   }, []);
-  const endOfLast7 = endOfYesterday; // why: baseline should NOT include today
+  const endOfLast7 = endOfYesterday;
 
   const topItems = useMemo(() => {
-    const todayMap = new Map();   // key -> number (units or revenue)
+    const todayMap = new Map();
     const baseMap = new Map();
     const display = new Map();
 
@@ -477,7 +477,7 @@ export default function AdminDashboard() {
     compareMode,
   ]);
 
-  // ======== CHART DATA (existing) ========
+  // Chart helpers
   const pad2 = (n) => String(n).padStart(2, "0");
   const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const ym = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
@@ -714,8 +714,25 @@ export default function AdminDashboard() {
     const key = String(name || "").toLowerCase();
     if (key === "online") return "#2563EB";
     if (key === "shop") return "#DC2626";
-    if (key === "chowdeck") return "url(#chowdeckGrad)"; // why: highlight chowdeck
+    if (key === "chowdeck") return "url(#chowdeckGrad)"; // highlight chowdeck
     return "#9CA3AF";
+  };
+
+  // --- Light Info tip (hover) ---
+  const InfoTip = ({ title }) => (
+    <span className="inline-flex items-center align-middle ml-2" title={title}>
+      <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-400">
+        <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.12" />
+        <path d="M12 17v-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <circle cx="12" cy="7.5" r="1" fill="currentColor" />
+      </svg>
+    </span>
+  );
+
+  // helper so badges filter & jump to first page (why: UX)
+  const applyFilter = (val) => {
+    setFilter(val);
+    setPage(1);
   };
 
   return (
@@ -741,6 +758,45 @@ export default function AdminDashboard() {
           >
             {loading ? "Refreshing..." : "Refresh Totals"}
           </button>
+        </div>
+      </div>
+
+      {/* ---------- TOTAL SUMMARY BANNER ---------- */}
+      <div className="mb-3 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 p-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700 flex items-center">
+              Total summary
+              <InfoTip title="All-time totals across every channel." />
+            </div>
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold">{totalOrders}</span> orders •
+              <span className="ml-1 font-semibold">{money(totalAmount)}</span> revenue
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button
+              onClick={() => applyFilter("online")}
+              className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold"
+              title="Filter orders to Online"
+            >
+              Online: {onlineOrders}
+            </button>
+            <button
+              onClick={() => applyFilter("instore")}
+              className="px-2 py-1 rounded-full bg-rose-100 text-rose-700 font-semibold"
+              title="Filter orders to Shop"
+            >
+              Shop: {shopOrders}
+            </button>
+            <button
+              onClick={() => applyFilter("chowdeck")}
+              className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold"
+              title="Filter orders to Chowdeck"
+            >
+              Chowdeck: {chowdeckOrders}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -772,8 +828,47 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Monthly / Weekly / Daily rows */}
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-5 gap-4">
+      {/* ---------- MONTHLY SUMMARY BANNER ---------- */}
+      <div className="mt-8 mb-2 rounded-2xl border border-fuchsia-100 bg-gradient-to-r from-fuchsia-50 via-pink-50 to-rose-50 p-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-700 flex items-center">
+              Monthly summary
+              <InfoTip title="Metrics since the 1st day of this month." />
+            </div>
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold">{monthlyStats.countAll}</span> orders this month •
+              <span className="ml-1 font-semibold">{money(monthlyStats.amount)}</span> revenue
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button
+              onClick={() => applyFilter("online")}
+              className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 font-semibold"
+              title="Filter orders to Online"
+            >
+              Online: {monthlyStats.countOnline}
+            </button>
+            <button
+              onClick={() => applyFilter("instore")}
+              className="px-2 py-1 rounded-full bg-rose-100 text-rose-700 font-semibold"
+              title="Filter orders to Shop"
+            >
+              Shop: {monthlyStats.countShop}
+            </button>
+            <button
+              onClick={() => applyFilter("chowdeck")}
+              className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold"
+              title="Filter orders to Chowdeck"
+            >
+              Chowdeck: {monthlyStats.countChow}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Monthly buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-fuchsia-600 text-white font-semibold shadow">
           📅 Monthly Orders: <span className="font-extrabold ml-1">{monthlyStats.countAll}</span>
         </button>
@@ -791,7 +886,35 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-5 gap-4">
+      {/* ---------- WEEKLY SUMMARY BANNER ---------- */}
+      <div className="mt-6 mb-2 rounded-2xl border border-purple-100 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-purple-700 flex items-center">
+              Weekly summary
+              <InfoTip title="Counts since Monday 00:00." />
+            </div>
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold">{weeklyStatsMon.countAll}</span> orders since Monday •
+              <span className="ml-1 font-semibold">{money(weeklyStatsMon.amount)}</span> revenue
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold" title="This week Online revenue">
+              Online: {money(weeklyOnlineTotal)}
+            </span>
+            <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold" title="This week Shop revenue">
+              Shop: {money(weeklyShopTotal)}
+            </span>
+            <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold" title="This week Chowdeck revenue">
+              Chowdeck: {money(weeklyChowdeckTotal)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Weekly buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-purple-600 text-white font-semibold shadow">
           📈 Weekly Orders: <span className="font-extrabold ml-1">{weeklyStatsMon.countAll}</span>
         </button>
@@ -809,7 +932,47 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-5 gap-4">
+      {/* ---------- DAILY SUMMARY BANNER ---------- */}
+      <div className="mt-6 mb-2 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 via-emerald-50 to-amber-50 p-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-sky-700 flex items-center">
+              Today’s summary
+              <InfoTip title="Today (from 00:00) across all channels." />
+            </div>
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold">{dailyStatsDyn.countAll}</span> orders today •
+              <span className="ml-1 font-semibold">{money(dailyCombinedTotal)}</span> revenue
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button
+              onClick={() => applyFilter("online")}
+              className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 font-semibold"
+              title="Filter orders to Online"
+            >
+              Online: {money(dailyOnlineTotal)}
+            </button>
+            <button
+              onClick={() => applyFilter("instore")}
+              className="px-2 py-1 rounded-full bg-rose-100 text-rose-700 font-semibold"
+              title="Filter orders to Shop"
+            >
+              Shop: {money(dailyShopTotal)}
+            </button>
+            <button
+              onClick={() => applyFilter("chowdeck")}
+              className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold"
+              title="Filter orders to Chowdeck"
+            >
+              Chowdeck: {money(dailyChowdeckTotal)}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Daily buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-sky-600 text-white font-semibold shadow">
           📍 Today Orders: <span className="font-extrabold ml-1">{dailyStatsDyn.countAll}</span>
         </button>
@@ -923,16 +1086,18 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* NEW: Premium Top Products with controls */}
+        {/* Premium Top Products */}
         <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4 lg:col-span-3">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-2">
             <div>
-              <h3 className="font-bold">Top products by {rankMetric === "units" ? "units sold" : "revenue"}</h3>
+              <h3 className="font-bold">
+                Top products by {rankMetric === "units" ? "units sold" : "revenue"}
+                <InfoTip title="Toggle metric or change baseline in the controls." />
+              </h3>
               <p className="text-xs text-gray-500">
                 Today vs {compareMode === "yesterday" ? "Yesterday" : "Last 7 Days"}
               </p>
             </div>
-            {/* Controls */}
             <div className="flex gap-2">
               <div className="bg-gray-100 rounded-xl p-1 flex">
                 <button
@@ -971,9 +1136,7 @@ export default function AdminDashboard() {
                   <XAxis dataKey="short" />
                   <YAxis allowDecimals={false} />
                   <Tooltip
-                    formatter={(v) =>
-                      rankMetric === "units" ? `${v} units` : money(v)
-                    }
+                    formatter={(v) => (rankMetric === "units" ? `${v} units` : money(v))}
                   />
                   <Legend />
                   <Bar dataKey="todayVal" name="Today" fill="url(#barToday)" radius={[6, 6, 0, 0]} />
@@ -987,7 +1150,6 @@ export default function AdminDashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Change list */}
             <div className="lg:col-span-1">
               <div className="border rounded-xl overflow-hidden">
                 <div className="px-3 py-2 bg-gray-50 text-xs font-semibold border-b">
@@ -1030,7 +1192,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Items sold today (now includes Chowdeck) */}
+      {/* Items sold today (includes Chowdeck) */}
       <div className="mt-6 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
