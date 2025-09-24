@@ -1,4 +1,4 @@
-// app/admin/AdminDashboard.tsx
+// app/admindashboard/page.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
@@ -20,8 +20,10 @@ import {
 } from "recharts";
 
 export default function AdminDashboard() {
+  // ===== State =====
   const [orders, setOrders] = useState([]);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("all"); // all|online|instore|chowdeck
+  const [paymentFilter, setPaymentFilter] = useState("all"); // all|cash|card|transfer
   const [page, setPage] = useState(1);
 
   const [dateFrom, setDateFrom] = useState("");
@@ -43,9 +45,15 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [removing, setRemoving] = useState(false);
 
-  // Premium Top products controls (already added)
-  const [rankMetric, setRankMetric] = useState("units"); // 'units' | 'revenue'
-  const [compareMode, setCompareMode] = useState("yesterday"); // 'yesterday' | 'last7'
+  // Top products controls
+  const [rankMetric, setRankMetric] = useState("units"); // units|revenue
+  const [compareMode, setCompareMode] = useState("yesterday"); // yesterday|last7
+
+  // Style toggle
+  const [summaryStyle, setSummaryStyle] = useState("premium"); // premium|classic
+
+  // Orders anchor for scroll
+  const ordersRef = useRef(null);
 
   // Auto-tick for time anchors
   const [clock, setClock] = useState(Date.now());
@@ -57,6 +65,7 @@ export default function AdminDashboard() {
   const pageSize = 10;
   const PACK_PRICE = 200;
 
+  // ===== Utils =====
   const money = (n) =>
     `₦${Number(n || 0).toLocaleString("en-NG", {
       minimumFractionDigits: 2,
@@ -97,6 +106,7 @@ export default function AdminDashboard() {
   const abortRef = useRef(null);
   const mountedRef = useRef(true);
 
+  // ===== Fetch =====
   const fetchOrders = async () => {
     try {
       setLoading(true);
@@ -162,11 +172,13 @@ export default function AdminDashboard() {
     return dt;
   };
 
-  // Filters (orders table only)
+  // ===== Filters (orders table only) =====
   const filteredOrders = useMemo(() => {
+    // order type filter
     let list =
       filter === "all" ? orders : orders.filter((o) => (o?.orderType || "").toLowerCase() === filter);
 
+    // date range filter
     if (dateFrom) {
       const from = startOfDay(new Date(dateFrom));
       list = list.filter((o) => {
@@ -182,6 +194,16 @@ export default function AdminDashboard() {
       });
     }
 
+    // payment filter (map upi->transfer)
+    if (paymentFilter !== "all") {
+      list = list.filter((o) => {
+        const pm = String(o?.paymentMode || "").toLowerCase();
+        const norm = pm === "upi" ? "transfer" : pm;
+        return norm === paymentFilter;
+      });
+    }
+
+    // sort newest first
     return [...list].sort((a, b) => {
       const ad = safeDate(a?.createdAt)?.getTime() ?? 0;
       const bd = safeDate(b?.createdAt)?.getTime() ?? 0;
@@ -190,7 +212,7 @@ export default function AdminDashboard() {
       const bid = String(b?._id || "");
       return bid.localeCompare(aid);
     });
-  }, [orders, filter, dateFrom, dateTo]);
+  }, [orders, filter, paymentFilter, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
   useEffect(() => {
@@ -202,7 +224,7 @@ export default function AdminDashboard() {
     return filteredOrders.slice(start, start + pageSize);
   }, [filteredOrders, page]);
 
-  // KPIs
+  // ===== KPIs =====
   const totalOrders = orders.length;
   const totalAmount = orders.reduce((sum, o) => sum + Number(o?.total || 0), 0);
   const onlineOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "online").length;
@@ -281,7 +303,7 @@ export default function AdminDashboard() {
     return { cashToday: cash, cardToday: card, transferToday: transfer };
   }, [orders, startOfToday]);
 
-  // Time anchors
+  // ===== Time anchors for banners =====
   const startOfMonth = useMemo(() => {
     const n = new Date(clock);
     const s = new Date(n.getFullYear(), n.getMonth(), 1);
@@ -303,7 +325,7 @@ export default function AdminDashboard() {
     return n;
   }, [clock]);
 
-  // Monthly / Weekly / Daily stat blocks (counts + amount)
+  // ===== Counts for banners =====
   const monthlyStats = useMemo(() => {
     let countAll = 0,
       countOnline = 0,
@@ -401,7 +423,7 @@ export default function AdminDashboard() {
     return rows;
   }, [orders, startOfToday]);
 
-  // ===== Premium Top products (Units/Revenue) vs Yesterday/Last 7 days =====
+  // ===== Top products vs baseline =====
   const startOfYesterday = useMemo(() => {
     const y = new Date();
     y.setDate(y.getDate() - 1);
@@ -477,7 +499,7 @@ export default function AdminDashboard() {
     compareMode,
   ]);
 
-  // Chart helpers
+  // ===== Chart helpers =====
   const pad2 = (n) => String(n).padStart(2, "0");
   const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const ym = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
@@ -509,20 +531,26 @@ export default function AdminDashboard() {
     const map = new Map(
       days.map((d) => [
         ymd(d),
-        { date: ymd(d), label: d.toLocaleDateString("en-NG", { month: "short", day: "numeric" }), online: 0, instore: 0, total: 0 },
+        {
+          date: ymd(d),
+          label: d.toLocaleDateString("en-NG", { month: "short", day: "numeric" }),
+          online: 0,
+          instore: 0,
+          total: 0,
+        },
       ])
     );
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (!d) continue;
       const key = ymd(d);
-      if (!map.has(key)) continue;
+      if (!map.has(key)) continue; // ignore out of window
       const t = Number(o?.total || 0);
       const type = (o?.orderType || "").toLowerCase();
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t;
+      row.total += t; // includes chowdeck
     }
     return Array.from(map.values());
   }, [orders]);
@@ -549,7 +577,7 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t;
+      row.total += t; // includes chowdeck too
     }
     return Array.from(map.values());
   }, [orders]);
@@ -575,11 +603,12 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t;
+      row.total += t; // includes chowdeck too
     }
     return Array.from(map.values());
   }, [orders]);
 
+  // Pie data
   const todayPieData = useMemo(
     () => [
       { name: "Online", value: dailyOnlineTotal },
@@ -589,152 +618,101 @@ export default function AdminDashboard() {
     [dailyOnlineTotal, dailyShopTotal, dailyChowdeckTotal]
   );
 
-  const ordersForExport = filteredOrders;
-  const csvEscape = (v) => {
-    const s = String(v ?? "");
-    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
-  };
-  const exportCSV = () => {
-    const headers = [
-      "Order ID",
-      "Order Name",
-      "Price",
-      "Order Type",
-      "Mode of Payment",
-      "Customer Name",
-      "Address",
-      "Date",
-      "Time",
+  // Payments breakdown UI
+  const paymentToday = useMemo(() => {
+    const total = (cashToday || 0) + (cardToday || 0) + (transferToday || 0);
+    const parts = [
+      { name: "Cash", key: "cash", value: cashToday || 0 },
+      { name: "Transfer", key: "transfer", value: transferToday || 0 },
+      { name: "Card", key: "card", value: cardToday || 0 },
     ];
-    const lines = [headers.join(",")];
-    for (const order of ordersForExport) {
-      const items = Array.isArray(order?.items) ? order.items : [];
-      const firstName = items[0]?.name || "No items";
-      const extra = items.length > 1 ? ` +${items.length - 1} more` : "";
-      const orderName = firstName + extra;
-      const type = (order?.orderType || "").toLowerCase();
-      const address =
-        type === "online"
-          ? `${order?.houseNumber || ""} ${order?.street || ""} ${order?.landmark || ""}`.trim()
-          : "In-store";
-      const row = [
-        csvEscape(order?._id || "-"),
-        csvEscape(orderName),
-        csvEscape(money(order?.total)),
-        csvEscape(type || "-"),
-        csvEscape(
-          String(order?.paymentMode || "--").toLowerCase() === "upi" ? "transfer" : order?.paymentMode || "--"
-        ),
-        csvEscape(order?.customerName || "-"),
-        csvEscape(address || "-"),
-        csvEscape(fmtDate(order?.createdAt)),
-        csvEscape(fmtTime(order?.createdAt)),
-      ];
-      lines.push(row.join(","));
+    const withShare = parts.map((p) => ({
+      ...p,
+      share: total > 0 ? (p.value / total) * 100 : 0,
+    }));
+    return { total, parts: withShare };
+  }, [cashToday, cardToday, transferToday]);
+
+  // Tiny sparklines: hourly cumulative
+  const paymentSpark = useMemo(() => {
+    const hours = Array.from({ length: 24 }, (_, h) => h);
+    const base = hours.map((h) => ({ h, cash: 0, transfer: 0, card: 0 }));
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d || d < startOfToday) continue;
+      const h = d.getHours();
+      const pm = String(o?.paymentMode || "").toLowerCase();
+      const norm = pm === "upi" ? "transfer" : pm;
+      const t = Number(o?.total || 0);
+      const row = base[h];
+      if (!row) continue;
+      if (norm === "cash") row.cash += t;
+      else if (norm === "card") row.card += t;
+      else if (norm === "transfer") row.transfer += t;
     }
-    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `orders_export_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  const exportPDF = () => {
-    const w = window.open("", "_blank");
-    if (!w) return alert("Popup blocked. Allow popups to export PDF.");
-    const rowsHtml = ordersForExport
-      .map((order) => {
-        const items = Array.isArray(order?.items) ? order.items : [];
-        const firstName = items[0]?.name || "No items";
-        const extra = items.length > 1 ? ` +${items.length - 1} more` : "";
-        const orderName = firstName + extra;
-        const type = (order?.orderType || "").toLowerCase();
-        const address =
-          type === "online"
-            ? `${order?.houseNumber || ""} ${order?.street || ""} ${order?.landmark || ""}`.trim()
-            : "In-store";
-        return `<tr>
-          <td>${order?._id || "-"}</td>
-          <td>${orderName}</td>
-          <td>${money(order?.total)}</td>
-          <td>${type || "-"}</td>
-          <td>${(String(order?.paymentMode || "").toLowerCase() === "upi" ? "transfer" : order?.paymentMode) || "--"}</td>
-          <td>${order?.customerName || "-"}</td>
-          <td>${address || "-"}</td>
-          <td>${fmtDate(order?.createdAt)}</td>
-          <td>${fmtTime(order?.createdAt)}</td>
-        </tr>`;
-      })
-      .join("");
-    w.document.write(`<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Orders Export</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; }
-    h1 { margin: 0 0 12px; }
-    .meta { color: #555; font-size: 12px; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; }
-    th { background: #f5f5f5; text-align: left; }
-    tr:nth-child(even) td { background: #fcfcfc; }
-  </style>
-</head>
-<body>
-  <h1>Orders Export</h1>
-  <div class="meta">Generated: ${new Date().toLocaleString()} • Rows: ${ordersForExport.length}</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Order ID</th>
-        <th>Order Name</th>
-        <th>Price</th>
-        <th>Order Type</th>
-        <th>Mode of Payment</th>
-        <th>Customer Name</th>
-        <th>Address</th>
-        <th>Date</th>
-        <th>Time</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rowsHtml}
-    </tbody>
-  </table>
-  <script>window.onload = () => setTimeout(() => { window.print(); }, 300);</script>
-</body>
-</html>`);
-    w.document.close();
+    let cCash = 0,
+      cTransfer = 0,
+      cCard = 0;
+    return base.map((r) => {
+      cCash += r.cash;
+      cTransfer += r.transfer;
+      cCard += r.card;
+      return {
+        h: r.h,
+        cash: cCash,
+        transfer: cTransfer,
+        card: cCard,
+        label: `${String(r.h).padStart(2, "0")}:00`,
+      };
+    });
+  }, [orders, startOfToday]);
+
+  // Style helper
+  const styleMode = (variant) => {
+    const isPremium = summaryStyle === "premium";
+    if (variant === "banner-total")
+      return isPremium
+        ? "mb-3 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 p-4 shadow-sm"
+        : "mb-3 rounded-xl border bg-white p-3";
+    if (variant === "banner-monthly")
+      return isPremium
+        ? "mt-8 mb-2 rounded-2xl border border-fuchsia-100 bg-gradient-to-r from-fuchsia-50 via-pink-50 to-rose-50 p-4 shadow-sm"
+        : "mt-8 mb-2 rounded-xl border bg-white p-3";
+    if (variant === "banner-weekly")
+      return isPremium
+        ? "mt-6 mb-2 rounded-2xl border border-purple-100 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-4 shadow-sm"
+        : "mt-6 mb-2 rounded-xl border bg-white p-3";
+    if (variant === "banner-daily")
+      return isPremium
+        ? "mt-6 mb-2 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 via-emerald-50 to-amber-50 p-4 shadow-sm"
+        : "mt-6 mb-2 rounded-xl border bg-white p-3";
+    if (variant === "card-payments")
+      return isPremium
+        ? "mt-8 bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-5"
+        : "mt-8 bg-white border rounded-xl p-4";
+    return "";
   };
 
   const colorFor = (name) => {
     const key = String(name || "").toLowerCase();
     if (key === "online") return "#2563EB";
     if (key === "shop") return "#DC2626";
-    if (key === "chowdeck") return "url(#chowdeckGrad)"; // highlight chowdeck
+    if (key === "chowdeck") return "url(#chowdeckGrad)";
     return "#9CA3AF";
   };
 
-  // --- Light Info tip (hover) ---
-  const InfoTip = ({ title }) => (
-    <span className="inline-flex items-center align-middle ml-2" title={title}>
-      <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-400">
-        <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.12" />
-        <path d="M12 17v-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        <circle cx="12" cy="7.5" r="1" fill="currentColor" />
-      </svg>
-    </span>
-  );
-
-  // helper so badges filter & jump to first page (why: UX)
+  // filter helpers (why: UX shortcuts)
   const applyFilter = (val) => {
     setFilter(val);
     setPage(1);
   };
+  const applyPaymentFilter = (val) => {
+    setPaymentFilter(val);
+    setPage(1);
+    if (ordersRef.current) ordersRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
+  // ===== Render =====
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
       {/* Header + actions */}
@@ -742,7 +720,29 @@ export default function AdminDashboard() {
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
           Admin Dashboard
         </h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Style toggle */}
+          <div className="flex items-center gap-1 bg-white/60 border rounded-xl p-1">
+            <button
+              onClick={() => setSummaryStyle("classic")}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg ${
+                summaryStyle === "classic" ? "bg-white shadow" : "opacity-70"
+              }`}
+              title="Minimal, flat look"
+            >
+              Classic
+            </button>
+            <button
+              onClick={() => setSummaryStyle("premium")}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg ${
+                summaryStyle === "premium" ? "bg-white shadow" : "opacity-70"
+              }`}
+              title="Gradients & soft shadows"
+            >
+              Premium
+            </button>
+          </div>
+
           <button
             onClick={() => setShowSummary(true)}
             className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-indigo-600 to-blue-600 shadow hover:opacity-95 active:scale-95 transition"
@@ -762,12 +762,11 @@ export default function AdminDashboard() {
       </div>
 
       {/* ---------- TOTAL SUMMARY BANNER ---------- */}
-      <div className="mb-3 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 p-4 shadow-sm">
+      <div className={styleMode("banner-total")}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700 flex items-center">
+            <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
               Total summary
-              <InfoTip title="All-time totals across every channel." />
             </div>
             <div className="text-sm text-gray-700">
               <span className="font-semibold">{totalOrders}</span> orders •
@@ -829,12 +828,11 @@ export default function AdminDashboard() {
       </div>
 
       {/* ---------- MONTHLY SUMMARY BANNER ---------- */}
-      <div className="mt-8 mb-2 rounded-2xl border border-fuchsia-100 bg-gradient-to-r from-fuchsia-50 via-pink-50 to-rose-50 p-4 shadow-sm">
+      <div className={styleMode("banner-monthly")}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-700 flex items-center">
+            <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-700">
               Monthly summary
-              <InfoTip title="Metrics since the 1st day of this month." />
             </div>
             <div className="text-sm text-gray-700">
               <span className="font-semibold">{monthlyStats.countAll}</span> orders this month •
@@ -845,21 +843,18 @@ export default function AdminDashboard() {
             <button
               onClick={() => applyFilter("online")}
               className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 font-semibold"
-              title="Filter orders to Online"
             >
               Online: {monthlyStats.countOnline}
             </button>
             <button
               onClick={() => applyFilter("instore")}
               className="px-2 py-1 rounded-full bg-rose-100 text-rose-700 font-semibold"
-              title="Filter orders to Shop"
             >
               Shop: {monthlyStats.countShop}
             </button>
             <button
               onClick={() => applyFilter("chowdeck")}
               className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold"
-              title="Filter orders to Chowdeck"
             >
               Chowdeck: {monthlyStats.countChow}
             </button>
@@ -867,32 +862,12 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Monthly buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-        <button className="px-4 py-3 rounded-2xl bg-fuchsia-600 text-white font-semibold shadow">
-          📅 Monthly Orders: <span className="font-extrabold ml-1">{monthlyStats.countAll}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-indigo-600 text-white font-semibold shadow">
-          🌐 Monthly Online: <span className="font-extrabold ml-1">{monthlyStats.countOnline}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-rose-600 text-white font-semibold shadow">
-          🏪 Monthly Shop: <span className="font-extrabold ml-1">{monthlyStats.countShop}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-amber-600 text-white font-semibold shadow">
-          🛵 Monthly Chowdeck: <span className="font-extrabold ml-1">{monthlyStats.countChow}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold shadow">
-          💰 Monthly Amount: <span className="font-extrabold ml-1">{money(monthlyStats.amount)}</span>
-        </button>
-      </div>
-
       {/* ---------- WEEKLY SUMMARY BANNER ---------- */}
-      <div className="mt-6 mb-2 rounded-2xl border border-purple-100 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-4 shadow-sm">
+      <div className={styleMode("banner-weekly")}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-purple-700 flex items-center">
+            <div className="text-xs font-semibold uppercase tracking-wide text-purple-700">
               Weekly summary
-              <InfoTip title="Counts since Monday 00:00." />
             </div>
             <div className="text-sm text-gray-700">
               <span className="font-semibold">{weeklyStatsMon.countAll}</span> orders since Monday •
@@ -900,45 +875,25 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
-            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold" title="This week Online revenue">
+            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold">
               Online: {money(weeklyOnlineTotal)}
             </span>
-            <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold" title="This week Shop revenue">
+            <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">
               Shop: {money(weeklyShopTotal)}
             </span>
-            <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold" title="This week Chowdeck revenue">
+            <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold">
               Chowdeck: {money(weeklyChowdeckTotal)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Weekly buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-        <button className="px-4 py-3 rounded-2xl bg-purple-600 text-white font-semibold shadow">
-          📈 Weekly Orders: <span className="font-extrabold ml-1">{weeklyStatsMon.countAll}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-blue-600 text-white font-semibold shadow">
-          🌐 Weekly Online: <span className="font-extrabold ml-1">{weeklyStatsMon.countOnline}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-red-600 text-white font-semibold shadow">
-          🏪 Weekly Shop: <span className="font-extrabold ml-1">{weeklyStatsMon.countShop}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-yellow-600 text-white font-semibold shadow">
-          🛵 Weekly Chowdeck: <span className="font-extrabold ml-1">{weeklyStatsMon.countChow}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-teal-600 text-white font-semibold shadow">
-          💰 Weekly Amount: <span className="font-extrabold ml-1">{money(weeklyStatsMon.amount)}</span>
-        </button>
-      </div>
-
       {/* ---------- DAILY SUMMARY BANNER ---------- */}
-      <div className="mt-6 mb-2 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 via-emerald-50 to-amber-50 p-4 shadow-sm">
+      <div className={styleMode("banner-daily")}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-sky-700 flex items-center">
+            <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
               Today’s summary
-              <InfoTip title="Today (from 00:00) across all channels." />
             </div>
             <div className="text-sm text-gray-700">
               <span className="font-semibold">{dailyStatsDyn.countAll}</span> orders today •
@@ -949,58 +904,23 @@ export default function AdminDashboard() {
             <button
               onClick={() => applyFilter("online")}
               className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 font-semibold"
-              title="Filter orders to Online"
             >
               Online: {money(dailyOnlineTotal)}
             </button>
             <button
               onClick={() => applyFilter("instore")}
               className="px-2 py-1 rounded-full bg-rose-100 text-rose-700 font-semibold"
-              title="Filter orders to Shop"
             >
               Shop: {money(dailyShopTotal)}
             </button>
             <button
               onClick={() => applyFilter("chowdeck")}
               className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold"
-              title="Filter orders to Chowdeck"
             >
               Chowdeck: {money(dailyChowdeckTotal)}
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Daily buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-        <button className="px-4 py-3 rounded-2xl bg-sky-600 text-white font-semibold shadow">
-          📍 Today Orders: <span className="font-extrabold ml-1">{dailyStatsDyn.countAll}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-indigo-700 text-white font-semibold shadow">
-          🌐 Today Online: <span className="font-extrabold ml-1">{dailyStatsDyn.countOnline}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-rose-700 text-white font-semibold shadow">
-          🏪 Today Shop: <span className="font-extrabold ml-1">{dailyStatsDyn.countShop}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-amber-700 text-white font-semibold shadow">
-          🛵 Today Chowdeck: <span className="font-extrabold ml-1">{dailyStatsDyn.countChow}</span>
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-emerald-700 text-white font-semibold shadow">
-          💰 Today Amount: <span className="font-extrabold ml-1">{money(dailyStatsDyn.amount)}</span>
-        </button>
-      </div>
-
-      {/* Payment modes */}
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <button className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold shadow">
-          💵 Cash Today: {money(cashToday)}
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-indigo-600 text-white font-semibold shadow">
-          💳 Card Today: {money(cardToday)}
-        </button>
-        <button className="px-4 py-3 rounded-2xl bg-amber-600 text-white font-semibold shadow">
-          🔄 Transfer Today: {money(transferToday)}
-        </button>
       </div>
 
       {/* CHARTS SECTION */}
@@ -1013,10 +933,6 @@ export default function AdminDashboard() {
                 <defs>
                   <linearGradient id="chowdeckGrad" x1="0" y1="0" x2="1" y2="1">
                     <stop offset="0%" stopColor="#F59E0B" />
-                    <stop offset="100%" stopColor="#D97706" />
-                  </linearGradient>
-                  <linearGradient id="barToday" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#FBBF24" />
                     <stop offset="100%" stopColor="#D97706" />
                   </linearGradient>
                 </defs>
@@ -1092,7 +1008,6 @@ export default function AdminDashboard() {
             <div>
               <h3 className="font-bold">
                 Top products by {rankMetric === "units" ? "units sold" : "revenue"}
-                <InfoTip title="Toggle metric or change baseline in the controls." />
               </h3>
               <p className="text-xs text-gray-500">
                 Today vs {compareMode === "yesterday" ? "Yesterday" : "Last 7 Days"}
@@ -1139,6 +1054,12 @@ export default function AdminDashboard() {
                     formatter={(v) => (rankMetric === "units" ? `${v} units` : money(v))}
                   />
                   <Legend />
+                  <defs>
+                    <linearGradient id="barToday" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#FBBF24" />
+                      <stop offset="100%" stopColor="#D97706" />
+                    </linearGradient>
+                  </defs>
                   <Bar dataKey="todayVal" name="Today" fill="url(#barToday)" radius={[6, 6, 0, 0]} />
                   <Bar
                     dataKey="baseVal"
@@ -1192,6 +1113,146 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Today’s Payment Methods */}
+      <div className={styleMode("card-payments")}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+          <div>
+            <h3 className="font-bold text-gray-900">Today’s Payment Methods</h3>
+            <p className="text-xs text-gray-500">Auto-resets at midnight based on order timestamps.</p>
+          </div>
+          <div className="text-sm text-gray-700">
+            Total collected today: <span className="font-extrabold">{money(paymentToday.total)}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Left: compact bar chart */}
+          <div className="h-48 lg:col-span-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={paymentToday.parts} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="pmCash" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#34D399" />
+                    <stop offset="100%" stopColor="#10B981" />
+                  </linearGradient>
+                  <linearGradient id="pmTransfer" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#FBBF24" />
+                    <stop offset="100%" stopColor="#D97706" />
+                  </linearGradient>
+                  <linearGradient id="pmCard" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#818CF8" />
+                    <stop offset="100%" stopColor="#4F46E5" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v) => money(v)} labelFormatter={(l) => `${l}`} />
+                <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                  {paymentToday.parts.map((p) => (
+                    <Cell
+                      key={p.key}
+                      fill={
+                        p.key === "cash"
+                          ? "url(#pmCash)"
+                          : p.key === "transfer"
+                          ? "url(#pmTransfer)"
+                          : "url(#pmCard)"
+                      }
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Right: stat tiles with sparklines + links */}
+          <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Cash */}
+            <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Cash</div>
+              <div className="mt-1 text-2xl font-extrabold text-emerald-700">{money(cashToday)}</div>
+              <div className="mt-1 text-xs">
+                Share:{" "}
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                  {paymentToday.parts.find((p) => p.key === "cash")?.share.toFixed(1)}%
+                </span>
+              </div>
+              <div className="mt-3 h-12">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={paymentSpark}>
+                    <XAxis dataKey="label" hide />
+                    <YAxis hide />
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Line type="monotone" dataKey="cash" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <button
+                onClick={() => applyPaymentFilter("cash")}
+                className="mt-3 text-xs font-semibold text-emerald-700 hover:underline"
+              >
+                View transactions →
+              </button>
+            </div>
+            {/* Transfer */}
+            <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Transfer</div>
+              <div className="mt-1 text-2xl font-extrabold text-amber-700">{money(transferToday)}</div>
+              <div className="mt-1 text-xs">
+                Share:{" "}
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                  {paymentToday.parts.find((p) => p.key === "transfer")?.share.toFixed(1)}%
+                </span>
+              </div>
+              <div className="mt-3 h-12">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={paymentSpark}>
+                    <XAxis dataKey="label" hide />
+                    <YAxis hide />
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Line type="monotone" dataKey="transfer" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <button
+                onClick={() => applyPaymentFilter("transfer")}
+                className="mt-3 text-xs font-semibold text-amber-700 hover:underline"
+              >
+                View transactions →
+              </button>
+            </div>
+            {/* Card */}
+            <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Card</div>
+              <div className="mt-1 text-2xl font-extrabold text-indigo-700">{money(cardToday)}</div>
+              <div className="mt-1 text-xs">
+                Share:{" "}
+                <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold">
+                  {paymentToday.parts.find((p) => p.key === "card")?.share.toFixed(1)}%
+                </span>
+              </div>
+              <div className="mt-3 h-12">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={paymentSpark}>
+                    <XAxis dataKey="label" hide />
+                    <YAxis hide />
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Line type="monotone" dataKey="card" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <button
+                onClick={() => applyPaymentFilter("card")}
+                className="mt-3 text-xs font-semibold text-indigo-700 hover:underline"
+              >
+                View transactions →
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Items sold today (includes Chowdeck) */}
       <div className="mt-6 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
@@ -1227,10 +1288,24 @@ export default function AdminDashboard() {
       </div>
 
       {/* Orders header + filters + export */}
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mt-8">
+      <div ref={ordersRef} className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mt-8">
         <div className="flex-1">
           <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
-          <p className="text-sm text-gray-500">Type & date filters affect only the Orders list.</p>
+          <p className="text-sm text-gray-500">Type, date & payment filters affect only the Orders list.</p>
+
+          {/* Active payment filter pill */}
+          {paymentFilter !== "all" && (
+            <div className="mt-2 inline-flex items-center gap-2 text-xs bg-gray-100 border rounded-full px-3 py-1">
+              <span className="text-gray-700">Payment: <strong className="capitalize">{paymentFilter}</strong></span>
+              <button
+                onClick={() => applyPaymentFilter("all")}
+                className="text-gray-600 hover:text-gray-900"
+                title="Clear payment filter"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex items-center gap-2">
@@ -1280,15 +1355,147 @@ export default function AdminDashboard() {
             <option value="instore">Shop Orders</option>
             <option value="chowdeck">Chowdeck Orders</option>
           </select>
+
+          {/* Payment mode filter dropdown */}
+          <select
+            value={paymentFilter}
+            onChange={(e) => applyPaymentFilter(e.target.value)}
+            className="border rounded-2xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+          >
+            <option value="all">All Payments</option>
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+            <option value="transfer">Transfer</option>
+          </select>
+
           <div className="flex gap-2">
             <button
-              onClick={exportCSV}
+              onClick={() => {
+                const ordersForExport = filteredOrders;
+                const csvEscape = (v) => {
+                  const s = String(v ?? "");
+                  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+                  return s;
+                };
+                const headers = [
+                  "Order ID",
+                  "Order Name",
+                  "Price",
+                  "Order Type",
+                  "Mode of Payment",
+                  "Customer Name",
+                  "Address",
+                  "Date",
+                  "Time",
+                ];
+                const lines = [headers.join(",")];
+                for (const order of ordersForExport) {
+                  const items = Array.isArray(order?.items) ? order.items : [];
+                  const firstName = items[0]?.name || "No items";
+                  const extra = items.length > 1 ? ` +${items.length - 1} more` : "";
+                  const orderName = firstName + extra;
+                  const type = (order?.orderType || "").toLowerCase();
+                  const address =
+                    type === "online"
+                      ? `${order?.houseNumber || ""} ${order?.street || ""} ${order?.landmark || ""}`.trim()
+                      : "In-store";
+                  const row = [
+                    csvEscape(order?._id || "-"),
+                    csvEscape(orderName),
+                    csvEscape(money(order?.total)),
+                    csvEscape(type || "-"),
+                    csvEscape(
+                      String(order?.paymentMode || "--").toLowerCase() === "upi" ? "transfer" : order?.paymentMode || "--"
+                    ),
+                    csvEscape(order?.customerName || "-"),
+                    csvEscape(address || "-"),
+                    csvEscape(fmtDate(order?.createdAt)),
+                    csvEscape(fmtTime(order?.createdAt)),
+                  ];
+                  lines.push(row.join(","));
+                }
+                const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `orders_export_${Date.now()}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
               className="px-3 py-2 rounded-2xl bg-emerald-600 text-white font-semibold shadow hover:opacity-95"
             >
               Export CSV
             </button>
             <button
-              onClick={exportPDF}
+              onClick={() => {
+                const ordersForExport = filteredOrders;
+                const w = window.open("", "_blank");
+                if (!w) return alert("Popup blocked. Allow popups to export PDF.");
+                const rowsHtml = ordersForExport
+                  .map((order) => {
+                    const items = Array.isArray(order?.items) ? order.items : [];
+                    const firstName = items[0]?.name || "No items";
+                    const extra = items.length > 1 ? ` +${items.length - 1} more` : "";
+                    const orderName = firstName + extra;
+                    const type = (order?.orderType || "").toLowerCase();
+                    const address =
+                      type === "online"
+                        ? `${order?.houseNumber || ""} ${order?.street || ""} ${order?.landmark || ""}`.trim()
+                        : "In-store";
+                    return `<tr>
+                      <td>${order?._id || "-"}</td>
+                      <td>${orderName}</td>
+                      <td>${money(order?.total)}</td>
+                      <td>${type || "-"}</td>
+                      <td>${(String(order?.paymentMode || "").toLowerCase() === "upi" ? "transfer" : order?.paymentMode) || "--"}</td>
+                      <td>${order?.customerName || "-"}</td>
+                      <td>${address || "-"}</td>
+                      <td>${fmtDate(order?.createdAt)}</td>
+                      <td>${fmtTime(order?.createdAt)}</td>
+                    </tr>`;
+                  })
+                  .join("");
+                w.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Orders Export</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; }
+    h1 { margin: 0 0 12px; }
+    .meta { color: #555; font-size: 12px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; }
+    th { background: #f5f5f5; text-align: left; }
+    tr:nth-child(even) td { background: #fcfcfc; }
+  </style>
+</head>
+<body>
+  <h1>Orders Export</h1>
+  <div class="meta">Generated: ${new Date().toLocaleString()} • Rows: ${ordersForExport.length}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Order ID</th>
+        <th>Order Name</th>
+        <th>Price</th>
+        <th>Order Type</th>
+        <th>Mode of Payment</th>
+        <th>Customer Name</th>
+        <th>Address</th>
+        <th>Date</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+  <script>window.onload = () => setTimeout(() => { window.print(); }, 300);</script>
+</body>
+</html>`);
+                w.document.close();
+              }}
               className="px-3 py-2 rounded-2xl bg-indigo-600 text-white font-semibold shadow hover:opacity-95"
             >
               Export PDF
@@ -1418,7 +1625,21 @@ export default function AdminDashboard() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                removeOrder(order?._id);
+                                setRemoving(true);
+                                fetch(`${API_BASE}/orders/${encodeURIComponent(order?._id)}`, { method: "DELETE" })
+                                  .then(async (res) => {
+                                    if (!res.ok) {
+                                      const e = await res.json().catch(() => ({}));
+                                      throw new Error(e?.error || `Failed to remove order (status ${res.status})`);
+                                    }
+                                    setOrders((prev) => prev.filter((o) => String(o?._id) !== String(order?._id)));
+                                    setSelectedOrder(null);
+                                  })
+                                  .catch((err) => {
+                                    console.error(err);
+                                    alert(err.message || "Failed to remove order.");
+                                  })
+                                  .finally(() => setRemoving(false));
                               }}
                               disabled={removing}
                               className="px-4 py-2 rounded-2xl font-semibold text-white bg-gradient-to-r from-rose-600 to-red-600 shadow hover:opacity-95 active:scale-95 disabled:opacity-50 transition"
