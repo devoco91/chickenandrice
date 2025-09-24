@@ -1,3 +1,4 @@
+// app/admin/AdminDashboard.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
@@ -14,6 +15,8 @@ import {
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
 } from "recharts";
 
 export default function AdminDashboard() {
@@ -21,9 +24,8 @@ export default function AdminDashboard() {
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
 
-  // Date range filter (affects Orders list only)
-  const [dateFrom, setDateFrom] = useState(""); // YYYY-MM-DD
-  const [dateTo, setDateTo] = useState(""); // YYYY-MM-DD
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showSummary, setShowSummary] = useState(false);
@@ -31,20 +33,24 @@ export default function AdminDashboard() {
   const [weeklyOnlineTotal, setWeeklyOnlineTotal] = useState(0);
   const [weeklyShopTotal, setWeeklyShopTotal] = useState(0);
   const [weeklyCombinedTotal, setWeeklyCombinedTotal] = useState(0);
-  const [weeklyChowdeckTotal, setWeeklyChowdeckTotal] = useState(0); // <-- ADDED
+  const [weeklyChowdeckTotal, setWeeklyChowdeckTotal] = useState(0);
 
   const [dailyOnlineTotal, setDailyOnlineTotal] = useState(0);
   const [dailyShopTotal, setDailyShopTotal] = useState(0);
   const [dailyCombinedTotal, setDailyCombinedTotal] = useState(0);
-  const [dailyChowdeckTotal, setDailyChowdeckTotal] = useState(0); // <-- ADDED
+  const [dailyChowdeckTotal, setDailyChowdeckTotal] = useState(0);
 
   const [loading, setLoading] = useState(false);
   const [removing, setRemoving] = useState(false);
 
-  // ⏰ Lightweight “clock” so monthly/weekly/daily button rows auto-reset at midnight
+  // NEW: premium top products controls
+  const [rankMetric, setRankMetric] = useState("units"); // 'units' | 'revenue'
+  const [compareMode, setCompareMode] = useState("yesterday"); // 'yesterday' | 'last7'
+
+  // auto-tick (for monthly/weekly/daily pill reset)
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
-    const id = setInterval(() => setClock(Date.now()), 60_000); // tick each minute
+    const id = setInterval(() => setClock(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -56,42 +62,27 @@ export default function AdminDashboard() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+  const pct = (n) => `${(Number.isFinite(n) ? n : 0).toFixed(1)}%`;
 
   const safeDate = (d) => {
     const dt = new Date(d);
     return isNaN(dt.getTime()) ? null : dt;
   };
-
   const fmtDate = (d) => {
     const dt = safeDate(d);
     return dt
       ? dt.toLocaleDateString("en-NG", { year: "numeric", month: "short", day: "numeric" })
       : "-";
   };
-
   const fmtTime = (d) => {
     const dt = safeDate(d);
-    return dt
-      ? dt.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" })
-      : "-";
-  };
-
-  const isDrinkItem = (it) => {
-    if (!it) return false;
-    if (it.isDrink === true) return true;
-    const name = String(it?.name || "").toLowerCase();
-    const cat = String(it?.category || "").toLowerCase();
-    const drinkName = /(drink|juice|smoothie|water|coke|cola|fanta|sprite|malt|soda|pepsi|mirinda|chapman|zobo|beer)\b/;
-    const drinkCat = /(drink|beverage|juice|smoothie|water|soda|soft|beverages)\b/;
-    return drinkName.test(name) || drinkCat.test(cat);
+    return dt ? dt.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }) : "-";
   };
 
   const isPackagingItem = (it) => {
     const name = String(it?.name || "").toLowerCase().trim();
     return /\b(pack|packs|packaging|container|take\s*away|takeaway|bag)\b/.test(name);
   };
-
-  // FIX: Only count packaging items that actually exist in the order.
   const computePackCount = (order) => {
     const items = Array.isArray(order?.items) ? order.items : [];
     let count = 0;
@@ -106,7 +97,6 @@ export default function AdminDashboard() {
   const abortRef = useRef(null);
   const mountedRef = useRef(true);
 
-  // Fetch – unchanged from your working version
   const fetchOrders = async () => {
     try {
       setLoading(true);
@@ -160,7 +150,7 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Helpers for range filter (orders table only)
+  // Helpers
   const startOfDay = (d) => {
     const dt = new Date(d);
     dt.setHours(0, 0, 0, 0);
@@ -172,7 +162,7 @@ export default function AdminDashboard() {
     return dt;
   };
 
-  // Type + date range filter (orders list only)
+  // Filters (orders table only)
   const filteredOrders = useMemo(() => {
     let list =
       filter === "all" ? orders : orders.filter((o) => (o?.orderType || "").toLowerCase() === filter);
@@ -203,7 +193,6 @@ export default function AdminDashboard() {
   }, [orders, filter, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
-
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [totalPages, page]);
@@ -213,32 +202,31 @@ export default function AdminDashboard() {
     return filteredOrders.slice(start, start + pageSize);
   }, [filteredOrders, page]);
 
-  // KPIs (unchanged – full dataset)
+  // KPIs
   const totalOrders = orders.length;
   const totalAmount = orders.reduce((sum, o) => sum + Number(o?.total || 0), 0);
   const onlineOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "online").length;
   const shopOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "instore").length;
-  const chowdeckOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "chowdeck").length; // <-- ADDED
+  const chowdeckOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "chowdeck").length;
 
   const startOfToday = useMemo(() => {
     const n = new Date();
     n.setHours(0, 0, 0, 0);
     return n;
   }, []);
-
   const startOfWeek = useMemo(() => {
     const n = new Date();
     const s = new Date(n);
-    s.setDate(n.getDate() - n.getDay()); // Sunday start
+    s.setDate(n.getDate() - n.getDay());
     s.setHours(0, 0, 0, 0);
     return s;
   }, []);
 
-  // ---- Weekly totals (include chowdeck) ----
+  // Weekly totals
   useEffect(() => {
     let online = 0;
     let instore = 0;
-    let chowdeck = 0; // <-- ADDED
+    let chowdeck = 0;
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (d && d >= startOfWeek) {
@@ -246,20 +234,20 @@ export default function AdminDashboard() {
         const type = (o?.orderType || "").toLowerCase();
         if (type === "online") online += t;
         if (type === "instore") instore += t;
-        if (type === "chowdeck") chowdeck += t; // <-- ADDED
+        if (type === "chowdeck") chowdeck += t;
       }
     }
     setWeeklyOnlineTotal(online);
     setWeeklyShopTotal(instore);
-    setWeeklyChowdeckTotal(chowdeck); // <-- ADDED
-    setWeeklyCombinedTotal(online + instore + chowdeck); // <-- ADDED
+    setWeeklyChowdeckTotal(chowdeck);
+    setWeeklyCombinedTotal(online + instore + chowdeck);
   }, [orders, startOfWeek]);
 
-  // ---- Daily totals (include chowdeck) ----
+  // Daily totals
   useEffect(() => {
     let online = 0;
     let instore = 0;
-    let chowdeck = 0; // <-- ADDED
+    let chowdeck = 0;
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (d && d >= startOfToday) {
@@ -267,13 +255,13 @@ export default function AdminDashboard() {
         const type = (o?.orderType || "").toLowerCase();
         if (type === "online") online += t;
         if (type === "instore") instore += t;
-        if (type === "chowdeck") chowdeck += t; // <-- ADDED
+        if (type === "chowdeck") chowdeck += t;
       }
     }
     setDailyOnlineTotal(online);
     setDailyShopTotal(instore);
-    setDailyChowdeckTotal(chowdeck); // <-- ADDED
-    setDailyCombinedTotal(online + instore + chowdeck); // <-- ADDED
+    setDailyChowdeckTotal(chowdeck);
+    setDailyCombinedTotal(online + instore + chowdeck);
   }, [orders, startOfToday]);
 
   const { cashToday, cardToday, transferToday } = useMemo(() => {
@@ -293,33 +281,35 @@ export default function AdminDashboard() {
     return { cashToday: cash, cardToday: card, transferToday: transfer };
   }, [orders, startOfToday]);
 
-  // ===== Additional time anchors for the new Monthly/Weekly/Daily button rows (auto-reset) =====
+  // Time anchors for auto-reset pills
   const startOfMonth = useMemo(() => {
     const n = new Date(clock);
     const s = new Date(n.getFullYear(), n.getMonth(), 1);
     s.setHours(0, 0, 0, 0);
     return s;
   }, [clock]);
-
   const startOfWeekMonday = useMemo(() => {
     const n = new Date(clock);
     const s = new Date(n);
-    const day = n.getDay(); // 0=Sun..6=Sat
-    const diff = (day + 6) % 7; // days since Monday
+    const day = n.getDay();
+    const diff = (day + 6) % 7;
     s.setDate(n.getDate() - diff);
     s.setHours(0, 0, 0, 0);
     return s;
   }, [clock]);
-
   const startOfTodayDyn = useMemo(() => {
     const n = new Date(clock);
     n.setHours(0, 0, 0, 0);
     return n;
   }, [clock]);
 
-  // ===== Monthly / Weekly / Daily stats (counts + amount) =====
+  // Monthly / Weekly / Daily stat blocks
   const monthlyStats = useMemo(() => {
-    let countAll = 0, countOnline = 0, countShop = 0, countChow = 0, amount = 0;
+    let countAll = 0,
+      countOnline = 0,
+      countShop = 0,
+      countChow = 0,
+      amount = 0;
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (!d || d < startOfMonth) continue;
@@ -334,7 +324,11 @@ export default function AdminDashboard() {
   }, [orders, startOfMonth]);
 
   const weeklyStatsMon = useMemo(() => {
-    let countAll = 0, countOnline = 0, countShop = 0, countChow = 0, amount = 0;
+    let countAll = 0,
+      countOnline = 0,
+      countShop = 0,
+      countChow = 0,
+      amount = 0;
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (!d || d < startOfWeekMonday) continue;
@@ -349,7 +343,11 @@ export default function AdminDashboard() {
   }, [orders, startOfWeekMonday]);
 
   const dailyStatsDyn = useMemo(() => {
-    let countAll = 0, countOnline = 0, countShop = 0, countChow = 0, amount = 0;
+    let countAll = 0,
+      countOnline = 0,
+      countShop = 0,
+      countChow = 0,
+      amount = 0;
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (!d || d < startOfTodayDyn) continue;
@@ -363,11 +361,12 @@ export default function AdminDashboard() {
     return { countAll, countOnline, countShop, countChow, amount };
   }, [orders, startOfTodayDyn]);
 
-  // Items sold today – uses real items only; no synthetic packs.
+  // ===== Items sold today (Shop | Online | Chowdeck) =====
   const itemTotalsToday = useMemo(() => {
     const all = new Map();
     const online = new Map();
     const instore = new Map();
+    const chowdeck = new Map();
     const display = new Map();
 
     for (const o of orders) {
@@ -385,8 +384,8 @@ export default function AdminDashboard() {
         all.set(key, (all.get(key) || 0) + qty);
         if (type === "online") online.set(key, (online.get(key) || 0) + qty);
         if (type === "instore") instore.set(key, (instore.get(key) || 0) + qty);
+        if (type === "chowdeck") chowdeck.set(key, (chowdeck.get(key) || 0) + qty);
       }
-      // NOTE: removed synthetic Pack injection; counts only if item exists.
     }
 
     const rows = Array.from(all.keys()).map((k) => ({
@@ -395,41 +394,97 @@ export default function AdminDashboard() {
       total: all.get(k) || 0,
       online: online.get(k) || 0,
       instore: instore.get(k) || 0,
+      chowdeck: chowdeck.get(k) || 0,
     }));
 
     rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
     return rows;
   }, [orders, startOfToday]);
 
-  const removeOrder = async (id) => {
-    if (!id) return;
-    const ok = confirm("Remove this order? This cannot be undone.");
-    if (!ok) return;
-    try {
-      setRemoving(true);
-      const res = await fetch(`${API_BASE}/orders/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e?.error || `Failed to remove order (status ${res.status})`);
-      }
-      setOrders((prev) => prev.filter((o) => String(o?._id) !== String(id)));
-      setSelectedOrder(null);
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "Failed to remove order.");
-    } finally {
-      setRemoving(false);
-    }
-  };
+  // ===== Premium: Top products (Units/Revenue) vs Yesterday/Last 7 days =====
+  const startOfYesterday = useMemo(() => {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    y.setHours(0, 0, 0, 0);
+    return y;
+  }, []);
+  const endOfYesterday = useMemo(() => {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    y.setHours(23, 59, 59, 999);
+    return y;
+  }, []);
+  const startOfLast7 = useMemo(() => {
+    const y = new Date();
+    y.setDate(y.getDate() - 7);
+    y.setHours(0, 0, 0, 0);
+    return y;
+  }, []);
+  const endOfLast7 = endOfYesterday; // why: baseline should NOT include today
 
-  // ======== CHART DATA (unchanged structure; totals already include all) ========
+  const topItems = useMemo(() => {
+    const todayMap = new Map();   // key -> number (units or revenue)
+    const baseMap = new Map();
+    const display = new Map();
+
+    const inToday = (d) => d >= startOfToday;
+    const inBaseline = (d) =>
+      compareMode === "yesterday"
+        ? d >= startOfYesterday && d <= endOfYesterday
+        : d >= startOfLast7 && d <= endOfLast7;
+
+    const bump = (map, key, val) => map.set(key, (map.get(key) || 0) + val);
+
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d) continue;
+      const items = Array.isArray(o?.items) ? o.items : [];
+
+      for (const it of items) {
+        const raw = String(it?.name || "Item").trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        if (!display.has(key)) display.set(key, raw);
+
+        const q = Number(it?.quantity ?? 1) || 1;
+        const price = Number(it?.price ?? 0) || 0;
+        const value = rankMetric === "units" ? q : q * price;
+
+        if (inToday(d)) bump(todayMap, key, value);
+        else if (inBaseline(d)) bump(baseMap, key, value);
+      }
+    }
+
+    const rows = Array.from(todayMap.keys()).map((k) => {
+      const t = todayMap.get(k) || 0;
+      const b = baseMap.get(k) || 0;
+      const change = b === 0 ? (t > 0 ? 100 : 0) : ((t - b) / b) * 100;
+      const name = display.get(k) || k;
+      const short = name.length > 16 ? name.slice(0, 15) + "…" : name;
+      return { key: k, name, short, todayVal: t, baseVal: b, changePct: change };
+    });
+
+    rows.sort((a, b) => b.todayVal - a.todayVal || a.name.localeCompare(b.name));
+    return rows.slice(0, 8);
+  }, [
+    orders,
+    startOfToday,
+    startOfYesterday,
+    endOfYesterday,
+    startOfLast7,
+    endOfLast7,
+    rankMetric,
+    compareMode,
+  ]);
+
+  // ======== CHART DATA (existing) ========
   const pad2 = (n) => String(n).padStart(2, "0");
   const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const ym = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
   const startOfWeekLikeApp = (d) => {
     const n = new Date(d);
     const s = new Date(n);
-    s.setDate(n.getDate() - n.getDay()); // Sunday
+    s.setDate(n.getDate() - n.getDay());
     s.setHours(0, 0, 0, 0);
     return s;
   };
@@ -454,28 +509,20 @@ export default function AdminDashboard() {
     const map = new Map(
       days.map((d) => [
         ymd(d),
-        {
-          date: ymd(d),
-          label: d.toLocaleDateString("en-NG", { month: "short", day: "numeric" }),
-          online: 0,
-          instore: 0,
-          // total includes chowdeck too
-          total: 0,
-        },
+        { date: ymd(d), label: d.toLocaleDateString("en-NG", { month: "short", day: "numeric" }), online: 0, instore: 0, total: 0 },
       ])
     );
-
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
       if (!d) continue;
       const key = ymd(d);
-      if (!map.has(key)) continue; // ignore out of window
+      if (!map.has(key)) continue;
       const t = Number(o?.total || 0);
       const type = (o?.orderType || "").toLowerCase();
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t; // includes chowdeck
+      row.total += t;
     }
     return Array.from(map.values());
   }, [orders]);
@@ -502,7 +549,7 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t; // includes chowdeck too
+      row.total += t;
     }
     return Array.from(map.values());
   }, [orders]);
@@ -528,22 +575,20 @@ export default function AdminDashboard() {
       const row = map.get(key);
       if (type === "online") row.online += t;
       if (type === "instore") row.instore += t;
-      row.total += t; // includes chowdeck too
+      row.total += t;
     }
     return Array.from(map.values());
   }, [orders]);
 
-  // ---- Pie data: add Chowdeck slice ----
   const todayPieData = useMemo(
     () => [
       { name: "Online", value: dailyOnlineTotal },
       { name: "Shop", value: dailyShopTotal },
-      { name: "Chowdeck", value: dailyChowdeckTotal }, // <-- ADDED
+      { name: "Chowdeck", value: dailyChowdeckTotal },
     ],
     [dailyOnlineTotal, dailyShopTotal, dailyChowdeckTotal]
   );
 
-  // ======== EXPORTS (CSV / PDF) – respects current filters; no pagination) ========
   const ordersForExport = filteredOrders;
   const csvEscape = (v) => {
     const s = String(v ?? "");
@@ -659,25 +704,23 @@ export default function AdminDashboard() {
       ${rowsHtml}
     </tbody>
   </table>
-  <script>
-    window.onload = () => setTimeout(() => { window.print(); }, 300);
-  </script>
+  <script>window.onload = () => setTimeout(() => { window.print(); }, 300);</script>
 </body>
 </html>`);
     w.document.close();
   };
 
-  // Premium color treatment for Chowdeck slice only (others keep your palette)
   const colorFor = (name) => {
     const key = String(name || "").toLowerCase();
-    if (key === "online") return "#2563EB";   // blue-600
-    if (key === "shop") return "#DC2626";     // red-600
-    if (key === "chowdeck") return "url(#chowdeckGrad)"; // gold gradient
+    if (key === "online") return "#2563EB";
+    if (key === "shop") return "#DC2626";
+    if (key === "chowdeck") return "url(#chowdeckGrad)"; // why: highlight chowdeck
     return "#9CA3AF";
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10">
+      {/* Header + actions */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-6">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
           Admin Dashboard
@@ -701,7 +744,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* KPIs (All-time) */}
+      {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Total Orders</h2>
@@ -723,14 +766,13 @@ export default function AdminDashboard() {
           <h2 className="text-lg font-bold opacity-90">Today (All)</h2>
           <p className="text-2xl font-extrabold">{money(dailyCombinedTotal)}</p>
         </div>
-        {/* NEW: Chowdeck Orders (all-time, never clears) */}
         <div className="bg-gradient-to-br from-amber-500 to-yellow-600 text-white p-4 shadow rounded-2xl">
           <h2 className="text-lg font-bold opacity-90">Chowdeck Orders</h2>
           <p className="text-2xl font-extrabold">{chowdeckOrders}</p>
         </div>
       </div>
 
-      {/* NEW: Monthly buttons (auto-clear at 12am first day of month) */}
+      {/* Monthly / Weekly / Daily rows */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-5 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-fuchsia-600 text-white font-semibold shadow">
           📅 Monthly Orders: <span className="font-extrabold ml-1">{monthlyStats.countAll}</span>
@@ -749,7 +791,6 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* NEW: Weekly buttons (Monday start, auto-clear 12am Mondays) */}
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-5 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-purple-600 text-white font-semibold shadow">
           📈 Weekly Orders: <span className="font-extrabold ml-1">{weeklyStatsMon.countAll}</span>
@@ -768,7 +809,6 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* NEW: Daily buttons (auto-clear 12am daily) */}
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-5 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-sky-600 text-white font-semibold shadow">
           📍 Today Orders: <span className="font-extrabold ml-1">{dailyStatsDyn.countAll}</span>
@@ -787,7 +827,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Payment mode quick view (existing) */}
+      {/* Payment modes */}
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <button className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold shadow">
           💵 Cash Today: {money(cashToday)}
@@ -800,18 +840,21 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* CHARTS SECTION (unchanged) */}
+      {/* CHARTS SECTION */}
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4">
           <h3 className="font-bold mb-2">Today’s Sales Split</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                {/* Premium gradient only for Chowdeck */}
                 <defs>
                   <linearGradient id="chowdeckGrad" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#F59E0B" />   {/* amber-500 */}
-                    <stop offset="100%" stopColor="#D97706" /> {/* amber-600 */}
+                    <stop offset="0%" stopColor="#F59E0B" />
+                    <stop offset="100%" stopColor="#D97706" />
+                  </linearGradient>
+                  <linearGradient id="barToday" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#FBBF24" />
+                    <stop offset="100%" stopColor="#D97706" />
                   </linearGradient>
                 </defs>
                 <Tooltip formatter={(v) => money(v)} />
@@ -833,7 +876,7 @@ export default function AdminDashboard() {
               <LineChart data={dailySeries} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
-                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} />
+                <YAxis tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v) => money(v)} />
                 <Legend />
                 <Line type="monotone" dataKey="total" strokeWidth={2} />
@@ -851,7 +894,7 @@ export default function AdminDashboard() {
               <LineChart data={weeklySeries} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
-                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} />
+                <YAxis tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v) => money(v)} />
                 <Legend />
                 <Line type="monotone" dataKey="total" strokeWidth={2} />
@@ -869,7 +912,7 @@ export default function AdminDashboard() {
               <LineChart data={monthlySeries} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
-                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} />
+                <YAxis tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v) => money(v)} />
                 <Legend />
                 <Line type="monotone" dataKey="total" strokeWidth={2} />
@@ -879,9 +922,115 @@ export default function AdminDashboard() {
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* NEW: Premium Top Products with controls */}
+        <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow p-4 lg:col-span-3">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-2">
+            <div>
+              <h3 className="font-bold">Top products by {rankMetric === "units" ? "units sold" : "revenue"}</h3>
+              <p className="text-xs text-gray-500">
+                Today vs {compareMode === "yesterday" ? "Yesterday" : "Last 7 Days"}
+              </p>
+            </div>
+            {/* Controls */}
+            <div className="flex gap-2">
+              <div className="bg-gray-100 rounded-xl p-1 flex">
+                <button
+                  onClick={() => setRankMetric("units")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                    rankMetric === "units" ? "bg-white shadow" : "opacity-70"
+                  }`}
+                >
+                  Units
+                </button>
+                <button
+                  onClick={() => setRankMetric("revenue")}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                    rankMetric === "revenue" ? "bg-white shadow" : "opacity-70"
+                  }`}
+                >
+                  Revenue
+                </button>
+              </div>
+              <select
+                value={compareMode}
+                onChange={(e) => setCompareMode(e.target.value)}
+                className="px-3 py-1 text-xs border rounded-lg bg-white shadow-sm"
+              >
+                <option value="yesterday">Yesterday</option>
+                <option value="last7">Last 7 Days</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topItems} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="short" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip
+                    formatter={(v) =>
+                      rankMetric === "units" ? `${v} units` : money(v)
+                    }
+                  />
+                  <Legend />
+                  <Bar dataKey="todayVal" name="Today" fill="url(#barToday)" radius={[6, 6, 0, 0]} />
+                  <Bar
+                    dataKey="baseVal"
+                    name={compareMode === "yesterday" ? "Yesterday" : "Baseline (7d)"}
+                    fill="#A78BFA"
+                    radius={[6, 6, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Change list */}
+            <div className="lg:col-span-1">
+              <div className="border rounded-xl overflow-hidden">
+                <div className="px-3 py-2 bg-gray-50 text-xs font-semibold border-b">
+                  Change vs {compareMode === "yesterday" ? "yesterday" : "last 7 days"}
+                </div>
+                <ul className="max-h-72 overflow-y-auto divide-y">
+                  {topItems.length === 0 ? (
+                    <li className="px-3 py-3 text-xs text-gray-500">No sales today yet.</li>
+                  ) : (
+                    topItems.map((r) => {
+                      const trend = r.changePct > 0 ? "up" : r.changePct < 0 ? "down" : "flat";
+                      const badge =
+                        trend === "up"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : trend === "down"
+                          ? "bg-rose-100 text-rose-700"
+                          : "bg-gray-100 text-gray-700";
+                      const symbol = trend === "up" ? "↑" : trend === "down" ? "↓" : "–";
+                      return (
+                        <li key={r.key} className="px-3 py-2 text-xs flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{r.name}</div>
+                            <div className="text-[11px] text-gray-500">
+                              {rankMetric === "units"
+                                ? `${r.todayVal} today • ${r.baseVal} baseline`
+                                : `${money(r.todayVal)} today • ${money(r.baseVal)} baseline`}
+                            </div>
+                          </div>
+                          <span className={`ml-2 px-2 py-1 rounded-full font-semibold ${badge}`}>
+                            {symbol} {pct(r.changePct)}
+                          </span>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Items sold today */}
+      {/* Items sold today (now includes Chowdeck) */}
       <div className="mt-6 overflow-x-auto bg-white/90 backdrop-blur border border-gray-200 shadow rounded-2xl">
         <table className="min-w-full border-collapse">
           <thead className="bg-gray-100 text-left">
@@ -889,13 +1038,16 @@ export default function AdminDashboard() {
               <th className="p-3 border-b">Item</th>
               <th className="p-3 border-b">Shop</th>
               <th className="p-3 border-b">Online</th>
+              <th className="p-3 border-b">Chowdeck</th>
               <th className="p-3 border-b">Total</th>
             </tr>
           </thead>
           <tbody>
             {itemTotalsToday.length === 0 ? (
               <tr>
-                <td className="p-3 border-b text-gray-500" colSpan={4}>No items sold today yet.</td>
+                <td className="p-3 border-b text-gray-500" colSpan={5}>
+                  No items sold today yet.
+                </td>
               </tr>
             ) : (
               itemTotalsToday.map((row) => (
@@ -903,6 +1055,7 @@ export default function AdminDashboard() {
                   <td className="p-3 border-b">{row.name}</td>
                   <td className="p-3 border-b">{row.instore}</td>
                   <td className="p-3 border-b">{row.online}</td>
+                  <td className="p-3 border-b">{row.chowdeck}</td>
                   <td className="p-3 border-b">{row.total}</td>
                 </tr>
               ))
@@ -923,7 +1076,10 @@ export default function AdminDashboard() {
             <input
               type="date"
               value={dateFrom}
-              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPage(1);
+              }}
               className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
             />
           </div>
@@ -932,29 +1088,49 @@ export default function AdminDashboard() {
             <input
               type="date"
               value={dateTo}
-              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPage(1);
+              }}
               className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
             />
           </div>
           <button
-            onClick={() => { setDateFrom(""); setDateTo(""); setPage(1); }}
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+              setPage(1);
+            }}
             className="px-3 py-2 rounded-2xl bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             Clear
           </button>
           <select
             value={filter}
-            onChange={(e) => { setFilter(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setPage(1);
+            }}
             className="border rounded-2xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
           >
             <option value="all">All Orders</option>
             <option value="online">Online Orders</option>
             <option value="instore">Shop Orders</option>
-            {/* Intentionally not adding a Chowdeck filter to keep current UI flow */}
+            <option value="chowdeck">Chowdeck Orders</option>
           </select>
           <div className="flex gap-2">
-            <button onClick={exportCSV} className="px-3 py-2 rounded-2xl bg-emerald-600 text-white font-semibold shadow hover:opacity-95">Export CSV</button>
-            <button onClick={exportPDF} className="px-3 py-2 rounded-2xl bg-indigo-600 text-white font-semibold shadow hover:opacity-95">Export PDF</button>
+            <button
+              onClick={exportCSV}
+              className="px-3 py-2 rounded-2xl bg-emerald-600 text-white font-semibold shadow hover:opacity-95"
+            >
+              Export CSV
+            </button>
+            <button
+              onClick={exportPDF}
+              className="px-3 py-2 rounded-2xl bg-indigo-600 text-white font-semibold shadow hover:opacity-95"
+            >
+              Export PDF
+            </button>
           </div>
         </div>
       </div>
@@ -1000,7 +1176,6 @@ export default function AdminDashboard() {
 
               const isOpen = selectedOrder && String(selectedOrder?._id) === String(order?._id);
 
-              // FIX now reflects only actual pack items present:
               const packQty = computePackCount(order);
               const packagingCost = packQty * PACK_PRICE;
 
@@ -1119,6 +1294,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
+      {/* Summary modal */}
       {showSummary && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white w-11/12 md:w-[520px] p-6 rounded-2xl shadow-xl relative">
