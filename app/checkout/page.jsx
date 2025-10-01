@@ -1,128 +1,142 @@
 // app/checkout/page.jsx
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import NavbarDark from '../components/Navbar/NavbarDark';
-import { clearCart } from '../store/cartSlice';
+import { setOrderDetails } from '../store/orderSlice';
 import {
-  MapPin,
-  Navigation,
-  Loader2,
-  Phone,
-  User,
-  Home as HomeIcon,
-  Landmark,
-  NotebookText,
-  ShieldCheck,
+  MapPin, Navigation, Loader2, Phone, User, Home as HomeIcon,
+  Landmark, NotebookText, ShieldCheck, RotateCcw
 } from 'lucide-react';
 
-const CheckoutPage = () => {
-  const router = useRouter();
-  const dispatch = useDispatch();
-  const cartItems = useSelector((state) => state.cart.cartItem || []);
+// Shop: 139 Iju Ishaga Rd, Iju, Lagos (approx coordinates)
+const SHOP = { lat: 6.63656, lng: 3.323821 };
+const RATE_PER_KM = 300; // ₦/km
 
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    houseNumber: '',
-    street: '',
-    landmark: '',
-    notes: '',
-    location: null, // {lat, lng}
+// Haversine fallback
+const rad = (d) => (d * Math.PI) / 180;
+const haversineKm = (a, b) => {
+  const R = 6371;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+
+// Multi-fix high accuracy
+async function getBestPosition({ targetAcc = 15, acceptAcc = 80, minFixes = 3, hardTimeoutMs = 25000 } = {}) {
+  if (!navigator.geolocation) throw new Error('Geolocation not supported');
+  const opts = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };
+
+  const best = await new Promise((resolve) => {
+    let bestFix = null, fixes = 0;
+    const clear = (id) => id != null && navigator.geolocation.clearWatch(id);
+    const timer = setTimeout(() => { clear(wid); resolve(bestFix); }, hardTimeoutMs);
+    const ok = (pos) => {
+      const acc = pos?.coords?.accuracy ?? 9999;
+      if (acc > 300) return; // drop very poor fixes
+      fixes++;
+      if (!bestFix || acc < bestFix.coords.accuracy) bestFix = pos;
+      if (acc <= targetAcc && fixes >= minFixes) { clearTimeout(timer); clear(wid); resolve(bestFix); }
+    };
+    const wid = navigator.geolocation.watchPosition(ok, () => {}, opts);
   });
 
+  if (best && best.coords?.accuracy <= targetAcc) return best;
+  if (best && best.coords?.accuracy <= acceptAcc) return best;
+
+  const oneShot = await new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), opts);
+  });
+  if (oneShot && oneShot.coords?.accuracy <= acceptAcc) return oneShot;
+
+  if (best) return best;
+  throw new Error('NO_FIX');
+}
+
+export default function CheckoutPage() {
+  const router = useRouter();
+  const dispatch = useDispatch();
+  const cartItems = useSelector((s) => s.cart.cartItem || []);
+
+  const [formData, setFormData] = useState({
+    name: '', phone: '', houseNumber: '', street: '', landmark: '', notes: '',
+    location: null, // {lat,lng}
+  });
   const [usingLocation, setUsingLocation] = useState(false);
   const [usedCurrentLocation, setUsedCurrentLocation] = useState(false);
+  const [geoStatus, setGeoStatus] = useState({ text: '', accuracy: null, permission: 'prompt' });
 
-  const [suggestions, setSuggestions] = useState([]);
-  const serviceRef = useRef(null);
+  const autoServiceRef = useRef(null);
   const suggestionBoxRef = useRef(null);
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markerRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const searchBoxRef = useRef(null);
+  const [suggestions, setSuggestions] = useState([]);
 
-  // ---- Load Google Places (deduped) ----
+  // Google Maps loader (places + geometry)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const initService = () => {
-      if (window.google?.maps?.places && !serviceRef.current) {
-        serviceRef.current = new window.google.maps.places.AutocompleteService();
+    const init = () => {
+      if (window.google?.maps?.places && !autoServiceRef.current) {
+        autoServiceRef.current = new window.google.maps.places.AutocompleteService();
       }
     };
-
-    // Already available -> init and exit
-    if (window.google?.maps?.places) {
-      initService();
-      return;
-    }
-
-    // Reuse existing script if present
-    const existing = document.querySelector(
-      'script[data-gmaps="true"],script[src*="maps.googleapis.com/maps/api/js"]'
-    );
-    if (existing) {
-      existing.addEventListener('load', initService);
-      return () => existing.removeEventListener('load', initService);
-    }
-
-    // If another load is in-flight, wait for ready event
+    if (window.google?.maps?.places) { init(); return; }
+    const existing = document.querySelector('script[data-gmaps="true"],script[src*="maps.googleapis.com/maps/api/js"]');
+    if (existing) { existing.addEventListener('load', init); return () => existing.removeEventListener('load', init); }
     if (window.__GMAPS_LOADING__) {
-      const onReady = () => initService();
+      const onReady = () => init();
       window.addEventListener('__gmaps_ready__', onReady);
       return () => window.removeEventListener('__gmaps_ready__', onReady);
     }
-
-    // Inject once
     window.__GMAPS_LOADING__ = true;
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
-    script.async = true;
-    script.defer = true;
-    script.setAttribute('data-gmaps', 'true');
-    script.onload = () => {
-      window.__GMAPS_LOADING__ = false;
-      window.dispatchEvent(new Event('__gmaps_ready__'));
-      initService();
-    };
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places,geometry`;
+    script.async = true; script.defer = true; script.setAttribute('data-gmaps', 'true');
+    script.onload = () => { window.__GMAPS_LOADING__ = false; window.dispatchEvent(new Event('__gmaps_ready__')); init(); };
     document.head.appendChild(script);
-
-    // Keep script mounted across HMR/nav; just clear handler
-    return () => {
-      script.onload = null;
-    };
+    return () => { script.onload = null; };
   }, []);
 
-  // ---- Close suggestions on outside click ----
+  // permission info (optional)
   useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (suggestionBoxRef.current && !suggestionBoxRef.current.contains(e.target)) {
-        setSuggestions([]);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    (async () => {
+      try {
+        if (!navigator.permissions) return;
+        const p = await navigator.permissions.query({ name: 'geolocation' });
+        setGeoStatus((g) => ({ ...g, permission: p.state }));
+        p.onchange = () => setGeoStatus((g) => ({ ...g, permission: p.state }));
+      } catch {}
+    })();
   }, []);
 
-  // ---- Address autocomplete (disabled when using current location) ----
+  // close suggestions
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (suggestionBoxRef.current && !suggestionBoxRef.current.contains(e.target)) setSuggestions([]);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  // manual address autocomplete
   const handleStreetChange = (e) => {
     const value = e.target.value;
     setFormData((p) => ({ ...p, street: value }));
     if (usedCurrentLocation) return;
-
-    if (value.length > 2 && serviceRef.current && window.google?.maps?.places) {
-      serviceRef.current.getPlacePredictions(
+    if (value.length > 2 && autoServiceRef.current && window.google?.maps?.places) {
+      autoServiceRef.current.getPlacePredictions(
         { input: value, componentRestrictions: { country: 'NG' } },
-        (predictions, status) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-            setSuggestions(predictions || []);
-          } else {
-            setSuggestions([]);
-          }
+        (preds, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK) setSuggestions(preds || []);
+          else setSuggestions([]);
         }
       );
-    } else {
-      setSuggestions([]);
-    }
+    } else setSuggestions([]);
   };
 
   const handleStreetBlur = () => {
@@ -131,14 +145,8 @@ const CheckoutPage = () => {
       const geocoder = new window.google.maps.Geocoder();
       geocoder.geocode({ address: formData.street }, (results, status) => {
         if (status === 'OK' && results?.[0]) {
-          setFormData((prev) => ({
-            ...prev,
-            street: results[0].formatted_address,
-            location: {
-              lat: results[0].geometry.location.lat(),
-              lng: results[0].geometry.location.lng(),
-            },
-          }));
+          const loc = results[0].geometry.location;
+          setFormData((p) => ({ ...p, street: results[0].formatted_address, location: { lat: loc.lat(), lng: loc.lng() } }));
         }
       });
     }
@@ -146,443 +154,329 @@ const CheckoutPage = () => {
 
   const handleSuggestionClick = (prediction) => {
     if (usedCurrentLocation) return;
-    const placeId = prediction.place_id;
-    const description = prediction.description;
-    if (!placeId) {
-      setFormData((p) => ({ ...p, street: description }));
-      setSuggestions([]);
-      return;
-    }
-    const placesService = new window.google.maps.places.PlacesService(document.createElement('div'));
-    placesService.getDetails(
-      { placeId, fields: ['formatted_address', 'geometry'] },
-      (place, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-          setFormData((p) => ({
-            ...p,
-            street: place.formatted_address,
-            location: {
-              lat: place.geometry.location.lat(),
-              lng: place.geometry.location.lng(),
-            },
-          }));
-          setSuggestions([]);
-        }
+    const places = new window.google.maps.places.PlacesService(document.createElement('div'));
+    places.getDetails({ placeId: prediction.place_id, fields: ['formatted_address','geometry'] }, (place, status) => {
+      if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+        const loc = place.geometry.location;
+        setFormData((p) => ({ ...p, street: place.formatted_address, location: { lat: loc.lat(), lng: loc.lng() } }));
+        setSuggestions([]);
       }
-    );
+    });
   };
 
-  // ---- Use Current Location (disables house/street) ----
-  const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocation not supported on this device.');
-      return;
-    }
+  // Locate
+  const tryLocate = async () => {
     setUsingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
+    setGeoStatus((g) => ({ ...g, text: 'Getting precise location…', accuracy: null }));
+    try {
+      const pos = await getBestPosition({ targetAcc: 15, acceptAcc: 80, minFixes: 3, hardTimeoutMs: 25000 });
+      const { latitude, longitude, accuracy } = pos.coords;
+      setGeoStatus((g) => ({ ...g, text: `Location acquired (±${Math.round(accuracy)}m).`, accuracy }));
 
-        const applyLocation = (formatted) => {
-          setFormData((p) => ({
-            ...p,
-            street: formatted || p.street || 'Using current location',
-            houseNumber: '',
-            location: { lat: latitude, lng: longitude },
-          }));
-          setUsedCurrentLocation(true);
-          setUsingLocation(false);
-          setSuggestions([]);
-        };
-
-        if (window.google?.maps) {
-          const geocoder = new window.google.maps.Geocoder();
-          geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
-            if (status === 'OK' && results?.[0]) {
-              applyLocation(results[0].formatted_address);
-            } else {
-              applyLocation(null);
-            }
-          });
-        } else {
-          applyLocation(null);
-        }
-      },
-      () => {
-        setUsingLocation(false);
-        alert('Permission denied. Please enable location or enter address manually.');
-      }
-    );
+      const apply = (formatted) => {
+        setFormData((p) => ({
+          ...p,
+          street: formatted || p.street || 'Using current location',
+          houseNumber: '',
+          location: { lat: latitude, lng: longitude },
+        }));
+        setUsedCurrentLocation(true);
+        setSuggestions([]);
+      };
+      if (window.google?.maps) {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
+          if (status === 'OK' && results?.[0]) apply(results[0].formatted_address);
+          else apply(null);
+        });
+      } else apply(null);
+    } catch {
+      setGeoStatus((g) => ({ ...g, text: 'Could not get a precise fix. Use search or drop the pin manually.', accuracy: null }));
+    } finally {
+      setUsingLocation(false);
+    }
   };
+
+  const handleUseCurrentLocation = async () => {
+    if (!navigator.geolocation) {
+      setGeoStatus({ text: 'Geolocation not supported by this device.', accuracy: null, permission: geoStatus.permission });
+      return;
+    }
+    await tryLocate();
+  };
+
+  // Map + SearchBox + Marker
+  useEffect(() => {
+    if (!window.google?.maps) return;
+    const centerLatLng = formData.location
+      ? new window.google.maps.LatLng(formData.location.lat, formData.location.lng)
+      : new window.google.maps.LatLng(SHOP.lat, SHOP.lng);
+
+    if (!mapInstanceRef.current) {
+      mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
+        center: centerLatLng,
+        zoom: formData.location ? 17 : 13,
+        mapTypeControl: false,
+        streetViewControl: false,
+      });
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Search address or place…';
+      input.className = 'gm-searchbox-input';
+      input.style.cssText = 'box-sizing:border-box;border:1px solid #ccc;border-radius:8px;padding:8px 12px;margin:12px;min-width:260px;';
+      searchInputRef.current = input;
+      mapInstanceRef.current.controls[window.google.maps.ControlPosition.TOP_LEFT].push(input);
+      searchBoxRef.current = new window.google.maps.places.SearchBox(input);
+      searchBoxRef.current.addListener('places_changed', () => {
+        const places = searchBoxRef.current.getPlaces() || [];
+        if (!places.length) return;
+        const place = places[0];
+        const loc = place.geometry?.location;
+        if (!loc) return;
+        const newLatLng = { lat: loc.lat(), lng: loc.lng() };
+        setFormData((prev) => ({ ...prev, street: place.formatted_address || place.name, location: newLatLng }));
+      });
+
+      markerRef.current = new window.google.maps.Marker({
+        position: centerLatLng,
+        map: mapInstanceRef.current,
+        draggable: true,
+      });
+
+      markerRef.current.addListener('dragend', () => {
+        const p = markerRef.current.getPosition();
+        const newLatLng = { lat: p.lat(), lng: p.lng() };
+        setFormData((prev) => ({ ...prev, location: newLatLng }));
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: newLatLng }, (results, status) => {
+          if (status === 'OK' && results?.[0]) {
+            setFormData((prev) => ({ ...prev, street: results[0].formatted_address }));
+          }
+        });
+      });
+
+      mapInstanceRef.current.addListener('click', (e) => {
+        const newLatLng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+        markerRef.current.setPosition(e.latLng);
+        setFormData((prev) => ({ ...prev, location: newLatLng }));
+      });
+    } else {
+      mapInstanceRef.current.setCenter(centerLatLng);
+      markerRef.current.setPosition(centerLatLng);
+    }
+  }, [formData.location]);
 
   const enableManualEntry = () => {
     setUsedCurrentLocation(false);
-    setFormData((p) => ({
-      ...p,
-      houseNumber: '',
-      street: '',
-      location: null,
-    }));
+    setFormData((p) => ({ ...p, houseNumber: '', street: '', location: null }));
     setSuggestions([]);
   };
 
-  // ---- Totals ----
-  const subtotal = cartItems.reduce((t, item) => t + item.price * item.quantity, 0);
-  const deliveryFee = 500;
-  const tax = subtotal * 0.02;
-  const total = subtotal + deliveryFee + tax;
-
-  // ---- Validation ----
+  // Validation
   const nameOk = formData.name.trim() !== '';
   const phoneOk = formData.phone.trim() !== '';
   const streetOk = formData.street.trim() !== '';
   const houseOk = usedCurrentLocation ? true : formData.houseNumber.trim() !== '';
-  const cartOk = cartItems.length > 0;
-
+  const cartOk = (cartItems || []).length > 0;
   const isFormValid = nameOk && phoneOk && streetOk && houseOk && cartOk;
 
-  const validationErrors = [];
-  if (!nameOk) validationErrors.push('Name is required');
-  if (!phoneOk) validationErrors.push('Phone is required');
-  if (!streetOk) validationErrors.push('Street is required');
-  if (!houseOk) validationErrors.push(usedCurrentLocation ? 'Location not set yet' : 'House number is required');
-  if (!cartOk) validationErrors.push('Cart is empty');
-
-  // ---- Submit ----
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
 
+  // Save & back to cart (sets addressSaved=true)
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isFormValid) return;
+    if (!formData.location) { setError('Please set your exact map pin or select a place.'); return; }
 
-    setLoading(true);
-    setError(null);
-    setSuccess(false);
-
-    const geoLocation = formData.location
-      ? { type: 'Point', coordinates: [Number(formData.location.lng), Number(formData.location.lat)] }
-      : { type: 'Point', coordinates: [3.3792, 6.5244] };
-
-    const orderPayload = {
-      items: cartItems.map((item) => ({
-        foodId: item._id,
-        quantity: item.quantity,
-        name: item.name,
-        price: item.price,
-      })),
-      customerName: formData.name,
-      phone: formData.phone,
-      houseNumber: usedCurrentLocation ? '' : formData.houseNumber,
-      street: formData.street,
-      landmark: formData.landmark,
-      specialNotes: formData.notes,
-      location: geoLocation,
-      subtotal,
-      deliveryFee,
-      tax,
-      total,
-    };
-
+    setLoading(true); setError(null);
     try {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || data.message || `Failed to submit order (status ${response.status}).`);
+      const customer = { lat: +formData.location.lat, lng: +formData.location.lng };
 
-      setSuccess(true);
-      setFormData({
-        name: '',
-        phone: '',
-        houseNumber: '',
-        street: '',
-        landmark: '',
-        notes: '',
-        location: null,
-      });
-      dispatch(clearCart());
-      router.push('/payment');
-    } catch (err) {
-      setError(err.message || 'Something went wrong.');
+      // Prefer Google geometry; fallback to haversine
+      let distanceKm = haversineKm(SHOP, customer);
+      if (window.google?.maps?.geometry?.spherical) {
+        const meters = window.google.maps.geometry.spherical.computeDistanceBetween(
+          new window.google.maps.LatLng(SHOP.lat, SHOP.lng),
+          new window.google.maps.LatLng(customer.lat, customer.lng)
+        );
+        if (meters > 0) distanceKm = meters / 1000;
+      }
+
+      const deliveryDistanceKm = Math.ceil(distanceKm);
+      const deliveryFee = deliveryDistanceKm * RATE_PER_KM;
+
+      dispatch(setOrderDetails({
+        deliveryMethod: 'delivery',
+        customerName: formData.name,
+        phone: formData.phone,
+        houseNumber: usedCurrentLocation ? '' : formData.houseNumber,
+        street: formData.street,
+        landmark: formData.landmark,
+        specialNotes: formData.notes,
+        location: { type: 'Point', coordinates: [customer.lng, customer.lat] },
+        deliveryDistanceKm,
+        deliveryFee,
+        addressSaved: true, // <- gate for cart CTAs
+      }));
+      router.push('/cart');
+    } catch {
+      setError('Failed to compute delivery fee. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ---- Map preview ----
-  const mapSrc =
-    formData.location
-      ? `https://www.google.com/maps?q=${formData.location.lat},${formData.location.lng}&z=16&output=embed`
-      : null;
+  const mapIframeSrc = formData.location
+    ? `https://www.google.com/maps?q=${formData.location.lat},${formData.location.lng}&z=16&output=embed`
+    : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50">
       <NavbarDark />
-
       <div className="max-w-5xl mx-auto px-4 py-24">
-        {/* Header */}
         <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
-            Exact Delivery Location
-          </h1>
+          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">Exact Delivery Location</h1>
           <div className="hidden md:flex items-center gap-2 text-sm text-gray-600">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Secure checkout</span>
+            <ShieldCheck className="w-4 h-4" /><span>Secure checkout</span>
           </div>
         </div>
 
-        {/* Alerts */}
-        {success && (
-          <div className="mb-6 p-4 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
-            Order submitted successfully! Thank you.
-          </div>
-        )}
-        {error && (
-          <div className="mb-6 p-4 rounded-xl bg-rose-50 text-rose-800 border border-rose-200">
-            {error}
+        {(geoStatus.text || usingLocation) && (
+          <div className="mb-4 p-3 rounded-xl border border-blue-200 bg-blue-50 text-sm text-blue-900">
+            {usingLocation ? 'Locating… ' : null}{geoStatus.text}
+            {geoStatus.accuracy != null && <> (±{Math.round(geoStatus.accuracy)}m)</>}
+            {geoStatus.permission === 'denied' && (
+              <div className="mt-1 text-xs text-blue-800">
+                Location permission is blocked. Enable “Precise Location” then retry.
+              </div>
+            )}
           </div>
         )}
 
-        {/* Layout */}
+        {error && <div className="mb-6 p-4 rounded-xl bg-rose-50 text-rose-800 border border-rose-200">{error}</div>}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Form Card */}
+          {/* Form */}
           <div className="lg:col-span-2">
-            <form
-              onSubmit={handleSubmit}
-              className="bg-white/80 backdrop-blur rounded-2xl shadow border border-gray-200 p-6 md:p-8"
-            >
-              {/* Customer */}
+            <form onSubmit={handleSubmit} className="bg-white/80 backdrop-blur rounded-2xl shadow border border-gray-200 p-6 md:p-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!nameOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'}`}>
                   <User className="w-4 h-4 text-gray-500" />
-                  <input
-                    name="name"
-                    placeholder="Enter Your Name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                    className="w-full bg-transparent outline-none"
-                    disabled={loading}
-                  />
+                  <input value={formData.name} onChange={(e)=>setFormData({...formData,name:e.target.value})} placeholder="Enter Your Name" required className="w-full bg-transparent outline-none" disabled={loading} />
                 </label>
-
                 <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!phoneOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'}`}>
                   <Phone className="w-4 h-4 text-gray-500" />
-                  <input
-                    name="phone"
-                    placeholder="Phone Number"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    required
-                    className="w-full bg-transparent outline-none"
-                    disabled={loading}
-                  />
+                  <input value={formData.phone} onChange={(e)=>setFormData({...formData,phone:e.target.value})} placeholder="Phone Number" required className="w-full bg-transparent outline-none" disabled={loading} />
                 </label>
               </div>
 
-              {/* Use current location (FIRST) */}
-              <div className="mt-5">
-                {!usedCurrentLocation ? (
-                  <button
-                    type="button"
-                    onClick={handleUseCurrentLocation}
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-indigo-600 to-blue-600 shadow hover:opacity-95 active:scale-[0.98] transition"
-                    disabled={loading || usingLocation}
-                  >
-                    {usingLocation ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Locating you…
-                      </>
-                    ) : (
-                      <>
-                        <Navigation className="w-4 h-4" />
-                        Use Current Location
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl">
-                      <MapPin className="w-4 h-4" />
-                      <span className="text-sm font-semibold">Using your current location</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={enableManualEntry}
-                      className="px-4 py-2 rounded-xl font-medium text-gray-700 bg-gray-100 border hover:bg-white active:scale-[0.98] transition"
-                      disabled={loading}
-                    >
-                      Enter address manually
+              {/* Locate */}
+              <div className="mt-5 flex flex-col gap-3">
+                <div className="flex gap-2">
+                  {!usedCurrentLocation ? (
+                    <button type="button" onClick={handleUseCurrentLocation}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-indigo-600 to-blue-600 shadow hover:opacity-95 active:scale-[0.98] transition"
+                      disabled={loading || usingLocation}>
+                      {usingLocation ? (<><Loader2 className="w-4 h-4 animate-spin" /> Getting precise location…</>) : (<><Navigation className="w-4 h-4" /> Use Current Location</>)}
                     </button>
-                  </div>
-                )}
+                  ) : (
+                    <>
+                      <div className="flex-1 flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 rounded-xl">
+                        <MapPin className="w-4 h-4" /><span className="text-sm font-semibold">Location set — fine-tune pin on map</span>
+                      </div>
+                      <button type="button" onClick={tryLocate}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white hover:bg-gray-50">
+                        <RotateCcw className="w-4 h-4" /> Try again
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="text-xs text-gray-600">Tip: enable GPS + Wi-Fi; step outside for best accuracy.</div>
               </div>
 
-              {/* Address (House + Street) */}
+              {/* Address */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
                 <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!houseOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'} ${usedCurrentLocation ? 'opacity-75' : ''}`}>
                   <HomeIcon className="w-4 h-4 text-gray-500" />
-                  <input
-                    name="houseNumber"
-                    placeholder="House Number (e.g., 23A)"
-                    value={formData.houseNumber}
-                    onChange={(e) => setFormData({ ...formData, houseNumber: e.target.value })}
-                    required={!usedCurrentLocation}
-                    className="w-full bg-transparent outline-none"
-                    disabled={loading || usedCurrentLocation}
-                  />
+                  <input value={formData.houseNumber} onChange={(e)=>setFormData({...formData,houseNumber:e.target.value})}
+                    placeholder="House Number (e.g., 23A)" required={!usedCurrentLocation}
+                    className="w-full bg-transparent outline-none" disabled={loading || usedCurrentLocation} />
                 </label>
 
                 <div className="relative" ref={suggestionBoxRef}>
                   <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!streetOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'} ${usedCurrentLocation ? 'opacity-75' : ''}`}>
                     <Landmark className="w-4 h-4 text-gray-500" />
-                    <input
-                      name="street"
-                      placeholder="Street (e.g., Bode Thomas Street)"
-                      value={formData.street}
-                      onChange={handleStreetChange}
-                      onBlur={handleStreetBlur}
-                      required
-                      className="w-full bg-transparent outline-none"
-                      disabled={loading || usedCurrentLocation}
-                    />
+                    <input value={formData.street} onChange={handleStreetChange} onBlur={handleStreetBlur}
+                      placeholder="Street (e.g., Bode Thomas Street)" required
+                      className="w-full bg-transparent outline-none" disabled={loading || usedCurrentLocation} />
                   </label>
 
-                  {/* Suggestions */}
                   {!usedCurrentLocation && suggestions.length > 0 && (
                     <ul className="absolute left-0 right-0 bg-white border border-gray-200 rounded-xl mt-1 max-h-60 overflow-auto z-50 shadow">
                       {suggestions.map((s) => (
-                        <li
-                          key={s.place_id || s.description}
-                          onClick={() => handleSuggestionClick(s)}
-                          className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                        >
-                          {s.description}
-                        </li>
+                        <li key={s.place_id || s.description} onClick={()=>handleSuggestionClick(s)}
+                          className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm">{s.description}</li>
                       ))}
                     </ul>
                   )}
                 </div>
               </div>
 
-              {/* Optional fields */}
               <div className="mt-4 grid grid-cols-1 gap-4">
                 <label className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2 border">
                   <Landmark className="w-4 h-4 text-gray-500" />
-                  <input
-                    name="landmark"
-                    placeholder="Landmark (optional)"
-                    value={formData.landmark}
-                    onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
-                    className="w-full bg-transparent outline-none"
-                    disabled={loading}
-                  />
+                  <input value={formData.landmark} onChange={(e)=>setFormData({...formData,landmark:e.target.value})}
+                    placeholder="Landmark (optional)" className="w-full bg-transparent outline-none" disabled={loading} />
                 </label>
 
                 <label className="flex items-start gap-2 bg-gray-50 rounded-xl px-3 py-2 border">
                   <NotebookText className="mt-1 w-4 h-4 text-gray-500" />
-                  <textarea
-                    name="notes"
-                    placeholder="Extra Delivery Instructions (optional)"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="w-full bg-transparent outline-none min-h-[90px]"
-                    disabled={loading}
-                  />
+                  <textarea value={formData.notes} onChange={(e)=>setFormData({...formData,notes:e.target.value})}
+                    placeholder="Extra Delivery Instructions (optional)" className="w-full bg-transparent outline-none min-h-[90px]" disabled={loading} />
                 </label>
               </div>
 
-              {/* Map preview */}
-              {mapSrc && (
-                <div className="mt-5 overflow-hidden rounded-2xl border border-gray-200 shadow">
-                  <iframe
-                    title="Map preview"
-                    src={mapSrc}
-                    className="w-full h-64"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
+              {/* Map */}
+              <div className="mt-5 overflow-hidden rounded-2xl border border-gray-200 shadow">
+                <div ref={mapRef} className="w-full h-72" />
+              </div>
+
+              {mapIframeSrc && (
+                <div className="mt-3 overflow-hidden rounded-2xl border border-gray-200">
+                  <iframe title="Map preview" src={mapIframeSrc} className="w-full h-52" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
                 </div>
               )}
 
-              {/* Validation errors */}
-              {!isFormValid && !loading && (
-                <ul className="mt-4 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1">
-                  {validationErrors.map((err, idx) => (
-                    <li key={idx}>• {err}</li>
-                  ))}
-                </ul>
+              {usedCurrentLocation && (
+                <div className="mt-3">
+                  <button type="button" onClick={enableManualEntry}
+                    className="px-4 py-2 rounded-xl font-medium text-gray-700 bg-gray-100 border hover:bg-white active:scale-[0.98] transition" disabled={loading}>
+                    Enter address manually
+                  </button>
+                </div>
               )}
 
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={!isFormValid || loading}
-                className={`mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white shadow transition
-                  ${isFormValid && !loading ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-95 active:scale-[0.98]' : 'bg-gray-400 cursor-not-allowed'}
-                `}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Submitting…
-                  </>
-                ) : (
-                  'Submit Order'
-                )}
+              <button type="submit" disabled={!isFormValid || loading}
+                className={`mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white shadow transition ${isFormValid && !loading ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-95 active:scale-[0.98]' : 'bg-gray-400 cursor-not-allowed'}`}>
+                {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>) : ('Save & Return to Cart')}
               </button>
             </form>
           </div>
 
-          {/* Summary Card */}
+          {/* Sidebar */}
           <div className="lg:col-span-1">
             <div className="bg-white/80 backdrop-blur rounded-2xl shadow border border-gray-200 p-6 md:p-8 sticky top-28">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Order Summary</h2>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between text-gray-700">
-                  <span>Subtotal</span>
-                  <span>₦{subtotal.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-gray-700">
-                  <span>Delivery Fee</span>
-                  <span>₦{deliveryFee.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-gray-700">
-                  <span>Tax (2%)</span>
-                  <span>₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                </div>
-                <div className="border-t pt-3 flex justify-between font-extrabold text-lg text-gray-900">
-                  <span>Total</span>
-                  <span>₦{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-
-              {/* Small reassurance block */}
-              <div className="mt-6 flex items-center gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
-                <ShieldCheck className="w-4 h-4" />
-                <span>Your personal details are safe and only used for delivery.</span>
-              </div>
-
-              {/* Shortcut Buttons */}
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Heads up</h2>
+              <p className="text-sm text-gray-700">Delivery fee is calculated on the Cart page at ₦{RATE_PER_KM}/km.</p>
               <div className="mt-6 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => router.push('/cart')}
-                  className="px-3 py-2 rounded-xl bg-white border text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition"
-                >
+                <button type="button" onClick={()=>router.push('/cart')}
+                  className="px-3 py-2 rounded-xl bg-white border text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition">
                   Back to Cart
                 </button>
-                <button
-                  type="button"
-                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                  className="px-3 py-2 rounded-xl bg-gray-900 text-white hover:opacity-95 active:scale-[0.98] transition"
-                >
+                <button type="button" onClick={()=>window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="px-3 py-2 rounded-xl bg-gray-900 text-white hover:opacity-95 active:scale-[0.98] transition">
                   Edit Details
                 </button>
               </div>
@@ -593,6 +487,4 @@ const CheckoutPage = () => {
       </div>
     </div>
   );
-};
-
-export default CheckoutPage;
+}

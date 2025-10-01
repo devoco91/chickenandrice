@@ -1,3 +1,4 @@
+// app/store/cartSlice.js
 import { createSlice } from "@reduxjs/toolkit";
 
 const initialState = {
@@ -8,85 +9,41 @@ const initialState = {
 
 const cartSlice = createSlice({
   name: "Cart Item",
-  initialState: initialState,
+  initialState,
   reducers: {
-    // Add item to cart
+    // First add => 3 only for FOOD (isDrink !== true). Drinks always => 1
     addItemCart: (state, action) => {
       const item = action.payload;
-      const existingItem = state.cartItem.find(
-        (product) => product._id === item._id
-      );
-      if (existingItem) {
-        existingItem.quantity++;
+      const existing = state.cartItem.find((p) => p._id === item._id);
+      if (existing) {
+        existing.quantity += 1;
       } else {
-        state.cartItem.push({ ...item, quantity: 1 });
+        const isDrink = Boolean(item.isDrink === true);
+        state.cartItem.push({ ...item, quantity: isDrink ? 1 : 3 });
       }
     },
-
-    // Remove item from cart
     removeItemCart: (state, action) => {
-      const itemId = action.payload;
-      state.cartItem = state.cartItem.filter(
-        (product) => product._id !== itemId
-      );
+      state.cartItem = state.cartItem.filter((p) => p._id !== action.payload);
     },
-
-    // Clear all items
-    clearCart: (state) => {
-      state.cartItem = [];
-    },
-
-    // ✅ Reset cart completely (to initial state)
+    clearCart: (state) => { state.cartItem = []; },
     resetCart: () => initialState,
-
-    // Update item quantity directly
     updateQuantityCart: (state, action) => {
       const { itemId, quantity } = action.payload;
-      const item = state.cartItem.find((product) => product._id === itemId);
-      if (item) {
-        item.quantity = quantity;
-      }
+      const item = state.cartItem.find((p) => p._id === itemId);
+      if (item) item.quantity = quantity;
     },
-
-    // Checkout (clear cart)
-    checkoutCart: (state) => {
-      state.cartItem = [];
-    },
-
-    // Decrement quantity
+    checkoutCart: (state) => { state.cartItem = []; },
     decrementQuantity: (state, action) => {
-      const itemId = action.payload;
-      const item = state.cartItem.find((product) => product._id === itemId);
-      if (item && item.quantity > 1) {
-        item.quantity--;
-      }
+      const item = state.cartItem.find((p) => p._id === action.payload);
+      if (item && item.quantity > 1) item.quantity -= 1;
     },
-
-    // Increment quantity
     incrementQuantity: (state, action) => {
-      const itemId = action.payload;
-      const item = state.cartItem.find((product) => product._id === itemId);
-      if (item) {
-        item.quantity++;
-      }
+      const item = state.cartItem.find((p) => p._id === action.payload);
+      if (item) item.quantity += 1;
     },
-
-    // Apply coupon code
-    applyCouponCode: (state, action) => {
-      const { couponCode } = action.payload;
-      state.couponCode = couponCode;
-    },
-
-    // Remove coupon code
-    removeCouponCode: (state) => {
-      state.couponCode = "";
-    },
-
-    // Apply discount
-    applyDiscount: (state, action) => {
-      const { discount } = action.payload;
-      state.discount = discount;
-    },
+    applyCouponCode: (state, action) => { state.couponCode = action.payload.couponCode; },
+    removeCouponCode: (state) => { state.couponCode = ""; },
+    applyDiscount: (state, action) => { state.discount = action.payload.discount; },
   },
 });
 
@@ -96,7 +53,7 @@ export const {
   addItemCart,
   removeItemCart,
   clearCart,
-  resetCart, // ✅ make sure this is exported
+  resetCart,
   updateQuantityCart,
   checkoutCart,
   decrementQuantity,

@@ -7,6 +7,8 @@ import PWARegister from "./components/PWARegister";
 import InstallPWAButton from "./components/InstallPWAButton";
 import IOSA2HSBanner from "./components/IOSA2HSBanner";
 import LocalBusinessJsonLd from "./seo/LocalBusinessJsonLd"; // JSON-LD (safe, no UI impact)
+import "react-toastify/dist/ReactToastify.css";
+import { ToastContainer } from "react-toastify";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -84,6 +86,9 @@ export default function RootLayout({ children }) {
 
         {/* Registers /sw.js (safe, no effect on API/images) */}
         <PWARegister />
+
+        {/* Toasts (used by the payment page and elsewhere) */}
+        <ToastContainer position="top-center" newestOnTop pauseOnHover closeOnClick draggable />
 
         {/* Lazy load Google Maps API */}
         <Script

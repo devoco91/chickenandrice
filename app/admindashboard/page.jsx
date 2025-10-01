@@ -82,7 +82,7 @@ export default function AdminDashboard() {
     return dt
       ? dt.toLocaleDateString("en-NG", { year: "numeric", month: "short", day: "numeric" })
       : "-";
-  };
+    };
   const fmtTime = (d) => {
     const dt = safeDate(d);
     return dt ? dt.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }) : "-";
@@ -718,7 +718,7 @@ export default function AdminDashboard() {
       {/* Header + actions */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-6">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
-          Admin Dashboard
+          Monthly Sales Tracker
         </h1>
         <div className="flex gap-2 items-center">
           {/* Style toggle */}
@@ -799,8 +799,54 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* KPIs */}
-      
+      {/* ===== Excel-like KPI strip ===== */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+        {/* Tile 1 */}
+        <div className="rounded-2xl bg-white border border-indigo-100 shadow flex items-center justify-between p-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">
+              Total Sales (Month)
+            </div>
+            <div className="mt-1 text-3xl md:text-4xl font-extrabold text-gray-900">
+              {money(monthlyStats.amount)}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 text-right">
+            Orders<br />
+            <span className="text-sm font-bold text-gray-800">{monthlyStats.countAll}</span>
+          </div>
+        </div>
+        {/* Tile 2 */}
+        <div className="rounded-2xl bg-white border border-blue-100 shadow flex items-center justify-between p-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">
+              Total Sales (Week)
+            </div>
+            <div className="mt-1 text-3xl md:text-4xl font-extrabold text-gray-900">
+              {money(weeklyCombinedTotal)}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 text-right">
+            Orders<br />
+            <span className="text-sm font-bold text-gray-800">{weeklyStatsMon.countAll}</span>
+          </div>
+        </div>
+        {/* Tile 3 */}
+        <div className="rounded-2xl bg-white border border-sky-100 shadow flex items-center justify-between p-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-sky-700">
+              Today’s Sales
+            </div>
+            <div className="mt-1 text-3xl md:text-4xl font-extrabold text-gray-900">
+              {money(dailyCombinedTotal)}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 text-right">
+            Orders<br />
+            <span className="text-sm font-bold text-gray-800">{dailyStatsDyn.countAll}</span>
+          </div>
+        </div>
+      </div>
 
       {/* ---------- MONTHLY SUMMARY BANNER ---------- */}
       <div className={styleMode("banner-monthly")}>
@@ -1292,7 +1338,7 @@ export default function AdminDashboard() {
                 setDateFrom(e.target.value);
                 setPage(1);
               }}
-              className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+              className="border rounded-2xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -1304,7 +1350,7 @@ export default function AdminDashboard() {
                 setDateTo(e.target.value);
                 setPage(1);
               }}
-              className="border rounded-xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
+              className="border rounded-2xl px-3 py-2 bg-white shadow-sm outline-none focus:ring-2 focus:ring-purple-400"
             />
           </div>
           <button
@@ -1521,7 +1567,7 @@ export default function AdminDashboard() {
               const isOpen = selectedOrder && String(selectedOrder?._id) === String(order?._id);
 
               const packQty = computePackCount(order);
-              const packagingCost = packQty * PACK_PRICE;
+              const packagingCost = packQty * 200;
 
               return (
                 <Fragment key={order?._id || idx}>
@@ -1591,7 +1637,7 @@ export default function AdminDashboard() {
                             ))}
                             {packQty > 0 && (
                               <li className="text-gray-700">
-                                Pack — {packQty} × {money(PACK_PRICE)} = <strong>{money(packagingCost)}</strong>
+                                Pack — {packQty} × {money(200)} = <strong>{money(packagingCost)}</strong>
                               </li>
                             )}
                           </ul>

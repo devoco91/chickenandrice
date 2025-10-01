@@ -64,7 +64,7 @@ function Banner() {
             }`}
           >
             <span className="block">The Only</span>
-            <span className="block text-yellow-300 drop-shadow-md">Place For The Best</span>
+            <span className="block text-yellow-300 drop-shadow-md">Place For Your Best</span>
             <span className="block text-blue-200">Jollof And Fried Rice</span>
           </h1>
 

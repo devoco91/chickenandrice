@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDispatch } from "react-redux";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -21,6 +21,9 @@ export default function LocationModal({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
   const [countdown, setCountdown] = useState(0);
+
+  // why: debounce auto-search to avoid hammering API while user is still choosing
+  const debounceRef = useRef(null);
 
   // helper: always close the modal when navigating away
   const closeAndNavigate = (path) => {
@@ -117,6 +120,19 @@ export default function LocationModal({ isOpen, onClose }) {
     }
   };
 
+  // === Auto-search when state & LGA are both selected ===
+  useEffect(() => {
+    if (!location.state || !location.lga) return;
+    if (loading) return; // avoid overlapping calls
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      // fire the same logic as the old button
+      handleConfirm();
+    }, 500); // small debounce for “best searching display”
+    return () => clearTimeout(debounceRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, location.lga]);
+
   if (!isOpen) return null;
 
   return (
@@ -136,17 +152,23 @@ export default function LocationModal({ isOpen, onClose }) {
 
         <LocationSelector onChange={setLocationState} />
 
-        <button
-          onClick={handleConfirm}
-          disabled={loading}
-          className={`mt-6 w-full px-4 py-2 rounded-lg transition ${
-            loading
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-red-600 text-white hover:bg-red-700"
-          }`}
-        >
-          {loading ? "Checking..." : "Check Availability"}
-        </button>
+        {/* Auto-search indicator (replaces the old button) */}
+        <div className="mt-6 w-full">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-700">
+              <span className="h-4 w-4 inline-block border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+              <span>Checking availability…</span>
+            </div>
+          ) : !location.state || !location.lga ? (
+            <p className="text-center text-sm text-gray-500">
+              Select state and LGA — we’ll check automatically.
+            </p>
+          ) : (
+            <p className="text-center text-sm text-gray-500">
+              Searching for the best match in your area…
+            </p>
+          )}
+        </div>
 
         {status && (
           <div className="mt-6">

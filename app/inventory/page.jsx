@@ -4,6 +4,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE } from "../utils/apiBase";
 
+// === channels scope (only reflect/deduct these) ===
+const ALLOWED_CHANNELS = ["inshop", "chowdeck"]; // <- only these should affect stock
+const qsChannels = `channels=${ALLOWED_CHANNELS.join(",")}`; // relies on backend support
+
 // Always show grams (no kg)
 const fmtNum = (n) => Number(n || 0).toLocaleString("en-NG");
 const fmtQty = (unit, v) => (unit === "gram" ? `${fmtNum(v)} g` : `${fmtNum(v)} pcs`);
@@ -76,13 +80,10 @@ const isMoiMoiOrPlantain = (name = "") => /moimoi|moimo|moi|plantain|dodo/.test(
 const isLowStock = (row) => {
   if (!row) return false;
   if (row.unit === "gram") {
-    // only rice (grams) under 900g
     return isRice(row.sku) && Number(row.remaining || 0) < 900;
   }
-  // pieces
   const rem = Number(row.remaining || 0);
   if (row.kind === "drink" || row.kind === "protein") return rem < 3;
-  // food pieces: moimoi/plantain under 3 pcs
   if (row.kind === "food" && isMoiMoiOrPlantain(row.sku)) return rem < 3;
   return false;
 };
@@ -99,6 +100,13 @@ const uniqBy = (rows = []) => {
 };
 const isExtra = (name = "") =>
   /extra/.test(String(name).toLowerCase()) && /(jollof|fried)/.test(String(name).toLowerCase());
+
+// ---- channel helpers (defensive client-side filtering of movements) ----
+const readChannel = (m = {}) =>
+  String(m.channel || m.orderChannel || m.source || m.via || m.origin || "").toLowerCase().trim();
+
+const isAllowedChannel = (ch) => ALLOWED_CHANNELS.includes(ch);
+const isExplicitlyOnline = (ch) => /online|web|website|storefront/.test(ch);
 
 export default function InventoryPage() {
   const [summary, setSummary] = useState(null);
@@ -126,15 +134,25 @@ export default function InventoryPage() {
       const ac = new AbortController();
       abortRef.current = ac;
 
+      // NOTE: summary/movements are requested with channel scope; backend should respect `channels=`
       const [s, m, st, it] = await Promise.all([
-        getJSON(`${API_BASE}/inventory/summary?ts=${Date.now()}`, ac.signal),
-        getJSON(`${API_BASE}/inventory/movements?limit=80&ts=${Date.now()}`, ac.signal).catch(() => ({ items: [] })),
+        getJSON(`${API_BASE}/inventory/summary?${qsChannels}&ts=${Date.now()}`, ac.signal),
+        getJSON(`${API_BASE}/inventory/movements?limit=80&${qsChannels}&ts=${Date.now()}`, ac.signal).catch(() => ({ items: [] })),
         getJSON(`${API_BASE}/inventory/stock?ts=${Date.now()}`, ac.signal).catch(() => ({ entries: [] })),
         getJSON(`${API_BASE}/inventory/items?ts=${Date.now()}`, ac.signal).catch(() => ({ items: [] })),
       ]);
 
+      // Defensive client-side channel filtering for movements (if backend ignores `channels=`)
+      const rawMovements = Array.isArray(m?.items) ? m.items : [];
+      const filteredMovements = rawMovements.filter((mv) => {
+        const ch = readChannel(mv);
+        if (!ch) return true; // keep system/restock entries without channel
+        if (isExplicitlyOnline(ch)) return false; // exclude online-like
+        return isAllowedChannel(ch);
+      });
+
       setSummary(s || {});
-      setMovements(Array.isArray(m?.items) ? m.items : []);
+      setMovements(filteredMovements);
       setStockEntries(Array.isArray(st?.entries) ? st.entries : []);
       setItems(Array.isArray(it?.items) ? it.items : []);
       setLastUpdated(new Date());
@@ -166,7 +184,11 @@ export default function InventoryPage() {
     const drinksRows = uniqBy(Array.isArray(summary?.drinks) ? summary.drinks : []);
     const proteinRows = uniqBy(Array.isArray(summary?.proteins) ? summary.proteins : []);
 
-    const foodFiltered = foodRows.filter((r) => !isExtra(r?.sku));
+    // why: KPI "Food Remaining" must be grams-only food, excluding plantain/moi moi and "extra" rows
+    const foodFiltered = foodRows.filter(
+      (r) => !isExtra(r?.sku) && r?.unit === "gram" && !isMoiMoiOrPlantain(r?.sku)
+    );
+
     return {
       foodRemain: sumRemain(foodFiltered),
       drinkRemain: sumRemain(drinksRows),
@@ -226,7 +248,8 @@ export default function InventoryPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div className="space-y-1">
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">Inventory</h1>
-          <p className="text-sm text-gray-600">Today’s prep, restocks, and live usage across all channels.</p>
+          {/* NOTE: copy updated to reflect scope */}
+          <p className="text-sm text-gray-600">Today’s prep, restocks, and live usage (in-shop & Chowdeck only).</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <a
@@ -279,7 +302,7 @@ export default function InventoryPage() {
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             Live
           </span>
-            <span>
+          <span>
             Last updated: <strong>{lastUpdated ? lastUpdated.toLocaleString() : "—"}</strong>
           </span>
           <label className="ml-2">Auto-refresh:</label>
@@ -424,7 +447,10 @@ export default function InventoryPage() {
                     </td>
                     <td className="p-3 border-b">{m?.sku || "-"}</td>
                     <td className="p-3 border-b">{m?.unit || "-"}</td>
-                    <td className="p-3 border-b">{m?.note || "-"}</td>
+                    <td className="p-3 border-b">
+                      {/* why: surface channel if present, to verify scope */}
+                      {m?.note || readChannel(m) || "-"}
+                    </td>
                   </tr>
                 ))
               )}
@@ -517,7 +543,6 @@ function KpiCard({ title, value, gradient, sub }) {
 }
 
 function LowBadge() {
-  // minimal, attention-grabbing, non-intrusive
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
       ⚠️ Low
