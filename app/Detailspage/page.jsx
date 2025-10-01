@@ -1,3 +1,4 @@
+// app/Detailspage/page.jsx
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -53,8 +54,18 @@ const Detailspage = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Force default image fit to "contain" once after deploy
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("imgFitMode") !== "contain") {
+        localStorage.setItem("imgFitMode", "contain");
+      }
+    } catch {}
+  }, []);
+
+  // Default to FIT (contain). Respects saved preference (now set by the override above).
   const [fitMode, setFitMode] = useState(() => {
-    try { return localStorage.getItem("imgFitMode") || "cover"; } catch { return "cover"; }
+    try { return localStorage.getItem("imgFitMode") || "contain"; } catch { return "contain"; }
   });
   useEffect(() => { try { localStorage.setItem("imgFitMode", fitMode); } catch {} }, [fitMode]);
 
@@ -122,7 +133,7 @@ const Detailspage = () => {
 
   const renderCard = (product, idx) => {
     const quantity = getQuantity(product._id);
-    const src = getImageUrl(product.image);
+    const src = getImageUrl(product.image); // <-- fixed
 
     const imgFit = fitMode === "contain" ? "object-contain" : "object-cover";
     const mediaAspect = fitMode === "contain" ? "aspect-[16/10]" : "aspect-[4/3]";

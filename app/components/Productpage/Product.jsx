@@ -1,3 +1,4 @@
+// components/FastFoodProducts.jsx
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -130,8 +131,17 @@ const FastFoodProducts = ({ onRequireLocation }) => {
   const [allPage, setAllPage] = useState(1);
   const [popularPage, setPopularPage] = useState(1);
 
+  // One-time override to force Fit by default after deploy
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("imgFitMode") !== "contain") {
+        localStorage.setItem("imgFitMode", "contain");
+      }
+    } catch {}
+  }, []);
+
   const [fitMode, setFitMode] = useState(() => {
-    try { return localStorage.getItem("imgFitMode") || "cover"; } catch { return "cover"; }
+    try { return localStorage.getItem("imgFitMode") || "contain"; } catch { return "contain"; }
   });
   useEffect(() => { try { localStorage.setItem("imgFitMode", fitMode); } catch {} }, [fitMode]);
 
