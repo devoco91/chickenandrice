@@ -469,7 +469,7 @@ export default function CheckoutPage() {
           <div className="lg:col-span-1">
             <div className="bg-white/80 backdrop-blur rounded-2xl shadow border border-gray-200 p-6 md:p-8 sticky top-28">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Heads up</h2>
-              <p className="text-sm text-gray-700">Delivery fee is calculated on the Cart page at ₦{RATE_PER_KM}/km.</p>
+              <p className="text-sm text-gray-700">Delivery fee is calculated on the Cart page based on distance.</p>
               <div className="mt-6 grid grid-cols-2 gap-2">
                 <button type="button" onClick={()=>router.push('/cart')}
                   className="px-3 py-2 rounded-xl bg-white border text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition">

@@ -10,11 +10,13 @@ import {
 } from "./../store/cartSlice";
 import { setMeals, resetMeals } from "./../store/mealsSlice";
 import { resetLocation } from "./../store/locationSlice";
-import { ShoppingCart, Plus, Minus, Star, X } from "lucide-react";
+import { ShoppingCart, Plus, Minus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar/Navbar";
+import MinOrderNotice from "../components/MinOrderNotice";
 import { motion, AnimatePresence } from "framer-motion";
 
+/* API + image utils */
 const RAW = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/+$/, "");
 const API_BASE = /\/api(?:\/v\d+)?$/i.test(RAW) ? RAW : `${RAW}/api`;
 const EXPLICIT_UPLOADS_BASE = (
@@ -39,9 +41,30 @@ const getImageUrl = (val) => {
   const cleaned = String(s).replace(/\\/g, "/").replace(/^\/+/, "").replace(/^uploads\//i, "");
   return `${UPLOADS_BASE}/${encodeURI(cleaned)}`;
 };
-
 const formatNaira = (n) =>
   typeof n === "number" ? n.toLocaleString("en-NG", { maximumFractionDigits: 0 }) : String(n || "");
+
+/* Match product page helpers/skin */
+export const isPopularItem = (p) => {
+  const tagPopular = Array.isArray(p?.tags) && p.tags.some((t) => String(t).trim().toLowerCase() === "popular");
+  const flagPopular = p?.isPopular === true || p?.popular === true || p?.featured === true;
+  return tagPopular || flagPopular;
+};
+const PATTERN_SVG = encodeURIComponent(`
+<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'>
+  <g stroke='#e7d8bf' stroke-width='2' fill='none' opacity='0.65' stroke-linecap='round' stroke-linejoin='round'>
+    <path d='M20 60h80a28 28 0 0 1-28 28H48A28 28 0 0 1 20 60z'/><path d='M15 60h90'/>
+    <circle cx='160' cy='52' r='20'/>
+    <path d='M185 90c8 0 14 6 14 14s-6 14-14 14c-8 0-14-6-14-14s6-14 14-14z'/><path d='M185 118v22'/>
+    <path d='M40 150c20-22 52-22 72 0-10 20-32 28-52 20l-10 10a8 8 0 1 1-11-11l10-10'/>
+    <circle cx='135' cy='150' r='12'/><path d='M135 138l4 -6m-4 6l-4 -6'/>
+    <path d='M170 165c10-10 25-10 30 2-8 6-18 10-30 -2z'/>
+  </g>
+</svg>
+`);
+const PATTERN_URL = `url("data:image/svg+xml,${PATTERN_SVG}")`;
+const MEDIA_H = "h-[170px] sm:h-[185px] md:h-[200px] lg:h-[210px] xl:h-[220px]";
+const BORDER_SOFT = "border-orange-200";
 
 const Detailspage = () => {
   const dispatch = useDispatch();
@@ -54,27 +77,25 @@ const Detailspage = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Force default image fit to "contain" once after deploy
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("imgFitMode") !== "contain") {
-        localStorage.setItem("imgFitMode", "contain");
-      }
-    } catch {}
-  }, []);
+  /* Floating cart state */
+  const totalPacks = useMemo(
+    () => (Array.isArray(cartItems) ? cartItems.reduce((s, i) => s + (i?.quantity || 0), 0) : 0),
+    [cartItems]
+  );
+  const [message, setMessage] = useState("");
 
-  // Default to FIT (contain). Respects saved preference (now set by the override above).
-  const [fitMode, setFitMode] = useState(() => {
-    try { return localStorage.getItem("imgFitMode") || "contain"; } catch { return "contain"; }
-  });
-  useEffect(() => { try { localStorage.setItem("imgFitMode", fitMode); } catch {} }, [fitMode]);
-
-  const [zoomSrc, setZoomSrc] = useState(null);
-
-  const getQuantity = (id) => {
-    const item = cartItems.find((i) => i._id === id);
-    return item ? item.quantity : 0;
+  const handleCartFabClick = () => {
+    if (totalPacks < 3) {
+      setMessage(
+        `⚠️ You currently have ${totalPacks} item${totalPacks === 1 ? "" : "s"}. Minimum of 3 items required before checkout.`
+      );
+      setTimeout(() => setMessage(""), 6000);
+      return;
+    }
+    router.push("/cart");
   };
+
+  const getQuantity = (id) => cartItems.find((i) => i._id === id)?.quantity || 0;
 
   const handleAddToCart = (product) => {
     const cartProduct = { ...product };
@@ -121,157 +142,181 @@ const Detailspage = () => {
     fetchProducts();
   }, [location, mealsFromStore, dispatch]);
 
-  const popularProducts = useMemo(() => products.filter((p) => p?.isPopular === true), [products]);
+  const popularProducts = useMemo(() => products.filter(isPopularItem), [products]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-        <p className="text-xl text-gray-700 animate-pulse">Loading menu...</p>
-      </div>
-    );
-  }
+  const handleCardClick = (product) => {
+    const qty = getQuantity(product._id);
+    if (qty > 0) dispatch(incrementQuantity(product._id));
+    else handleAddToCart(product);
+  };
+  const stopEnterSpace = (e) => {
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation(); // why: prevent double fire from card
+  };
 
   const renderCard = (product, idx) => {
     const quantity = getQuantity(product._id);
-    const src = getImageUrl(product.image); // <-- fixed
-
-    const imgFit = fitMode === "contain" ? "object-contain" : "object-cover";
-    const mediaAspect = fitMode === "contain" ? "aspect-[16/10]" : "aspect-[4/3]";
+    const src = getImageUrl(product.image);
 
     return (
       <motion.div
         key={product._id}
-        className="group bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 overflow-hidden flex flex-col"
-        initial={{ opacity: 0, y: 24 }}
+        role="button"
+        tabIndex={0}
+        onClick={() => handleCardClick(product)}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleCardClick(product)}
+        className={`group rounded-2xl overflow-hidden border ${BORDER_SOFT} bg-white shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col`}
+        initial={{ opacity: 0, y: 22 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: Math.min(idx * 0.03, 0.18), duration: 0.35, ease: "easeOut" }}
+        transition={{ delay: Math.min(idx * 0.02, 0.16), duration: 0.3, ease: "easeOut" }}
       >
-        <div className={`relative ${mediaAspect} w-[120%] -mx-[10%] rounded-t-3xl overflow-hidden bg-gray-100`}>
-          <img
-            src={src}
-            alt={product.name}
-            className={`${imgFit} w-full h-full transition-transform duration-500 ${fitMode === "cover" ? "group-hover:scale-[1.04]" : ""} cursor-zoom-in`}
-            loading="lazy"
-            onError={(e) => (e.currentTarget.src = "/placeholder.png")}
-            onClick={() => setZoomSrc(src)}
-          />
+        <div className={`px-4 border-b ${BORDER_SOFT} h-[56px] md:h-[60px] flex items-center`}>
+          <h3 className="text-[15px] md:text-base font-semibold text-gray-900 leading-snug line-clamp-2">
+            {product.name}
+          </h3>
         </div>
 
-        <div className="p-5 flex flex-col grow">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="text-lg md:text-xl font-semibold text-gray-900 leading-snug break-words line-clamp-2 md:line-clamp-3 lg:line-clamp-none">
-              {product.name}
-            </h3>
-            <p className="text-emerald-700 font-extrabold text-lg shrink-0">
-              ₦{formatNaira(product.price)}
-            </p>
-          </div>
+        <div className={`relative ${MEDIA_H} w-full bg-white`}>
+          <motion.img
+            src={src}
+            alt={product.name}
+            className="w-full h-full object-cover"
+            onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+          />
+          {isPopularItem(product) && (
+            <span className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-semibold px-2 py-[2px] rounded">
+              Popular
+            </span>
+          )}
+          <span className="absolute bottom-2 right-2 bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow">
+            ₦{formatNaira(product.price)}
+          </span>
+        </div>
 
-          {product.description ? (
-            <p className="mt-2 text-sm text-gray-600 line-clamp-2 break-words">{product.description}</p>
-          ) : null}
-
-          <div className="mt-2 flex items-center text-yellow-500">
-            {[1, 2, 3, 4].map((i) => <Star key={i} className="w-4 h-4 fill-yellow-500" />)}
-            <Star className="w-4 h-4 fill-yellow-500" style={{ clipPath: "inset(0 50% 0 0)" }} />
-          </div>
-
-          <div className="mt-4 md:mt-auto">
-            {quantity > 0 ? (
-              <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl p-1.5">
-                <button onClick={() => handleDecrement(product._id)} className="px-3 py-2 rounded-lg hover:bg-white active:scale-95 transition" aria-label="Decrease">
-                  <Minus className="w-5 h-5" />
-                </button>
-                <span className="min-w-8 text-center font-semibold">{quantity}</span>
-                <button onClick={() => handleIncrement(product._id)} className="px-3 py-2 rounded-lg hover:bg-white active:scale-95 transition" aria-label="Increase">
-                  <Plus className="w-5 h-5" />
-                </button>
-              </div>
-            ) : (
+        <div className="px-4 pt-3 pb-4 mt-auto">
+          {quantity > 0 ? (
+            <div className={`flex items-center justify-between rounded-xl p-1.5 bg-white border ${BORDER_SOFT}`}>
               <button
-                onClick={() => handleAddToCart(product)}
-                className="w-full bg-emerald-600 text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-emerald-700 active:scale-[0.99] transition shadow"
+                onClick={(e) => { e.stopPropagation(); handleDecrement(product._id); }}
+                onKeyDown={stopEnterSpace}
+                className="px-3 py-2 rounded-lg hover:bg-orange-50"
               >
-                <ShoppingCart className="w-5 h-5" /> Add to Cart
+                <Minus className="w-5 h-5" />
               </button>
-            )}
-          </div>
+              <span className="min-w-8 text-center font-semibold">{quantity}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleIncrement(product._id); }}
+                onKeyDown={stopEnterSpace}
+                className="px-3 py-2 rounded-lg hover:bg-orange-50"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCardClick(product); }}
+              onKeyDown={stopEnterSpace}
+              className="w-full text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition shadow"
+              style={{ backgroundColor: "oklch(85.2% 0.199 91.936)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "oklch(78% 0.199 91.936)")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "oklch(85.2% 0.199 91.936)")}
+            >
+              <ShoppingCart className="w-5 h-5" /> Add to Cart
+            </button>
+          )}
         </div>
       </motion.div>
     );
   };
 
+  if (loading) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "#fff6e5", backgroundImage: PATTERN_URL, backgroundRepeat: "repeat", backgroundSize: "220px 220px" }}
+      >
+        <p className="text-xl text-gray-700 animate-pulse">Loading menu...</p>
+      </div>
+    );
+  }
+
+  const isInactive = totalPacks === 0;
+
   return (
     <>
       <Navbar />
-      <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-green-50 via-white to-green-50 pt-24">
-        <div className="pointer-events-none absolute inset-0 [background:radial-gradient(60%_60%_at_50%_-10%,rgba(16,185,129,0.12),rgba(255,255,255,0)),radial-gradient(40%_30%_at_100%_10%,rgba(59,130,246,0.10),rgba(255,255,255,0))]" />
-        <div className="relative max-w-7xl mx-auto px-6 py-10">
-          <div className="flex justify-end mb-10">
+      <div
+        className="min-h-screen relative overflow-hidden pt-16"
+        style={{ backgroundColor: "#fff6e5", backgroundImage: PATTERN_URL, backgroundRepeat: "repeat", backgroundSize: "220px 220px" }}
+      >
+        <div className="relative max-w-7xl mx-auto px-6 py-8">
+          <div className="flex justify-end mb-6">
             <button
               onClick={handleChangeLocation}
-              className="bg-gradient-to-r from-red-600 to-rose-600 text-white px-5 py-2.5 rounded-xl shadow hover:opacity-95 transition"
+              className="text-white px-5 py-2.5 rounded-xl shadow hover:opacity-95 transition"
+              style={{ backgroundColor: "oklch(85.2% 0.199 91.936)" }}
             >
               Change Location
             </button>
           </div>
 
-          {/* Popular Items */}
-          <section className="mb-16">
-            <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-6">🔥 Popular Items</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <MinOrderNotice />
+
+          <section className="mb-12" id="popular-items">
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">🔥 Popular Items</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
               {popularProducts.map((p, idx) => renderCard(p, idx))}
             </div>
           </section>
 
-          {/* All Items */}
-          <section>
-            <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-6">🍲 All Items</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <section id="all-items">
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">🍲 All Items</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
               {products.map((p, idx) => renderCard(p, idx))}
             </div>
           </section>
         </div>
       </div>
 
-      {cartItems.length > 0 && (
+      {/* Right-side FAB + message beneath */}
+      <div className="fixed right-6 top-1/2 -translate-y-1/2 z-50 flex flex-col items-end gap-2">
         <button
-          onClick={() => router.push("/cart")}
-          className="fixed bottom-20 right-6 bg-gradient-to-r from-red-600 to-rose-600 text-white px-5 py-3 rounded-full shadow-lg flex items-center gap-2 hover:opacity-90 transition z-50"
+          onClick={handleCartFabClick}
+          aria-disabled={isInactive}
+          data-inactive={isInactive ? "true" : "false"}
+          className={[
+            "text-white px-5 py-3 rounded-full shadow-lg",
+            "flex items-center gap-2 hover:opacity-90 transition relative",
+            isInactive ? "opacity-50 cursor-not-allowed" : "",
+          ].join(" ")}
+          style={{ backgroundColor: "oklch(85.2% 0.199 91.936)" }}
+          aria-label="Open cart"
         >
           <ShoppingCart className="w-5 h-5" />
-          <span className="font-semibold">({cartItems.length})</span>
+          <span className="font-semibold">( {totalPacks} )</span>
+          {totalPacks > 0 && (
+            <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[11px] font-bold rounded-full min-w-5 h-5 px-[6px] flex items-center justify-center shadow-md">
+              {totalPacks}
+            </span>
+          )}
         </button>
-      )}
 
-      <AnimatePresence>
-        {zoomSrc && (
-          <motion.div
-            className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setZoomSrc(null)}
-          >
+        <AnimatePresence>
+          {message && (
             <motion.div
-              className="relative max-w-5xl w-full"
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="max-w-[260px] bg-white border border-red-200 text-red-700 font-semibold text-sm rounded-xl px-3 py-2 shadow-lg"
+              aria-live="polite"
             >
-              <button
-                className="absolute -top-10 right-0 text-white/80 hover:text-white"
-                onClick={() => setZoomSrc(null)}
-                aria-label="Close"
-              >
-                <X className="w-6 h-6" />
-              </button>
-              <img src={zoomSrc} alt="Zoomed food" className="w-full h-auto rounded-2xl object-contain shadow-2xl" />
+              {message}
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Optional: image zoom modal kept from prior versions if needed */}
+      <AnimatePresence>{/* ... */}</AnimatePresence>
     </>
   );
 };

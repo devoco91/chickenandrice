@@ -20,8 +20,6 @@ const UPLOADS_BASE =
   process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
   (RAW_API ? RAW_API.replace(/\/api$/, '') + '/uploads' : '/uploads');
 
-const PACK_PRICE = 200;
-
 const getImageUrl = (val) => {
   let s = val;
   if (!s) return '/placeholder.png';
@@ -55,25 +53,37 @@ const DrinksSlider = ({ items, onAdd }) => {
         <ChevronRight className="w-5 h-5 text-red-600" />
       </button>
 
-      <Swiper modules={[Autoplay, Navigation]} autoplay={{ delay: 4500, disableOnInteraction: false }} loop={true}
-        navigation={{ prevEl: '.drinks-prev', nextEl: '.drinks-next' }} spaceBetween={16} slidesPerView={1}
-        breakpoints={{ 640: { slidesPerView: 2 }, 768: { slidesPerView: 3 }, 1024: { slidesPerView: 3 } }} className="pb-8">
+      <Swiper
+        modules={[Autoplay, Navigation]}
+        autoplay={{ delay: 4500, disableOnInteraction: false }}
+        loop
+        navigation={{ prevEl: '.drinks-prev', nextEl: '.drinks-next' }}
+        spaceBetween={16}
+        slidesPerView={1}
+        breakpoints={{ 640: { slidesPerView: 2 }, 768: { slidesPerView: 3 }, 1024: { slidesPerView: 3 } }}
+        className="pb-8"
+      >
         {items.map((item) => (
           <SwiperSlide key={item._id}>
             <div className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-red-300 hover:shadow-xl transition-all duration-300">
               <div className="relative overflow-hidden">
                 {item.image && (
-                  <img src={getImageUrl(item.image)} alt={item.name}
+                  <img
+                    src={getImageUrl(item.image)}
+                    alt={item.name}
                     className="w-full h-40 object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => (e.currentTarget.src = '/placeholder.png')} />
+                    onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                  />
                 )}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-500"></div>
               </div>
               <div className="p-4">
                 <h3 className="font-bold text-base text-gray-900 mb-2 line-clamp-1">{item.name}</h3>
                 <p className="text-xl font-extrabold text-red-600 mb-3">₦{item.price.toLocaleString()}</p>
-                <button onClick={() => onAdd(item)}
-                  className="w-full bg-gradient-to-r from-red-500 to-red-700 text-white py-2.5 px-3 rounded-lg font-semibold hover:opacity-90 transition">
+                <button
+                  onClick={() => onAdd(item)}
+                  className="w-full bg-gradient-to-r from-red-500 to-red-700 text-white py-2.5 px-3 rounded-lg font-semibold hover:opacity-90 transition"
+                >
                   Add to Cart
                 </button>
               </div>
@@ -99,7 +109,9 @@ export default function CartPage() {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const data = await res.json();
         setSuggestedItems(Array.isArray(data) ? data : []);
-      } catch (err) { console.error('Failed to fetch drinks:', err); }
+      } catch (err) {
+        console.error('Failed to fetch drinks:', err);
+      }
     };
     fetchSuggestedItems();
   }, []);
@@ -108,31 +120,31 @@ export default function CartPage() {
   useEffect(() => {
     const pending = localStorage.getItem('pendingProduct');
     if (pending) {
-      try { dispatch(addItemCart(JSON.parse(pending))); } catch {}
+      try {
+        dispatch(addItemCart(JSON.parse(pending)));
+      } catch {}
       localStorage.removeItem('pendingProduct');
     }
   }, [dispatch]);
 
-  // Totals
+  // Totals (no packs/packaging)
   const itemsSubtotal = cartItems.reduce((t, it) => t + it.price * it.quantity, 0);
-  const foodItems = cartItems.filter((it) => !it.isDrink);
-  const packCount = foodItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-  const packagingCost = packCount * PACK_PRICE;
-
   const deliveryFee = Number(order.deliveryFee || 0);
-
-  // *** TAX = 2% of ITEMS ONLY (NO delivery, NO packaging) ***
-  const tax = itemsSubtotal * 0.02;
-
-  const subtotal = itemsSubtotal; // display as items-only
+  const tax = itemsSubtotal * 0.02; // 2% items-only
+  const subtotal = itemsSubtotal;
   const total = subtotal + deliveryFee + tax;
 
   useEffect(() => {
+    // force-packaging zeroed to avoid stale state
     dispatch(setOrderDetails({
-      subtotal, packagingCost, packagingCount: packCount,
-      deliveryFee, tax, total,
+      subtotal,
+      packagingCost: 0,
+      packagingCount: 0,
+      deliveryFee,
+      tax,
+      total,
     }));
-  }, [subtotal, packagingCost, packCount, deliveryFee, tax, total, dispatch]);
+  }, [subtotal, deliveryFee, tax, total, dispatch]);
 
   // Cart actions
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
@@ -140,13 +152,13 @@ export default function CartPage() {
   const handleRemove = (id) => dispatch(removeItemCart(id));
   const handleAddSuggestion = (item) => dispatch(addItemCart({ ...item, isDrink: true }));
 
-  // Always show top choice buttons. Bottom CTAs show only when address saved.
+  // CTAs
   const choosePickup = () => {
     dispatch(setOrderDetails({
       deliveryMethod: 'pickup',
       deliveryFee: 0,
       deliveryDistanceKm: 0,
-      addressSaved: false, // ensure Proceed/Edit stay hidden
+      addressSaved: false,
     }));
     router.push('/payment');
   };
@@ -180,29 +192,29 @@ export default function CartPage() {
           {cartItems.length > 0 && (
             <div className={`grid grid-cols-1 ${suggestedItems.length > 0 ? 'lg:grid-cols-2' : 'lg:grid-cols-1'} gap-10 mb-12 animate-fadeIn`}>
               <div className="space-y-6">
-                {cartItems.map((item) => {
-                  const isFood = !item.isDrink;
-                  return (
-                    <div key={item._id} className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300">
-                      {item.image && (
-                        <img src={getImageUrl(item.image)} alt={item.name}
-                          className="w-24 h-24 object-cover rounded-xl"
-                          onError={(e) => (e.currentTarget.src = '/placeholder.png')} />
-                      )}
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
-                        <p className="text-red-600 font-bold text-base">₦{item.price.toLocaleString()}</p>
-                        {isFood && <p className="text-xs text-gray-500 mt-1">Pack × {item.quantity}</p>}
-                        <div className="flex items-center gap-3 mt-2">
-                          <button onClick={() => handleDecrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Minus className="w-4 h-4" /></button>
-                          <span className="font-medium">{item.quantity}</span>
-                          <button onClick={() => handleIncrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Plus className="w-4 h-4" /></button>
-                        </div>
+                {cartItems.map((item) => (
+                  <div key={item._id} className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300">
+                    {item.image && (
+                      <img
+                        src={getImageUrl(item.image)}
+                        alt={item.name}
+                        className="w-24 h-24 object-cover rounded-xl"
+                        onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                      />
+                    )}
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
+                      <p className="text-red-600 font-bold text-base">₦{item.price.toLocaleString()}</p>
+                      {/* removed Pack × N line */}
+                      <div className="flex items-center gap-3 mt-2">
+                        <button onClick={() => handleDecrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Minus className="w-4 h-4" /></button>
+                        <span className="font-medium">{item.quantity}</span>
+                        <button onClick={() => handleIncrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Plus className="w-4 h-4" /></button>
                       </div>
-                      <button onClick={() => handleRemove(item._id)} className="text-gray-400 hover:text-red-600 transition"><Trash2 className="w-5 h-5" /></button>
                     </div>
-                  );
-                })}
+                    <button onClick={() => handleRemove(item._id)} className="text-gray-400 hover:text-red-600 transition"><Trash2 className="w-5 h-5" /></button>
+                  </div>
+                ))}
               </div>
 
               {suggestedItems.length > 0 && <DrinksSlider items={suggestedItems} onAdd={handleAddSuggestion} />}
@@ -225,19 +237,25 @@ export default function CartPage() {
               </div>
 
               <div className="space-y-4 text-gray-700">
-                <div className="flex justify-between"><span>Subtotal (items)</span><span>₦{itemsSubtotal.toLocaleString()}</span></div>
-                <div className="flex justify-between"><span>Packaging — Packs × {packCount} <span className="text-gray-500">(₦{PACK_PRICE.toLocaleString()} each)</span></span><span>₦{packagingCost.toLocaleString()}</span></div>
+                <div className="flex justify-between">
+                  <span>Subtotal (items)</span>
+                  <span>₦{itemsSubtotal.toLocaleString()}</span>
+                </div>
+                {/* removed Packaging row completely */}
                 <div className="flex justify-between">
                   <span>Delivery Fee {order.deliveryMethod === 'delivery' ? `(distance: ${order.deliveryDistanceKm || 0} km)` : '(pickup)'}</span>
                   <span>₦{deliveryFee.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between"><span>Tax (2% of items)</span><span>₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between">
+                  <span>Tax (2% of items)</span>
+                  <span>₦{tax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                </div>
                 <div className="border-t pt-4 flex justify-between font-extrabold text-xl text-gray-900">
-                  <span>Total</span><span className="text-red-600">₦{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  <span>Total</span>
+                  <span className="text-red-600">₦{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
-              {/* Bottom CTAs — ONLY when address has been saved */}
               {hasSavedAddress && (
                 <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button onClick={() => router.push('/checkout')} className="w-full rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[0.98] transition">

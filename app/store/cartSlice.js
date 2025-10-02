@@ -11,15 +11,15 @@ const cartSlice = createSlice({
   name: "Cart Item",
   initialState,
   reducers: {
-    // First add => 3 only for FOOD (isDrink !== true). Drinks always => 1
+    // First add => 1 for all items (min 3 packs is enforced at checkout UI, not here)
     addItemCart: (state, action) => {
       const item = action.payload;
       const existing = state.cartItem.find((p) => p._id === item._id);
       if (existing) {
         existing.quantity += 1;
       } else {
-        const isDrink = Boolean(item.isDrink === true);
-        state.cartItem.push({ ...item, quantity: isDrink ? 1 : 3 });
+        // why: prevent unexpected jump to 3 on the first add
+        state.cartItem.push({ ...item, quantity: 1 });
       }
     },
     removeItemCart: (state, action) => {

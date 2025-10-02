@@ -178,12 +178,7 @@ export default function LocationModal({ isOpen, onClose }) {
                   ✅ This meal is available in your location!
                 </p>
                 <div className="flex gap-4 mt-4">
-                  <button
-                    onClick={() => closeAndNavigate("/cart")}
-                    className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700"
-                  >
-                    Checkout
-                  </button>
+                  
                   <button
                     onClick={() => closeAndNavigate("/Detailspage")}
                     className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"

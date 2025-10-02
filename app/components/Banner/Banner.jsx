@@ -1,3 +1,5 @@
+
+// components/Banner.jsx
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -19,7 +21,7 @@ function Banner() {
   return (
     <section
       id="hero"
-      className={`relative w-full bg-gradient-to-br from-red-700 via-red-600 to-red-800 overflow-hidden flex items-center justify-center py-16 md:py-24 mt-20 transition-all duration-1000 ${
+      className={`relative w-full bg-gradient-to-br from-red-700 via-red-600 to-red-800 overflow-hidden flex items-center justify-center py-16 md:py-24 transition-all duration-1000 ${
         mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
       }`}
     >
