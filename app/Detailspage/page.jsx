@@ -150,7 +150,7 @@ const Detailspage = () => {
     else handleAddToCart(product);
   };
   const stopEnterSpace = (e) => {
-    if (e.key === "Enter" || e.key === " ") e.stopPropagation(); // why: prevent double fire from card
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation(); // prevent double fire from card
   };
 
   const renderCard = (product, idx) => {
@@ -194,33 +194,42 @@ const Detailspage = () => {
 
         <div className="px-4 pt-3 pb-4 mt-auto">
           {quantity > 0 ? (
-            <div className={`flex items-center justify-between rounded-xl p-1.5 bg-white border ${BORDER_SOFT}`}>
+            /* === Compact, no-wrap controls === */
+            <div
+              className={`flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 max-[403px]:gap-1 rounded-xl p-1.5 bg-white border ${BORDER_SOFT}`}
+            >
               <button
                 onClick={(e) => { e.stopPropagation(); handleDecrement(product._id); }}
                 onKeyDown={stopEnterSpace}
-                className="px-3 py-2 rounded-lg hover:bg-orange-50"
+                className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
-                <Minus className="w-5 h-5" />
+                <Minus className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
               </button>
-              <span className="min-w-8 text-center font-semibold">{quantity}</span>
+
+              <span className="min-w-8 text-center font-semibold max-[403px]:text-sm">
+                {quantity}
+              </span>
+
               <button
                 onClick={(e) => { e.stopPropagation(); handleIncrement(product._id); }}
                 onKeyDown={stopEnterSpace}
-                className="px-3 py-2 rounded-lg hover:bg-orange-50"
+                className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
               </button>
             </div>
           ) : (
+            /* === Compact, no-wrap CTA === */
             <button
               onClick={(e) => { e.stopPropagation(); handleCardClick(product); }}
               onKeyDown={stopEnterSpace}
-              className="w-full text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition shadow"
+              className="w-full text-white px-4 py-3 max-[403px]:px-3 max-[403px]:py-2 rounded-xl flex items-center justify-center gap-2 max-[403px]:gap-1 whitespace-nowrap transition shadow"
               style={{ backgroundColor: "oklch(85.2% 0.199 91.936)" }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "oklch(78% 0.199 91.936)")}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "oklch(85.2% 0.199 91.936)")}
             >
-              <ShoppingCart className="w-5 h-5" /> Add to Cart
+              <ShoppingCart className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
+              <span className="max-[403px]:text-sm">Add to Cart</span>
             </button>
           )}
         </div>

@@ -34,23 +34,15 @@ export const paginate = (arr, page, per) =>
 const clamp = (n, min, max) => Math.max(min, Math.min(n, max || min));
 const formatNaira = (n) => (typeof n === "number" ? n.toLocaleString("en-NG", { maximumFractionDigits: 0 }) : String(n || ""));
 
-/* Food-filled wallpaper: meat (drumstick), bowl, plates, spoon, pepper, tomatoes */
+/* Food-filled wallpaper */
 const PATTERN_SVG = encodeURIComponent(`
 <svg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'>
   <g stroke='#e7d8bf' stroke-width='2' fill='none' opacity='0.65' stroke-linecap='round' stroke-linejoin='round'>
-    <!-- bowl -->
-    <path d='M20 60h80a28 28 0 0 1-28 28H48A28 28 0 0 1 20 60z'/>
-    <path d='M15 60h90'/>
-    <!-- plate -->
+    <path d='M20 60h80a28 28 0 0 1-28 28H48A28 28 0 0 1 20 60z'/><path d='M15 60h90'/>
     <circle cx='160' cy='52' r='20'/>
-    <!-- spoon -->
-    <path d='M185 90c8 0 14 6 14 14s-6 14-14 14c-8 0-14-6-14-14s6-14 14-14z'/>
-    <path d='M185 118v22'/>
-    <!-- drumstick -->
-    <path d='M40 150c20-22 52-22 72 0-10 20-32 28-52 20l-10 10a8 8 0 1 1-11-11l10-10c-8-20 0-42  -9  -9'/>
-    <!-- tomato -->
+    <path d='M185 90c8 0 14 6 14 14s-6 14-14 14c-8 0-14-6-14-14s6-14 14-14z'/><path d='M185 118v22'/>
+    <path d='M40 150c20-22 52-22 72 0-10 20-32 28-52 20l-10 10a8 8 0 1 1-11-11l10-10'/>
     <circle cx='135' cy='150' r='12'/><path d='M135 138l4 -6m-4 6l-4 -6'/>
-    <!-- pepper -->
     <path d='M170 165c10-10 25-10 30 2-8 6-18 10-30 -2z'/>
   </g>
 </svg>
@@ -236,33 +228,38 @@ const FastFoodProducts = ({ onRequireLocation }) => {
           </span>
         </div>
 
-        {/* GAP BETWEEN IMAGE AND BUTTONS */}
+        {/* ACTIONS (no wrap at ≤403px) */}
         <div className="px-4 pt-3 pb-4 mt-auto">
           {quantity > 0 ? (
-            <div className={`flex items-center justify-between rounded-xl p-1.5 bg-white border ${BORDER_SOFT}`}>
+            <div
+              className={`flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 max-[403px]:gap-1 rounded-xl p-1.5 bg-white border ${BORDER_SOFT}`}
+            >
               <button
                 onClick={(e) => { e.stopPropagation(); handleDecrement(product._id); }}
-                className="px-3 py-2 rounded-lg hover:bg-orange-50"
+                className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
-                <Minus className="w-5 h-5" />
+                <Minus className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
               </button>
-              <span className="min-w-8 text-center font-semibold">{quantity}</span>
+              <span className="min-w-8 text-center font-semibold max-[403px]:text-sm">
+                {quantity}
+              </span>
               <button
                 onClick={(e) => { e.stopPropagation(); handleIncrement(product._id); }}
-                className="px-3 py-2 rounded-lg hover:bg-orange-50"
+                className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
               </button>
             </div>
           ) : (
             <button
               onClick={(e) => { e.stopPropagation(); handleCardClick(product); }}
-              className="w-full text-white px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition shadow"
+              className="w-full text-white px-4 py-3 max-[403px]:px-3 max-[403px]:py-2 rounded-xl flex items-center justify-center gap-2 max-[403px]:gap-1 whitespace-nowrap transition shadow"
               style={{ backgroundColor: "oklch(85.2% 0.199 91.936)" }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "oklch(78% 0.199 91.936)")}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "oklch(85.2% 0.199 91.936)")}
             >
-              <ShoppingCart className="w-5 h-5" /> Add to Cart
+              <ShoppingCart className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
+              <span className="max-[403px]:text-sm">Add to Cart</span>
             </button>
           )}
         </div>
