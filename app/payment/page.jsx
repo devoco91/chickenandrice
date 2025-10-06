@@ -18,9 +18,9 @@ import { QRCodeSVG } from 'qrcode.react'
 import { toast } from 'react-toastify'
 
 /* ======= Constants ======= */
-const ACCOUNT_NUMBER = '5102635557'
+const ACCOUNT_NUMBER = '8986626630'
 const ACCOUNT_NAME = 'ChickenAndRice Ltd'
-const BANK_NAME = 'Moniepoint'
+const BANK_NAME = 'Palmpay'
 const WHATSAPP_E164 = '2349040002074'
 const LS_KEY = 'paypage_v1'
 const SHARE_TTL_MS = 2 * 60 * 60 * 1000

@@ -254,9 +254,9 @@ const FastFoodProducts = ({ onRequireLocation }) => {
             <button
               onClick={(e) => { e.stopPropagation(); handleCardClick(product); }}
               className="w-full text-white px-4 py-3 max-[403px]:px-3 max-[403px]:py-2 rounded-xl flex items-center justify-center gap-2 max-[403px]:gap-1 whitespace-nowrap transition shadow"
-              style={{ backgroundColor: "oklch(85.2% 0.199 91.936)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "oklch(78% 0.199 91.936)")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "oklch(85.2% 0.199 91.936)")}
+              style={{ backgroundColor: "#2563eb" }} /* blue-600 */
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")} /* blue-700 */
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
             >
               <ShoppingCart className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
               <span className="max-[403px]:text-sm">Add to Cart</span>
@@ -309,7 +309,7 @@ const FastFoodProducts = ({ onRequireLocation }) => {
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">🔥 Popular Items</h2>
             <div className="text-sm text-gray-600">{(products.filter(isPopularItem)).length} item(s)</div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
             {paginate(popularProducts, popularPage, itemsPerPage).map((p, idx) => renderCard(p, idx))}
           </div>
           {popularTotalPages > 1 && (

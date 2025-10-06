@@ -146,6 +146,10 @@ export default function CartPage() {
     }));
   }, [subtotal, deliveryFee, tax, total, dispatch]);
 
+  // === Min selection enforcement (3 units) ===
+  const totalPacks = cartItems.reduce((s, i) => s + (i?.quantity || 0), 0);
+  const belowMin = totalPacks < 3;
+
   // Cart actions
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
   const handleDecrement = (id) => dispatch(decrementQuantity(id));
@@ -154,6 +158,7 @@ export default function CartPage() {
 
   // CTAs
   const choosePickup = () => {
+    if (belowMin) return; // safeguard
     dispatch(setOrderDetails({
       deliveryMethod: 'pickup',
       deliveryFee: 0,
@@ -162,7 +167,10 @@ export default function CartPage() {
     }));
     router.push('/payment');
   };
-  const chooseDelivery = () => { router.push('/checkout'); };
+  const chooseDelivery = () => {
+    if (belowMin) return; // safeguard
+    router.push('/checkout');
+  };
 
   const hasSavedAddress = order?.addressSaved === true;
 
@@ -171,9 +179,28 @@ export default function CartPage() {
       <NavbarDark />
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
         <div className="max-w-6xl mx-auto px-4 py-8 pt-28">
-          <h1 className="text-4xl font-extrabold text-gray-900 mb-10 tracking-tight">
+          {/* Always-visible Back to shopping */}
+          <div className="mb-4">
+            <Link
+              href="/Detailspage"
+              className="inline-flex items-center gap-2 text-white px-4 py-2 rounded-xl shadow hover:opacity-90 transition"
+              style={{ backgroundColor: '#2563eb' }} /* blue */
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Go back to shopping
+            </Link>
+          </div>
+
+          <h1 className="text-4xl font-extrabold text-gray-900 mb-6 tracking-tight">
             {cartItems.length === 0 ? '🛒 Your Cart is Empty' : '🛍️ Your Cart'}
           </h1>
+
+          {/* Warning when below min and cart not empty */}
+          {belowMin && cartItems.length > 0 && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 font-semibold">
+              Selected item(s) can’t be less than 3.
+            </div>
+          )}
 
           {/* Empty */}
           {cartItems.length === 0 && (
@@ -205,7 +232,6 @@ export default function CartPage() {
                     <div className="flex-1">
                       <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
                       <p className="text-red-600 font-bold text-base">₦{item.price.toLocaleString()}</p>
-                      {/* removed Pack × N line */}
                       <div className="flex items-center gap-3 mt-2">
                         <button onClick={() => handleDecrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Minus className="w-4 h-4" /></button>
                         <span className="font-medium">{item.quantity}</span>
@@ -217,6 +243,7 @@ export default function CartPage() {
                 ))}
               </div>
 
+              {/* Drinks should remain available regardless of min rule */}
               {suggestedItems.length > 0 && <DrinksSlider items={suggestedItems} onAdd={handleAddSuggestion} />}
             </div>
           )}
@@ -226,22 +253,27 @@ export default function CartPage() {
             <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-gray-200 p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-3">Order Summary</h2>
 
-              {/* Choice (always visible) */}
-              <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button onClick={choosePickup} className="w-full rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[0.98] transition">
-                  Pickup (₦0 delivery) → Pay Now
-                </button>
-                <button onClick={chooseDelivery} className="w-full rounded-xl bg-gradient-to-r from-red-500 to-red-700 text-white px-4 py-3 font-semibold hover:opacity-95 active:scale-[0.98] transition">
-                  Delivery → Add Address
-                </button>
-              </div>
+              {/* Choice – hidden when below minimum */}
+              {!belowMin ? (
+                <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button onClick={choosePickup} className="w-full rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[0.98] transition">
+                    Pickup (₦0 delivery) → Pay Now
+                  </button>
+                  <button onClick={chooseDelivery} className="w-full rounded-xl bg-gradient-to-r from-red-500 to-red-700 text-white px-4 py-3 font-semibold hover:opacity-95 active:scale-[0.98] transition">
+                    Delivery → Add Address
+                  </button>
+                </div>
+              ) : (
+                <div className="mb-6 rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 px-4 py-3 font-semibold">
+                  Add at least 3 items to continue to checkout.
+                </div>
+              )}
 
               <div className="space-y-4 text-gray-700">
                 <div className="flex justify-between">
                   <span>Subtotal (items)</span>
                   <span>₦{itemsSubtotal.toLocaleString()}</span>
                 </div>
-                {/* removed Packaging row completely */}
                 <div className="flex justify-between">
                   <span>Delivery Fee {order.deliveryMethod === 'delivery' ? `(distance: ${order.deliveryDistanceKm || 0} km)` : '(pickup)'}</span>
                   <span>₦{deliveryFee.toLocaleString()}</span>
@@ -256,7 +288,8 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {hasSavedAddress && (
+              {/* Saved address actions – hidden when below minimum */}
+              {!belowMin && hasSavedAddress && (
                 <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button onClick={() => router.push('/checkout')} className="w-full rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[0.98] transition">
                     Edit Delivery Address

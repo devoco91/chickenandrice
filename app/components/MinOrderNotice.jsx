@@ -17,7 +17,7 @@ export default function MinOrderNotice() {
       aria-live="polite"
     >
       <div className="max-w-7xl mx-auto px-4 py-2">
-        ✨ Minimum Order Notice: 3 packs or more.
+        ✨ Minimum Order Notice: 3 packs.
       </div>
     </div>
   );
