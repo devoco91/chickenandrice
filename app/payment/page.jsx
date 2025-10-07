@@ -1,5 +1,5 @@
 // ================================
-// app/payment/page.jsx — FINAL (robust PDF→OCR; smart amount detection; no debug)
+// app/payment/page.jsx — FINAL (robust PDF→OCR; line-aware amount detection; faded receipt boosts)
 // ================================
 'use client'
 
@@ -46,6 +46,7 @@ export default function PaymentPage() {
   const [proof, setProof] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [parsing, setParsing] = useState(false)
+  const [verifying, setVerifying] = useState(false) // bold "Verifying…" cue
   const [receiptText, setReceiptText] = useState('') // normalized
 
   // Amount & name checks
@@ -55,7 +56,7 @@ export default function PaymentPage() {
   const [accountNameOK, setAccountNameOK] = useState(false)
   const [accountNameSnippet, setAccountNameSnippet] = useState('')
 
-  // WhatsApp flow
+  // WhatsApp flow (optional)
   const [shareStartedAt, setShareStartedAt] = useState(null)
   const [shareConfirmed, setShareConfirmed] = useState(false)
 
@@ -157,18 +158,21 @@ export default function PaymentPage() {
     setAccountNameOK(nameRes.ok); setAccountNameSnippet(nameRes.snippet || '')
   }, [receiptText, normalizedAmount])
 
-  const rerunVerification = () => {
+  const rerunVerification = async () => {
     if (!proof) return toast.error('Upload payment receipt first.')
+    setVerifying(true)
+    await new Promise((r) => setTimeout(r, 50))
     const amt = detectReceiptAmount(receiptText, normalizedAmount)
     setReceiptAmountOK(amt.ok); setDetectedAmount(amt.bestAmount); setAmountSnippet(amt.snippet || '')
     const nameRes = verifyAccountNameStrict(receiptText)
     setAccountNameOK(nameRes.ok); setAccountNameSnippet(nameRes.snippet || '')
+    setVerifying(false)
     toast[amt.ok && nameRes.ok ? 'success' : 'error'](
       amt.ok && nameRes.ok ? 'Verified against receipt.' : 'Verification failed: amount and/or account name.'
     )
   }
 
-  /* ======= WhatsApp ======= */
+  /* ======= WhatsApp (optional) ======= */
   const isShareRecent = (ts) => !!ts && Date.now() - ts < SHARE_TTL_MS
   const shareToWhatsApp = async () => {
     if (!proof) return toast.error('Select a receipt file first.')
@@ -236,8 +240,6 @@ export default function PaymentPage() {
     if (!proof) return toast.error('Upload payment receipt to continue.')
     if (!receiptAmountOK) return toast.error('Receipt amount is less than the order total.')
     if (!accountNameOK) return toast.error('Receipt account name must include “chicken and rice”.')
-    if (!isShareRecent(shareStartedAt)) return toast.error('Please send your receipt to WhatsApp first.')
-    if (!shareConfirmed) return toast.error('Please confirm you have sent it on WhatsApp.')
 
     setIsPaying(true)
     try {
@@ -259,7 +261,7 @@ export default function PaymentPage() {
   return (
     <>
       <NavbarDark />
-      <div className="relative min-h-[100dvh] text-slate-100 bg-slate-950">
+      <div className="relative min-h:[100dvh] text-slate-100 bg-slate-950">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
@@ -333,14 +335,14 @@ export default function PaymentPage() {
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
               <div className="mt-6 overflow-hidden rounded-2xl border border-white bg-slate-900">
                 <div className="p-5 sm:p-6 space-y-1">
-                  <h3 className="flex items-center gap-2 text-base font-medium">
+                  <h3 className="flex items-center gap-2 text.base font-medium">
                     <Smartphone className="h-5 w-5" /> Transfer with your banking app
                   </h3>
                   <p className="text-sm text-slate-300">Use the details below. Include the reference in your narration/description.</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-2 sm:p-6">
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-white bg-slate-900 p-6">
+                  <div className="flex flex-col items.center justify-center rounded-2xl border border-white bg-slate-900 p-6">
                     <QRCodeSVG
                       value={`banktransfer://pay?acc=${ACCOUNT_NUMBER}&bank=${encodeURIComponent(BANK_NAME)}&name=${encodeURIComponent(ACCOUNT_NAME)}&amt=${Number(total || 0)}&ref=${paymentRef.current}`}
                       size={176}
@@ -352,7 +354,7 @@ export default function PaymentPage() {
                       <label htmlFor="ref" className="text-sm text-slate-200">Payment Reference</label>
                       <div className="mt-1 flex items-center gap-2">
                         <input id="ref" value={paymentRef.current} readOnly className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none" />
-                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
+                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg.black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
                           {copiedKey === 'ref' ? (<><Check className="h-4 w-4" /> Copied</>) : (<><ClipboardCopy className="h-4 w-4" /> Copy</>)}
                         </button>
                       </div>
@@ -439,8 +441,9 @@ export default function PaymentPage() {
 
                     {/* Parsing + verification status */}
                     <div className="text-xs">
-                      {parsing && <span className="text-slate-300">Reading receipt…</span>}
-                      {!parsing && (proof || receiptText) && (
+                      {parsing && <span className="font-semibold text-slate-200">Reading receipt…</span>}
+                      {verifying && !parsing && <span className="font-semibold text-slate-200">Verifying receipt…</span>}
+                      {!parsing && !verifying && (proof || receiptText) && (
                         <>
                           <div className="mt-1">
                             {receiptAmountOK ? (
@@ -489,30 +492,10 @@ export default function PaymentPage() {
                       )}
                     </div>
 
-                    {/* WhatsApp flow */}
+                    {/* WhatsApp flow (optional) */}
                     <button type="button" className="mt-2 h-10 w-full rounded-lg border border-white bg-black text-sm hover:bg-slate-800" onClick={shareToWhatsApp} aria-label="Send to WhatsApp" title="Send to WhatsApp">
                       Send to WhatsApp (+{WHATSAPP_E164})
                     </button>
-
-                    {/* Status + Confirm */}
-                    <div className="text-xs">
-                      {isShareRecent(shareStartedAt) ? (
-                        <div className="mt-2">
-                          <div className="text-emerald-300">WhatsApp opened. After sending, come back and confirm below.</div>
-                          <label className="mt-2 flex items-center gap-2">
-                            <input type="checkbox" checked={shareConfirmed} onChange={(e) => setShareConfirmed(e.target.checked)} className="h-3 w-3" />
-                            <span>I have sent the receipt via WhatsApp to +{WHATSAPP_E164}.</span>
-                          </label>
-                        </div>
-                      ) : (
-                        <div className="mt-2 text-slate-300">You must send your receipt to WhatsApp before completing the order.</div>
-                      )}
-                    </div>
-
-                    <p className="text-[11px] text-slate-400">
-                      On mobile devices, a native share dialog may open. On desktop, WhatsApp Web opens in the same tab.
-                      Use the Back button to return here after sending.
-                    </p>
                   </div>
 
                   <div className="flex items-start gap-3 rounded-xl border border-amber-500 bg-amber-900/30 p-3 text-amber-100">
@@ -586,9 +569,15 @@ function preprocessReceiptText(input) {
     .replace(/[\u00A0\u2007\u2009\u202F]/g, ' ')
     .replace(/\bN\s*G\s*N\b/gi, 'NGN')
     .replace(/₦\s*/g, '₦')
-    .replace(/\s+/g, ' ')
+    .replace(/\s+[|]\s+/g, ' | ')
+    .replace(/[ ]{2,}/g, ' ')
     .trim()
 
+  // Preserve line breaks where OCR produced them; also infer breaks around clear separators
+  s = s.replace(/([A-Za-z]:)\s+(?=[A-Za-z])/g, '$1 ') // keep labels tight
+       .replace(/(\r?\n)\s+/g, '$1')
+
+  // collapse spaced letters/digits (OCR artifacts)
   s = s.replace(/\b([A-Za-z])(?:\s+([A-Za-z]))+\b/g, (m) => m.replace(/\s+/g, ''))
        .replace(/\b(\d)(?:\s+(\d))+(\s*\.\s*\d{2})?\b/g, (m) => m.replace(/\s+/g, ''))
 
@@ -597,61 +586,107 @@ function preprocessReceiptText(input) {
     .replace(/\b(limited|ltd|plc|llc)\b/g, '')
     .replace(/[^a-z]/g, '')
 
+  // Keep a line index map for context-aware scoring
+  preprocessReceiptText._lines = splitLinesWithIndex(s)
+
   return s
 }
 
-/** Smart amount detector (prefers ₦/NGN + labels; ignores 10+ digit IDs; picks smallest ≥ order). */
+/** Context-scored amount detector (labels/currency preferred; IDs penalized; line-aware). */
 function detectReceiptAmount(text, orderAmount) {
   const src = String(text || '')
-  const labels = ['total','amount','amount due','amount paid','paid','credit','transfer amount','subtotal','balance','ngn','₦']
-  const window = 140
-
-  const candidates = []
   const hay = src.toLowerCase()
 
-  // labeled windows
-  for (const label of labels) {
-    let i = 0
-    while ((i = hay.indexOf(label, i)) !== -1) {
-      const seg = src.slice(Math.max(0, i - window), Math.min(src.length, i + window))
-      for (const t of collectMoneyTokens(seg)) candidates.push({ tok: t, ctx: 'labeled' })
-      i += label.length
-    }
+  const posLabels = [
+    'total amount','total','amount','amount due','amount paid','amount sent','paid','debit','credit',
+    'transfer amount','txn amount','transaction amount','subtotal','payment amount','amt','ngn','₦',
+    'cash received','you paid','customer paid','charges','charge','sum','vat','fee','grand total'
+  ]
+  const negLabels = [
+    'transaction no','transaction number','transaction id','trx id','rrn','stan','reference','ref',
+    'wallet','date','time','account number','recipient details','balance','session id','auth code',
+    'terminal','pos','card','pan','masked','rrn:','stan:','ref:','acct','account','acct no','account no'
+  ]
+
+  const lines = preprocessReceiptText._lines?.length ? preprocessReceiptText._lines : splitLinesWithIndex(src)
+
+  // Build line label maps
+  const posLineIdx = new Set()
+  const negLineIdx = new Set()
+  for (let i = 0; i < lines.length; i++) {
+    const L = lines[i].lower
+    for (const p of posLabels) if (L.includes(p)) { posLineIdx.add(i); break }
+    for (const n of negLabels) if (L.includes(n)) { negLineIdx.add(i); break }
   }
-  // any currency token
-  for (const t of collectMoneyTokens(src)) if (/[₦]|NGN/i.test(t)) candidates.push({ tok: t, ctx: 'currency' })
-  // cautious digit-only fallback (4–12 digits)
-  const rawDigits = canonicalDigits(src).match(/\b\d{4,12}\b/g) || []
-  for (const d of rawDigits) candidates.push({ tok: d, ctx: 'digits' })
+
+  // Windows for legacy scoring (keep)
+  const WINDOW = 180
+  const posWins = buildLabelWindows(hay, posLabels, WINDOW)
+  const negWins = buildLabelWindows(hay, negLabels, WINDOW)
+
+  const tokens = collectMoneyCandidatesWithIndex(src, lines)
 
   const o = Math.max(1, Math.floor(Math.abs(Number(orderAmount || 0))))
-  const parsed = []
-  const seen = new Set()
+  const candidates = []
 
-  for (const { tok, ctx } of candidates) {
+  const seen = new Set()
+  for (const { tok, idx, lineIndex } of tokens) {
     const n = parseMoneyTokenToNaira(tok)
     if (n == null) continue
     const whole = Math.floor(Math.abs(n))
-    const hasCur = /[₦]|NGN/i.test(tok)
-    if (!hasCur && String(whole).length >= 10) continue // drop long IDs
-    const key = `${whole}:${tok}`
+    const key = `${tok}@${idx}:${whole}`
     if (seen.has(key)) continue
     seen.add(key)
-    parsed.push({ val: whole, tok, ctx, cur: hasCur })
+
+    const hasCur = /[₦]|NGN/i.test(tok) || /\bk\b/i.test(tok)
+    const digitsLen = tok.replace(/[^\d]/g, '').length
+    const hasDecimals = /[.,]\d{2}\b/.test(tok)
+
+    let score = 0
+    // Currency & decimals
+    if (hasCur) score += 8
+    if (hasDecimals) score += 3
+
+    // Legacy windows
+    if (inAnyWindow(idx, posWins)) score += 5
+    if (inAnyWindow(idx, negWins)) score -= 8
+
+    // Line-aware: same/adjacent line to positive labels
+    if (posLineIdx.has(lineIndex)) score += 10
+    if (posLineIdx.has(lineIndex - 1) || posLineIdx.has(lineIndex + 1)) score += 4
+
+    // Negative lines & neighbors
+    if (negLineIdx.has(lineIndex)) score -= 10
+    if (negLineIdx.has(lineIndex - 1) || negLineIdx.has(lineIndex + 1)) score -= 5
+
+    // Penalize ID-looking numbers
+    if (!hasCur && digitsLen >= 9) score -= 10
+    if (!hasCur && digitsLen >= 10) score -= 14
+    if (digitsLen >= 12) score -= 10
+
+    // Very likely IDs if the same line contains typical ID labels
+    const L = lines[lineIndex]?.lower || ''
+    if (/\b(rrn|stan|ref|reference|account|acct|terminal|pos|auth)\b/.test(L)) score -= 12
+
+    // Reward reasonable magnitude relative to order
+    if (whole >= o) score += 2
+    if (whole < o * 0.5) score -= 2
+
+    candidates.push({ val: whole, tok, idx, score, hasCur, lineIndex })
   }
 
-  if (!parsed.length) return { ok: false, bestAmount: null, snippet: '' }
+  if (!candidates.length) return { ok: false, bestAmount: null, snippet: '' }
 
-  // Prefer the smallest ≥ order among currency/labeled; else ≥ order; else closest overall
-  const geOrder = parsed.filter(p => p.val >= o)
-  const geOrderStrong = geOrder.filter(p => p.cur || p.ctx === 'labeled')
-  const pick = (list) => list.sort((a, b) => a.val - b.val)[0]
-  let chosen = pick(geOrderStrong) || pick(geOrder) || parsed.sort((a,b) => Math.abs(a.val - o) - Math.abs(b.val - o))[0]
+  // Drop absurd outliers unless clearly currency-labeled
+  const filtered = candidates.filter(c => c.hasCur || c.val <= Math.max(o * 5, 2_000_000))
 
-  if (chosen && chosen.ctx === 'digits' && chosen.val > o * 4) chosen = null
+  // Sort by score desc, then value asc
+  filtered.sort((a, b) => (b.score - a.score) || (a.val - b.val))
 
-  const ok = !!chosen && chosen.val >= o
-  return { ok, bestAmount: chosen ? chosen.val : null, snippet: chosen ? chosen.tok : '' }
+  const top = (filtered.length ? filtered : candidates.sort((a,b)=>(b.score-a.score)||(a.val-b.val)))[0]
+  const ok = !!top && top.val >= o
+
+  return { ok, bestAmount: top ? top.val : null, snippet: top ? top.tok : '' }
 }
 
 /** Account-name verifier: tolerates &/and, punctuation, suffixes. */
@@ -668,28 +703,77 @@ function verifyAccountNameStrict(text) {
 }
 
 /* ===== Money parsing helpers ===== */
-function collectMoneyTokens(s) {
-  const out = new Set()
+
+// Collect tokens WITH indices + line index for context scoring.
+function collectMoneyCandidatesWithIndex(s, lines = null) {
+  const out = []
   const Usp = '\u00A0\u2007\u2009\u202F'
-  const curPat = new RegExp(`(?:₦|NGN|N)[${Usp}\\s]*[\\d${Usp}\\s.,]+(?:[.,]\\d{1,2})?`, 'gi')
-  ;(s.match(curPat) || []).forEach((m) => out.add(m))
-  const sepPat = new RegExp(`\\b\\d{1,3}(?:[${Usp}\\s.,]\\d{3})+(?:[.,]\\d{2})?\\b`, 'g')
-  ;(s.match(sepPat) || []).forEach((m) => out.add(m))
-  const decPat = /\b\d{4,}(?:[.,]\d{2})\b/g
-  ;(s.match(decPat) || []).forEach((m) => out.add(m))
-  const longPat = /\b\d{5,}\b/g
-  ;(s.match(longPat) || []).forEach((m) => out.add(m))
-  return Array.from(out)
+  const src = String(s || '')
+
+  const patterns = [
+    new RegExp(`(?:₦|NGN|N)[${Usp}\\s]*[\\d${Usp}\\s.,]+(?:[.,]\\d{1,2})?`, 'gi'), // currency lead
+    new RegExp(`\\b\\d{1,3}(?:[${Usp}\\s.,]\\d{3})+(?:[.,]\\d{2})?\\b`, 'g'),      // 1,234.56 / 1 234,56
+    /\b\d{4,}(?:[.,]\d{2})\b/g,                                                    // 5400.00 / 12345,67
+    /\b\d{5,}\b/g,                                                                  // long plain digits (IDs)
+    /\b\d{1,3}(?:[.,]\d{1,2})?\s*[kK]\b/g,                                         // 10k / 10.5k
+  ]
+
+  for (const pat of patterns) {
+    for (const m of src.matchAll(pat)) {
+      const tok = m[0]
+      const idx = m.index ?? -1
+      const li = lineIndexFromGlobalPos(idx, lines || splitLinesWithIndex(src))
+      out.push({ tok, idx, lineIndex: li })
+    }
+  }
+  return out
 }
+
+function buildLabelWindows(hay, labels, win) {
+  const wins = []
+  for (const label of labels) {
+    let i = 0
+    const needle = String(label).toLowerCase()
+    while ((i = hay.indexOf(needle, i)) !== -1) {
+      const start = Math.max(0, i - win)
+      const end = Math.min(hay.length, i + needle.length + win)
+      wins.push([start, end])
+      i += needle.length
+    }
+  }
+  return wins
+}
+function inAnyWindow(idx, wins) {
+  for (const [s, e] of wins) if (idx >= s && idx <= e) return true
+  return false
+}
+
 function parseMoneyTokenToNaira(tok) {
   if (!tok) return null
   let s = String(tok)
+
+  const hasK = /k$/i.test(s.replace(/\s+/g, ''))
+
+  // OCR confusions
+  s = s
     .replace(/[\u00A0\u2007\u2009\u202F]/g, '')
+    .replace(/[Oo]/g, '0')
+    .replace(/[Il|]/g, '1')
+    .replace(/S/g, '5')
+    .replace(/B/g, '8')
+    .replace(/Z/g, '2')
+
+  // Strip currency & normalize
+  s = s
     .replace(/\s+/g, '')
     .replace(/₦/g, '')
     .replace(/N\s*G\s*N/gi, 'NGN')
     .replace(/NGN/gi, '')
     .replace(/\bN\b/gi, '')
+
+  let multiplier = 1
+  if (hasK) { s = s.replace(/k$/i, ''); multiplier = 1000 }
+
   const hasComma = s.includes(','), hasDot = s.includes('.')
   if (hasComma && hasDot) {
     const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.')
@@ -697,9 +781,11 @@ function parseMoneyTokenToNaira(tok) {
     s = s.replace(decSep === '.' ? /,/g : /\./g, '')
     if (decSep === ',') s = s.replace(',', '.')
   } else s = s.replace(/,/g, '')
+
   const n = Number.parseFloat(s.replace(/[^\d.]/g, ''))
-  return Number.isFinite(n) ? n : null
+  return Number.isFinite(n) ? n * multiplier : null
 }
+
 function canonicalDigits(s) {
   return unicodeSpaceCollapse(s).normalize('NFKD')
     .replace(/\u0660/g, '0').replace(/\u0661/g, '1').replace(/\u0662/g, '2').replace(/\u0663/g, '3').replace(/\u0664/g, '4')
@@ -736,7 +822,7 @@ async function extractTextFromFile(file) {
         if (text.length >= 6) return { text, method: 'pdf-text' }
       } catch {}
 
-      // 2) Rasterize pages → OCR
+      // 2) Rasterize pages → OCR with aggressive enhancement
       const { text: ocr } = await ocrPdfAsImages(file, { aggressive: true })
       return { text: (ocr || '').trim(), method: 'pdf-ocr' }
     }
@@ -810,8 +896,8 @@ async function ocrPdfAsImages(file, { aggressive = true } = {}) {
     const data = await file.arrayBuffer()
     const doc = await pdfjsLib.getDocument({ data }).promise
 
-    const scales = aggressive ? [2.2, 3.0, 3.5, 4.0] : [2.2]
-    const thresholds = aggressive ? [undefined, 170, 185, 200] : [undefined, 190]
+    const scales = aggressive ? [2.0, 2.6, 3.2, 3.8, 4.4] : [2.2]
+    const thresholds = aggressive ? [undefined, 160, 175, 190, 205, 220] : [undefined, 190]
     const invertFlags = aggressive ? [false, true] : [false]
 
     const parts = []
@@ -827,8 +913,11 @@ async function ocrPdfAsImages(file, { aggressive = true } = {}) {
         for (const invert of invertFlags) {
           for (const th of thresholds) {
             const ctx2 = cloneOnNewCanvas(ctx, canvas.width, canvas.height)
-            enhanceCanvas(ctx2, canvas.width, canvas.height, { grayscale: true, contrast: 1.35, brightness: 1.1, threshold: th })
+
+            // Local contrast + sharpen for faded PDF text
+            enhanceCanvas(ctx2, canvas.width, canvas.height, { grayscale: true, contrast: 1.35, brightness: 1.1, threshold: th, sharpen: true, localContrast: true })
             if (invert) invertCanvas(ctx2, canvas.width, canvas.height)
+
             const blob = await canvasToPngBlob(ctx2.canvas)
             const txt = await ocrBlobWithTesseract(blob, Tesseract)
             if (txt) { pageText = txt; break }
@@ -868,6 +957,9 @@ async function ocrBlobWithTesseract(blob, Tesseract) {
   try {
     const { data } = await Tesseract.recognize(blob, 'eng', {
       tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
+      tessedit_pageseg_mode: '6',        // assume uniform block of text
+      user_defined_dpi: '320',           // helps clarity
+      preserve_interword_spaces: '1',
     })
     const txt = (data?.text || '').trim()
     return txt.length >= 6 ? txt : ''
@@ -891,16 +983,41 @@ async function ocrImageFile(file, opts = {}) {
     const mod = await import('tesseract.js')
     const Tesseract = mod.default ?? mod
     const bitmap = await createImageBitmap(file)
-    const { canvas, ctx } = fitBitmapToCanvas(bitmap, 2200)
-    if (opts.enhance) enhanceCanvas(ctx, canvas.width, canvas.height, { grayscale: true, contrast: 1.4, brightness: 1.12 })
-    else enhanceCanvas(ctx, canvas.width, canvas.height, { grayscale: true, contrast: 1.1, brightness: 1.05 })
-    const { data } = await Tesseract.recognize(canvas, 'eng', {
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
-    })
-    const text = (data?.text ?? '').trim()
+
+    // Work at higher resolution for faded text
+    const target = Math.max(2200, Math.min(3600, Math.max(bitmap.width, bitmap.height)))
+    const { canvas, ctx } = fitBitmapToCanvas(bitmap, target)
+
+    // two-stage: fast and enhanced passes, with rotations to recover orientation
+    const rotations = [0, 90, 180, 270]
+    let bestText = '', bestLen = 0
+
+    for (const angle of rotations) {
+      const { c, k } = angle ? rotateCanvas(ctx.canvas, angle) : { c: ctx.canvas, k: ctx }
+      const passOpts = opts.enhance
+        ? [{ grayscale: true, contrast: 1.4, brightness: 1.12, sharpen: true, localContrast: true },
+           { grayscale: true, contrast: 1.55, brightness: 1.18, threshold: 195, sharpen: true, localContrast: true, denoise: true }]
+        : [{ grayscale: true, contrast: 1.1, brightness: 1.05 }]
+
+      for (const p of passOpts) {
+        const k2 = cloneOnNewCanvas(k, c.width, c.height)
+        enhanceCanvas(k2, c.width, c.height, p)
+        const { data } = await Tesseract.recognize(k2.canvas, 'eng', {
+          tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
+          tessedit_pageseg_mode: '6',
+          user_defined_dpi: '320',
+          preserve_interword_spaces: '1',
+        })
+        const txt = (data?.text ?? '').trim()
+        if (txt.length > bestLen) { bestText = txt; bestLen = txt.length }
+        if (bestLen > 100 && /total|amount|paid|₦|ngn/i.test(bestText)) break
+      }
+      if (bestLen > 120 && /total|amount|paid|₦|ngn/i.test(bestText)) break
+    }
+
     canvas.width = canvas.height = 0
     bitmap.close?.()
-    return text
+    return bestText
   } catch { return '' }
 }
 function fitBitmapToCanvas(bitmap, maxSide = 2200) {
@@ -913,8 +1030,13 @@ function fitBitmapToCanvas(bitmap, maxSide = 2200) {
   ctx.drawImage(bitmap, 0, 0, w, h)
   return { canvas, ctx }
 }
-function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness = 1.0, threshold } = {}) {
-  const img = ctx.getImageData(0, 0, w, h), d = img.data
+
+/** Image enhancement: optional local contrast, sharpen, denoise, threshold for faded receipts. */
+function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness = 1.0, threshold, sharpen = false, localContrast = false, denoise = false } = {}) {
+  let img = ctx.getImageData(0, 0, w, h)
+  let d = img.data
+
+  // Grayscale + global contrast/brightness
   const c = Math.max(0, contrast), b = Math.max(0, brightness)
   const cf = (259 * (c * 255 + 255)) / (255 * (259 - c * 255))
   for (let i = 0; i < d.length; i += 4) {
@@ -923,9 +1045,159 @@ function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness
     r = cf * ((r * b) - 128) + 128
     g = cf * ((g * b) - 128) + 128
     bl = cf * ((bl * b) - 128) + 128
-    if (typeof threshold === 'number') { const t = (r + g + bl) / 3; const v = t >= threshold ? 255 : 0; r = g = bl = v }
     d[i] = clamp8(r); d[i + 1] = clamp8(g); d[i + 2] = clamp8(bl)
   }
   ctx.putImageData(img, 0, 0)
+
+  // Local contrast (tile-based CLAHE-lite) — helps faded backgrounds.
+  if (localContrast) {
+    applyLocalContrast(ctx, w, h, 64, 64, 0.75)
+  }
+
+  if (denoise) {
+    medianFilter(ctx, w, h)
+  }
+
+  if (typeof threshold === 'number') {
+    const im = ctx.getImageData(0, 0, w, h)
+    const dd = im.data
+    for (let i = 0; i < dd.length; i += 4) {
+      const y = (dd[i] + dd[i+1] + dd[i+2]) / 3
+      const v = y >= threshold ? 255 : 0
+      dd[i] = dd[i+1] = dd[i+2] = v
+    }
+    ctx.putImageData(im, 0, 0)
+  }
+
+  if (sharpen) {
+    // Mild sharpen to pop thin digits
+    convolve3x3(ctx, w, h, [0, -1, 0, -1, 5, -1, 0, -1, 0])
+  }
 }
 function clamp8(x) { return x < 0 ? 0 : x > 255 ? 255 : x | 0 }
+
+// --- Advanced image helpers (fast approximations) ---
+function applyLocalContrast(ctx, w, h, tileW = 64, tileH = 64, amount = 0.75) {
+  const img = ctx.getImageData(0, 0, w, h)
+  const data = img.data
+  for (let ty = 0; ty < h; ty += tileH) {
+    for (let tx = 0; tx < w; tx += tileW) {
+      const ex = Math.min(tx + tileW, w)
+      const ey = Math.min(ty + tileH, h)
+      let sum = 0, sum2 = 0, count = 0
+      for (let y = ty; y < ey; y++) {
+        for (let x = tx; x < ex; x++) {
+          const i = (y * w + x) * 4
+          const yv = (data[i] + data[i+1] + data[i+2]) / 3
+          sum += yv; sum2 += yv*yv; count++
+        }
+      }
+      const mean = sum / count
+      const variance = Math.max(1, (sum2 / count) - mean*mean)
+      const std = Math.sqrt(variance)
+      const scale = Math.min(3.0, 1 + amount * (128 / std))
+      for (let y = ty; y < ey; y++) {
+        for (let x = tx; x < ex; x++) {
+          const i = (y * w + x) * 4
+          let r = data[i], g = data[i+1], b = data[i+2]
+          let yv = (r + g + b) / 3
+          yv = clamp8((yv - mean) * scale + mean)
+          data[i] = data[i+1] = data[i+2] = yv
+        }
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0)
+}
+function convolve3x3(ctx, w, h, kernel) {
+  const src = ctx.getImageData(0, 0, w, h)
+  const dst = ctx.createImageData(w, h)
+  const s = src.data, d = dst.data
+  const k = kernel
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      let sum = 0, idx = (y * w + x) * 4
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const i = ((y + ky) * w + (x + kx)) * 4
+          const yv = (s[i] + s[i+1] + s[i+2]) / 3
+          sum += yv * k[(ky + 1) * 3 + (kx + 1)]
+        }
+      }
+      const v = clamp8(sum)
+      d[idx] = d[idx+1] = d[idx+2] = v
+      d[idx+3] = 255
+    }
+  }
+  ctx.putImageData(dst, 0, 0)
+}
+function medianFilter(ctx, w, h) {
+  const src = ctx.getImageData(0, 0, w, h)
+  const dst = ctx.createImageData(w, h)
+  const s = src.data, d = dst.data
+  const window = new Array(9)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      for (let ky = -1, n = 0; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++, n++) {
+          const i = ((y + ky) * w + (x + kx)) * 4
+          window[n] = (s[i] + s[i+1] + s[i+2]) / 3
+        }
+      }
+      window.sort((a,b)=>a-b)
+      const v = window[4] | 0
+      const idx = (y * w + x) * 4
+      d[idx] = d[idx+1] = d[idx+2] = v
+      d[idx+3] = 255
+    }
+  }
+  ctx.putImageData(dst, 0, 0)
+}
+function rotateCanvas(canvas, angleDeg) {
+  const rad = angleDeg * Math.PI / 180
+  const s = Math.abs(Math.sin(rad)), c = Math.abs(Math.cos(rad))
+  const w = canvas.width, h = canvas.height
+  const nw = Math.floor(w * c + h * s), nh = Math.floor(w * s + h * c)
+  const out = document.createElement('canvas'); out.width = nw; out.height = nh
+  const k = out.getContext('2d', { willReadFrequently: true })
+  k.translate(nw / 2, nh / 2)
+  k.rotate(rad)
+  k.drawImage(canvas, -w / 2, -h / 2)
+  return { c: out, k }
+}
+
+/* ---------- Line/Index utilities ---------- */
+function splitLinesWithIndex(s) {
+  const text = String(s || '')
+  const rawLines = text.split(/\r?\n/)
+  const lines = []
+  let pos = 0
+  for (let i = 0; i < rawLines.length; i++) {
+    const t = rawLines[i]
+    const start = pos
+    const end = start + t.length
+    lines.push({ start, end, text: t, lower: t.toLowerCase() })
+    pos = end + 1 // account for "\n"
+  }
+  // If the OCR had few newlines, also try to infer line-like chunks by separators
+  if (lines.length <= 1) {
+    const chunks = text.split(/(?: {2,}|\s\|\s|—|-{2,}|:{1}\s)/)
+    const alt = []; let p = 0
+    for (const ch of chunks) {
+      const idx = text.indexOf(ch, p)
+      if (idx === -1) continue
+      alt.push({ start: idx, end: idx + ch.length, text: ch, lower: ch.toLowerCase() })
+      p = idx + ch.length
+    }
+    return alt.length ? alt : lines
+  }
+  return lines
+}
+function lineIndexFromGlobalPos(idx, lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return 0
+  for (let i = 0; i < lines.length; i++) {
+    const { start, end } = lines[i]
+    if (idx >= start && idx < end + 1) return i
+  }
+  return lines.length - 1
+}

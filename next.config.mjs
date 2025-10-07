@@ -3,7 +3,7 @@ const nextConfig = {
   async rewrites() {
     if (process.env.NODE_ENV === "production") {
       return [
-        { source: "/api/:path*", destination: "https://fastfolderbackend.fly.devs/api/:path*" },
+        { source: "/api/:path*", destination: "https://fastfolderbackend.fly.dev/api/:path*" },
       ];
     }
     return [
@@ -34,7 +34,7 @@ const nextConfig = {
       "nkechiajaeroh.com",
       "mccormick.widen.net",
     ],
-    remotePatterns: [{ protocol: "https", hostname: "fastfolderbackend.fly.devs", pathname: "/**" }],
+    remotePatterns: [{ protocol: "https", hostname: "fastfolderbackend.fly.dev", pathname: "/**" }],
   },
 
   reactStrictMode: true,

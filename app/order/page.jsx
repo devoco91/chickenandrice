@@ -50,7 +50,7 @@ export default function OrderPage() {
     (async () => {
       try {
         const [rf, rp, rd] = await Promise.all([
-          // fetch("/api/foodpop", { cache: "no-store", signal: ac.signal }),
+          fetch("/api/foodpop", { cache: "no-store", signal: ac.signal }),
           fetch("/api/proteinpop", { cache: "no-store", signal: ac.signal }),
           fetch("/api/drinkpop", { cache: "no-store", signal: ac.Signal }),
         ]);
