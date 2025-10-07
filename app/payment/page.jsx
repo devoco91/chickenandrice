@@ -1,5 +1,5 @@
 // ================================
-// app/payment/page.jsx — FINAL (mobile-accurate OCR: EXIF rotation, mobile-safe canvas, Tesseract CDN paths)
+// app/payment/page.jsx — FINAL (robust PDF→OCR; line-aware amount detection; faded receipt boosts)
 // ================================
 'use client'
 
@@ -261,7 +261,7 @@ export default function PaymentPage() {
   return (
     <>
       <NavbarDark />
-      <div className="relative min-h-[100dvh] text-slate-100 bg-slate-950">
+      <div className="relative min-h:[100dvh] text-slate-100 bg-slate-950">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
@@ -335,14 +335,14 @@ export default function PaymentPage() {
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
               <div className="mt-6 overflow-hidden rounded-2xl border border-white bg-slate-900">
                 <div className="p-5 sm:p-6 space-y-1">
-                  <h3 className="flex items-center gap-2 text-base font-medium">
+                  <h3 className="flex items-center gap-2 text.base font-medium">
                     <Smartphone className="h-5 w-5" /> Transfer with your banking app
                   </h3>
                   <p className="text-sm text-slate-300">Use the details below. Include the reference in your narration/description.</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-2 sm:p-6">
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-white bg-slate-900 p-6">
+                  <div className="flex flex-col items.center justify-center rounded-2xl border border-white bg-slate-900 p-6">
                     <QRCodeSVG
                       value={`banktransfer://pay?acc=${ACCOUNT_NUMBER}&bank=${encodeURIComponent(BANK_NAME)}&name=${encodeURIComponent(ACCOUNT_NAME)}&amt=${Number(total || 0)}&ref=${paymentRef.current}`}
                       size={176}
@@ -354,7 +354,7 @@ export default function PaymentPage() {
                       <label htmlFor="ref" className="text-sm text-slate-200">Payment Reference</label>
                       <div className="mt-1 flex items-center gap-2">
                         <input id="ref" value={paymentRef.current} readOnly className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none" />
-                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
+                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg.black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
                           {copiedKey === 'ref' ? (<><Check className="h-4 w-4" /> Copied</>) : (<><ClipboardCopy className="h-4 w-4" /> Copy</>)}
                         </button>
                       </div>
@@ -421,7 +421,6 @@ export default function PaymentPage() {
                         <input
                           type="file"
                           accept="application/pdf,application/x-pdf,application/acrobat,application/vnd.pdf,text/pdf,image/pdf,image/*"
-                          capture="environment"
                           onChange={handleProofChange}
                           className="hidden"
                         />
@@ -570,8 +569,13 @@ function preprocessReceiptText(input) {
     .replace(/[\u00A0\u2007\u2009\u202F]/g, ' ')
     .replace(/\bN\s*G\s*N\b/gi, 'NGN')
     .replace(/₦\s*/g, '₦')
-    .replace(/\s+/g, ' ')
+    .replace(/\s+[|]\s+/g, ' | ')
+    .replace(/[ ]{2,}/g, ' ')
     .trim()
+
+  // Preserve line breaks where OCR produced them; also infer breaks around clear separators
+  s = s.replace(/([A-Za-z]:)\s+(?=[A-Za-z])/g, '$1 ') // keep labels tight
+       .replace(/(\r?\n)\s+/g, '$1')
 
   // collapse spaced letters/digits (OCR artifacts)
   s = s.replace(/\b([A-Za-z])(?:\s+([A-Za-z]))+\b/g, (m) => m.replace(/\s+/g, ''))
@@ -582,34 +586,51 @@ function preprocessReceiptText(input) {
     .replace(/\b(limited|ltd|plc|llc)\b/g, '')
     .replace(/[^a-z]/g, '')
 
+  // Keep a line index map for context-aware scoring
+  preprocessReceiptText._lines = splitLinesWithIndex(s)
+
   return s
 }
 
-/** Context-scored amount detector (labels/currency preferred; IDs penalized). */
+/** Context-scored amount detector (labels/currency preferred; IDs penalized; line-aware). */
 function detectReceiptAmount(text, orderAmount) {
   const src = String(text || '')
   const hay = src.toLowerCase()
 
   const posLabels = [
     'total amount','total','amount','amount due','amount paid','amount sent','paid','debit','credit',
-    'transfer amount','txn amount','transaction amount','subtotal','payment amount','amt','ngn','₦'
+    'transfer amount','txn amount','transaction amount','subtotal','payment amount','amt','ngn','₦',
+    'cash received','you paid','customer paid','charges','charge','sum','vat','fee','grand total'
   ]
   const negLabels = [
     'transaction no','transaction number','transaction id','trx id','rrn','stan','reference','ref',
-    'wallet','date','time','account number','recipient details','balance','session id'
+    'wallet','date','time','account number','recipient details','balance','session id','auth code',
+    'terminal','pos','card','pan','masked','rrn:','stan:','ref:','acct','account','acct no','account no'
   ]
-  const WINDOW = 180
 
+  const lines = preprocessReceiptText._lines?.length ? preprocessReceiptText._lines : splitLinesWithIndex(src)
+
+  // Build line label maps
+  const posLineIdx = new Set()
+  const negLineIdx = new Set()
+  for (let i = 0; i < lines.length; i++) {
+    const L = lines[i].lower
+    for (const p of posLabels) if (L.includes(p)) { posLineIdx.add(i); break }
+    for (const n of negLabels) if (L.includes(n)) { negLineIdx.add(i); break }
+  }
+
+  // Windows for legacy scoring (keep)
+  const WINDOW = 180
   const posWins = buildLabelWindows(hay, posLabels, WINDOW)
   const negWins = buildLabelWindows(hay, negLabels, WINDOW)
 
-  const tokens = collectMoneyCandidatesWithIndex(src)
+  const tokens = collectMoneyCandidatesWithIndex(src, lines)
 
   const o = Math.max(1, Math.floor(Math.abs(Number(orderAmount || 0))))
   const candidates = []
 
   const seen = new Set()
-  for (const { tok, idx } of tokens) {
+  for (const { tok, idx, lineIndex } of tokens) {
     const n = parseMoneyTokenToNaira(tok)
     if (n == null) continue
     const whole = Math.floor(Math.abs(n))
@@ -622,25 +643,47 @@ function detectReceiptAmount(text, orderAmount) {
     const hasDecimals = /[.,]\d{2}\b/.test(tok)
 
     let score = 0
-    if (hasCur) score += 6
-    if (hasDecimals) score += 2
-    if (inAnyWindow(idx, posWins)) score += 5
-    if (inAnyWindow(idx, negWins)) score -= 7
-    if (!hasCur && digitsLen >= 7) score -= 6
-    if (digitsLen >= 10) score -= 10
+    // Currency & decimals
+    if (hasCur) score += 8
+    if (hasDecimals) score += 3
 
-    candidates.push({ val: whole, tok, idx, score, hasCur })
+    // Legacy windows
+    if (inAnyWindow(idx, posWins)) score += 5
+    if (inAnyWindow(idx, negWins)) score -= 8
+
+    // Line-aware: same/adjacent line to positive labels
+    if (posLineIdx.has(lineIndex)) score += 10
+    if (posLineIdx.has(lineIndex - 1) || posLineIdx.has(lineIndex + 1)) score += 4
+
+    // Negative lines & neighbors
+    if (negLineIdx.has(lineIndex)) score -= 10
+    if (negLineIdx.has(lineIndex - 1) || negLineIdx.has(lineIndex + 1)) score -= 5
+
+    // Penalize ID-looking numbers
+    if (!hasCur && digitsLen >= 9) score -= 10
+    if (!hasCur && digitsLen >= 10) score -= 14
+    if (digitsLen >= 12) score -= 10
+
+    // Very likely IDs if the same line contains typical ID labels
+    const L = lines[lineIndex]?.lower || ''
+    if (/\b(rrn|stan|ref|reference|account|acct|terminal|pos|auth)\b/.test(L)) score -= 12
+
+    // Reward reasonable magnitude relative to order
+    if (whole >= o) score += 2
+    if (whole < o * 0.5) score -= 2
+
+    candidates.push({ val: whole, tok, idx, score, hasCur, lineIndex })
   }
 
   if (!candidates.length) return { ok: false, bestAmount: null, snippet: '' }
 
-  // Sort by score desc, then value asc
-  candidates.sort((a, b) => (b.score - a.score) || (a.val - b.val))
-
   // Drop absurd outliers unless clearly currency-labeled
   const filtered = candidates.filter(c => c.hasCur || c.val <= Math.max(o * 5, 2_000_000))
 
-  const top = (filtered.length ? filtered : candidates)[0]
+  // Sort by score desc, then value asc
+  filtered.sort((a, b) => (b.score - a.score) || (a.val - b.val))
+
+  const top = (filtered.length ? filtered : candidates.sort((a,b)=>(b.score-a.score)||(a.val-b.val)))[0]
   const ok = !!top && top.val >= o
 
   return { ok, bestAmount: top ? top.val : null, snippet: top ? top.tok : '' }
@@ -661,10 +704,11 @@ function verifyAccountNameStrict(text) {
 
 /* ===== Money parsing helpers ===== */
 
-// Collect tokens WITH indices for context scoring.
-function collectMoneyCandidatesWithIndex(s) {
+// Collect tokens WITH indices + line index for context scoring.
+function collectMoneyCandidatesWithIndex(s, lines = null) {
   const out = []
   const Usp = '\u00A0\u2007\u2009\u202F'
+  const src = String(s || '')
 
   const patterns = [
     new RegExp(`(?:₦|NGN|N)[${Usp}\\s]*[\\d${Usp}\\s.,]+(?:[.,]\\d{1,2})?`, 'gi'), // currency lead
@@ -675,10 +719,11 @@ function collectMoneyCandidatesWithIndex(s) {
   ]
 
   for (const pat of patterns) {
-    for (const m of String(s || '').matchAll(pat)) {
+    for (const m of src.matchAll(pat)) {
       const tok = m[0]
       const idx = m.index ?? -1
-      out.push({ tok, idx })
+      const li = lineIndexFromGlobalPos(idx, lines || splitLinesWithIndex(src))
+      out.push({ tok, idx, lineIndex: li })
     }
   }
   return out
@@ -777,12 +822,12 @@ async function extractTextFromFile(file) {
         if (text.length >= 6) return { text, method: 'pdf-text' }
       } catch {}
 
-      // 2) Rasterize pages → OCR
+      // 2) Rasterize pages → OCR with aggressive enhancement
       const { text: ocr } = await ocrPdfAsImages(file, { aggressive: true })
       return { text: (ocr || '').trim(), method: 'pdf-ocr' }
     }
 
-    // Images (HEIC/JPEG/PNG…)
+    // Images
     if (file.type?.startsWith?.('image/') || !file.type) {
       let text = await ocrImageFile(file, { enhance: false })
       if (text && text.trim().length >= 6) return { text: text.trim(), method: 'image-ocr-fast' }
@@ -797,6 +842,7 @@ async function extractTextFromFile(file) {
 
 /* ---------- Load pdf.js with robust fallbacks ---------- */
 async function loadPdfJs() {
+  // 1) local ESM build
   try {
     const pdfjsLib = await import('pdfjs-dist/build/pdf')
     try {
@@ -807,6 +853,7 @@ async function loadPdfJs() {
     }
     return { pdfjsLib }
   } catch {
+    // 2) CDN v4 runtime import (stable)
     try {
       const pdfjsLib = await import(/* webpackIgnore: true */ 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.mjs')
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs'
@@ -849,7 +896,7 @@ async function ocrPdfAsImages(file, { aggressive = true } = {}) {
     const data = await file.arrayBuffer()
     const doc = await pdfjsLib.getDocument({ data }).promise
 
-    const scales = aggressive ? [2.0, 2.6, 3.2, 3.8, 4.2] : [2.2]
+    const scales = aggressive ? [2.0, 2.6, 3.2, 3.8, 4.4] : [2.2]
     const thresholds = aggressive ? [undefined, 160, 175, 190, 205, 220] : [undefined, 190]
     const invertFlags = aggressive ? [false, true] : [false]
 
@@ -866,8 +913,11 @@ async function ocrPdfAsImages(file, { aggressive = true } = {}) {
         for (const invert of invertFlags) {
           for (const th of thresholds) {
             const ctx2 = cloneOnNewCanvas(ctx, canvas.width, canvas.height)
+
+            // Local contrast + sharpen for faded PDF text
             enhanceCanvas(ctx2, canvas.width, canvas.height, { grayscale: true, contrast: 1.35, brightness: 1.1, threshold: th, sharpen: true, localContrast: true })
             if (invert) invertCanvas(ctx2, canvas.width, canvas.height)
+
             const blob = await canvasToPngBlob(ctx2.canvas)
             const txt = await ocrBlobWithTesseract(blob, Tesseract)
             if (txt) { pageText = txt; break }
@@ -903,162 +953,90 @@ async function renderPageToCanvas(page, scale) {
 async function canvasToPngBlob(canvas) {
   return await new Promise((resolve) => canvas.toBlob((b) => resolve(b || new Blob()), 'image/png', 1.0))
 }
-
-/* ---------- Tesseract ---------- */
-const TESSERACT_CDN = 'https://unpkg.com/tesseract.js@4.0.2/dist/'
-function tessOpts() {
-  return {
-    tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
-    tessedit_pageseg_mode: '6',
-    user_defined_dpi: '320',
-    preserve_interword_spaces: '1',
-    workerPath: `${TESSERACT_CDN}worker.min.js`,
-    corePath: `${TESSERACT_CDN}tesseract-core.wasm.js`,
-    langPath: 'https://tessdata.projectnaptha.com/4.0.0',
-  }
-}
 async function ocrBlobWithTesseract(blob, Tesseract) {
   try {
-    const { data } = await Tesseract.recognize(blob, 'eng', tessOpts())
+    const { data } = await Tesseract.recognize(blob, 'eng', {
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
+      tessedit_pageseg_mode: '6',        // assume uniform block of text
+      user_defined_dpi: '320',           // helps clarity
+      preserve_interword_spaces: '1',
+    })
     const txt = (data?.text || '').trim()
     return txt.length >= 6 ? txt : ''
   } catch { return '' }
 }
+function cloneOnNewCanvas(srcCtx, w, h) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h
+  const dst = c.getContext('2d', { willReadFrequently: true })
+  dst.drawImage(srcCtx.canvas, 0, 0); return dst
+}
+function invertCanvas(ctx, w, h) {
+  const img = ctx.getImageData(0, 0, w, h)
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2] }
+  ctx.putImageData(img, 0, 0)
+}
 
-/* ---------- Image OCR (mobile-enhanced) ---------- */
+/* ---------- Image OCR ---------- */
 async function ocrImageFile(file, opts = {}) {
   try {
     const mod = await import('tesseract.js')
     const Tesseract = mod.default ?? mod
+    const bitmap = await createImageBitmap(file)
 
-    // EXIF orientation (JPEGs); avoids sideways/upside-down digits on mobile
-    const orientation = await readImageOrientation(file) // {angle, flipX}
-    const { canvas, ctx } = await drawFileToOrientedCanvas(file, orientation)
+    // Work at higher resolution for faded text
+    const target = Math.max(2200, Math.min(3600, Math.max(bitmap.width, bitmap.height)))
+    const { canvas, ctx } = fitBitmapToCanvas(bitmap, target)
 
-    // Mobile-safe target size
-    const mobile = isMobileDevice()
-    const targetMax = mobile ? 2400 : 3000
-    const resized = resizeCanvas(ctx.canvas, targetMax)
-
-    // Multi-rotation passes after EXIF correction
+    // two-stage: fast and enhanced passes, with rotations to recover orientation
     const rotations = [0, 90, 180, 270]
     let bestText = '', bestLen = 0
 
     for (const angle of rotations) {
-      const { c, k } = angle ? rotateCanvas(resized.canvas, angle) : resized
-
+      const { c, k } = angle ? rotateCanvas(ctx.canvas, angle) : { c: ctx.canvas, k: ctx }
       const passOpts = opts.enhance
-        ? [
-            { grayscale: true, contrast: 1.4, brightness: 1.12, sharpen: true, localContrast: true },
-            { grayscale: true, contrast: 1.55, brightness: 1.18, threshold: 195, sharpen: true, localContrast: true, denoise: true }
-          ]
+        ? [{ grayscale: true, contrast: 1.4, brightness: 1.12, sharpen: true, localContrast: true },
+           { grayscale: true, contrast: 1.55, brightness: 1.18, threshold: 195, sharpen: true, localContrast: true, denoise: true }]
         : [{ grayscale: true, contrast: 1.1, brightness: 1.05 }]
 
       for (const p of passOpts) {
         const k2 = cloneOnNewCanvas(k, c.width, c.height)
         enhanceCanvas(k2, c.width, c.height, p)
-        const { data } = await Tesseract.recognize(k2.canvas, 'eng', tessOpts())
+        const { data } = await Tesseract.recognize(k2.canvas, 'eng', {
+          tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
+          tessedit_pageseg_mode: '6',
+          user_defined_dpi: '320',
+          preserve_interword_spaces: '1',
+        })
         const txt = (data?.text ?? '').trim()
         if (txt.length > bestLen) { bestText = txt; bestLen = txt.length }
-        // Early exit if we already see strong amount cues
         if (bestLen > 100 && /total|amount|paid|₦|ngn/i.test(bestText)) break
       }
       if (bestLen > 120 && /total|amount|paid|₦|ngn/i.test(bestText)) break
     }
 
-    // Cleanup
-    resized.canvas.width = resized.canvas.height = 0
     canvas.width = canvas.height = 0
-
+    bitmap.close?.()
     return bestText
-  } catch {
-    return ''
-  }
+  } catch { return '' }
 }
-
-/* ---------- Canvas/bitmap helpers (EXIF + fallbacks) ---------- */
-function isMobileDevice() {
-  const ua = (navigator.userAgent || '').toLowerCase()
-  return /iphone|ipad|ipod|android|mobile/.test(ua)
-}
-
-async function drawFileToOrientedCanvas(file, orientation) {
-  // Try ImageBitmap, fall back to HTMLImageElement (HEIC/iOS)
-  let bmp = null, img = null
-  try { bmp = await createImageBitmap(file) } catch {}
-  if (!bmp) img = await loadImageFromBlob(file)
-
-  const srcW = bmp ? bmp.width : img.naturalWidth
-  const srcH = bmp ? bmp.height : img.naturalHeight
-
-  // Compute target canvas size after EXIF rotation
-  const rot = (orientation?.angle || 0) % 360
-  const flipX = !!orientation?.flipX
-  const swap = rot === 90 || rot === 270
-  const w = swap ? srcH : srcW
-  const h = swap ? srcW : srcH
+function fitBitmapToCanvas(bitmap, maxSide = 2200) {
+  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
+  const w = Math.max(1, Math.floor(bitmap.width * ratio))
+  const h = Math.max(1, Math.floor(bitmap.height * ratio))
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, w)
-  canvas.height = Math.max(1, h)
+  canvas.width = w; canvas.height = h
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
-
-  // Apply EXIF transform
-  ctx.save()
-  // Translate to center for rotation
-  ctx.translate(canvas.width / 2, canvas.height / 2)
-  if (flipX) ctx.scale(-1, 1)
-  ctx.rotate((rot * Math.PI) / 180)
-  // Draw, offset back by half of source
-  const dw = srcW
-  const dh = srcH
-  ctx.drawImage(bmp || img, -dw / 2, -dh / 2, dw, dh)
-  ctx.restore()
-
-  // Close bitmap to free memory
-  try { bmp && bmp.close?.() } catch {}
-
+  ctx.drawImage(bitmap, 0, 0, w, h)
   return { canvas, ctx }
 }
-function resizeCanvas(srcCanvas, maxSide) {
-  const w = srcCanvas.width, h = srcCanvas.height
-  const ratio = Math.min(1, maxSide / Math.max(w, h))
-  const tw = Math.max(1, Math.floor(w * ratio))
-  const th = Math.max(1, Math.floor(h * ratio))
-  if (ratio === 1) {
-    const ctx = srcCanvas.getContext('2d', { willReadFrequently: true })
-    return { canvas: srcCanvas, ctx }
-  }
-  const canvas = document.createElement('canvas')
-  canvas.width = tw; canvas.height = th
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  ctx.drawImage(srcCanvas, 0, 0, tw, th)
-  return { canvas, ctx }
-}
-function rotateCanvas(canvas, angleDeg) {
-  const rad = angleDeg * Math.PI / 180
-  const s = Math.abs(Math.sin(rad)), c = Math.abs(Math.cos(rad))
-  const w = canvas.width, h = canvas.height
-  const nw = Math.floor(w * c + h * s), nh = Math.floor(w * s + h * c)
-  const out = document.createElement('canvas'); out.width = nw; out.height = nh
-  const k = out.getContext('2d', { willReadFrequently: true })
-  k.translate(nw / 2, nh / 2)
-  k.rotate(rad)
-  k.drawImage(canvas, -w / 2, -h / 2)
-  return { c: out, k }
-}
-async function loadImageFromBlob(file) {
-  return await new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img) }
-    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e) }
-    img.src = url
-  })
-}
 
-/* ---------- Image enhancement ---------- */
+/** Image enhancement: optional local contrast, sharpen, denoise, threshold for faded receipts. */
 function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness = 1.0, threshold, sharpen = false, localContrast = false, denoise = false } = {}) {
-  const img = ctx.getImageData(0, 0, w, h), d = img.data
+  let img = ctx.getImageData(0, 0, w, h)
+  let d = img.data
+
+  // Grayscale + global contrast/brightness
   const c = Math.max(0, contrast), b = Math.max(0, brightness)
   const cf = (259 * (c * 255 + 255)) / (255 * (259 - c * 255))
   for (let i = 0; i < d.length; i += 4) {
@@ -1071,8 +1049,14 @@ function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness
   }
   ctx.putImageData(img, 0, 0)
 
-  if (localContrast) applyLocalContrast(ctx, w, h, 64, 64, 0.75)
-  if (denoise) medianFilter(ctx, w, h)
+  // Local contrast (tile-based CLAHE-lite) — helps faded backgrounds.
+  if (localContrast) {
+    applyLocalContrast(ctx, w, h, 64, 64, 0.75)
+  }
+
+  if (denoise) {
+    medianFilter(ctx, w, h)
+  }
 
   if (typeof threshold === 'number') {
     const im = ctx.getImageData(0, 0, w, h)
@@ -1085,9 +1069,14 @@ function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness
     ctx.putImageData(im, 0, 0)
   }
 
-  if (sharpen) convolve3x3(ctx, w, h, [0, -1, 0, -1, 5, -1, 0, -1, 0])
+  if (sharpen) {
+    // Mild sharpen to pop thin digits
+    convolve3x3(ctx, w, h, [0, -1, 0, -1, 5, -1, 0, -1, 0])
+  }
 }
 function clamp8(x) { return x < 0 ? 0 : x > 255 ? 255 : x | 0 }
+
+// --- Advanced image helpers (fast approximations) ---
 function applyLocalContrast(ctx, w, h, tileW = 64, tileH = 64, amount = 0.75) {
   const img = ctx.getImageData(0, 0, w, h)
   const data = img.data
@@ -1096,20 +1085,25 @@ function applyLocalContrast(ctx, w, h, tileW = 64, tileH = 64, amount = 0.75) {
       const ex = Math.min(tx + tileW, w)
       const ey = Math.min(ty + tileH, h)
       let sum = 0, sum2 = 0, count = 0
-      for (let y = ty; y < ey; y++) for (let x = tx; x < ex; x++) {
-        const i = (y * w + x) * 4
-        const yv = (data[i] + data[i+1] + data[i+2]) / 3
-        sum += yv; sum2 += yv*yv; count++
+      for (let y = ty; y < ey; y++) {
+        for (let x = tx; x < ex; x++) {
+          const i = (y * w + x) * 4
+          const yv = (data[i] + data[i+1] + data[i+2]) / 3
+          sum += yv; sum2 += yv*yv; count++
+        }
       }
       const mean = sum / count
       const variance = Math.max(1, (sum2 / count) - mean*mean)
       const std = Math.sqrt(variance)
       const scale = Math.min(3.0, 1 + amount * (128 / std))
-      for (let y = ty; y < ey; y++) for (let x = tx; x < ex; x++) {
-        const i = (y * w + x) * 4
-        let yv = (data[i] + data[i+1] + data[i+2]) / 3
-        yv = clamp8((yv - mean) * scale + mean)
-        data[i] = data[i+1] = data[i+2] = yv
+      for (let y = ty; y < ey; y++) {
+        for (let x = tx; x < ex; x++) {
+          const i = (y * w + x) * 4
+          let r = data[i], g = data[i+1], b = data[i+2]
+          let yv = (r + g + b) / 3
+          yv = clamp8((yv - mean) * scale + mean)
+          data[i] = data[i+1] = data[i+2] = yv
+        }
       }
     }
   }
@@ -1118,10 +1112,11 @@ function applyLocalContrast(ctx, w, h, tileW = 64, tileH = 64, amount = 0.75) {
 function convolve3x3(ctx, w, h, kernel) {
   const src = ctx.getImageData(0, 0, w, h)
   const dst = ctx.createImageData(w, h)
-  const s = src.data, d = dst.data, k = kernel
+  const s = src.data, d = dst.data
+  const k = kernel
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
-      let sum = 0
+      let sum = 0, idx = (y * w + x) * 4
       for (let ky = -1; ky <= 1; ky++) {
         for (let kx = -1; kx <= 1; kx++) {
           const i = ((y + ky) * w + (x + kx)) * 4
@@ -1130,7 +1125,6 @@ function convolve3x3(ctx, w, h, kernel) {
         }
       }
       const v = clamp8(sum)
-      const idx = (y * w + x) * 4
       d[idx] = d[idx+1] = d[idx+2] = v
       d[idx+3] = 255
     }
@@ -1144,9 +1138,11 @@ function medianFilter(ctx, w, h) {
   const window = new Array(9)
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
-      for (let ky = -1, n = 0; ky <= 1; ky++) for (let kx = -1; kx <= 1; kx++, n++) {
-        const i = ((y + ky) * w + (x + kx)) * 4
-        window[n] = (s[i] + s[i+1] + s[i+2]) / 3
+      for (let ky = -1, n = 0; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++, n++) {
+          const i = ((y + ky) * w + (x + kx)) * 4
+          window[n] = (s[i] + s[i+1] + s[i+2]) / 3
+        }
       }
       window.sort((a,b)=>a-b)
       const v = window[4] | 0
@@ -1157,65 +1153,51 @@ function medianFilter(ctx, w, h) {
   }
   ctx.putImageData(dst, 0, 0)
 }
+function rotateCanvas(canvas, angleDeg) {
+  const rad = angleDeg * Math.PI / 180
+  const s = Math.abs(Math.sin(rad)), c = Math.abs(Math.cos(rad))
+  const w = canvas.width, h = canvas.height
+  const nw = Math.floor(w * c + h * s), nh = Math.floor(w * s + h * c)
+  const out = document.createElement('canvas'); out.width = nw; out.height = nh
+  const k = out.getContext('2d', { willReadFrequently: true })
+  k.translate(nw / 2, nh / 2)
+  k.rotate(rad)
+  k.drawImage(canvas, -w / 2, -h / 2)
+  return { c: out, k }
+}
 
-/* ---------- EXIF (JPEG) orientation parsing ---------- */
-async function readImageOrientation(file) {
-  try {
-    // Only JPEGs commonly carry EXIF orientation
-    const isJpeg = /jpe?g$/i.test(file.name || '') || /image\/jpe?g/i.test(file.type || '')
-    if (!isJpeg) return { angle: 0, flipX: false }
-
-    const buf = await file.slice(0, Math.min(file.size, 128 * 1024)).arrayBuffer()
-    const view = new DataView(buf)
-    // JPEG SOI
-    if (view.getUint16(0) !== 0xFFD8) return { angle: 0, flipX: false }
-    let offset = 2
-    while (offset + 1 < view.byteLength) {
-      const marker = view.getUint16(offset); offset += 2
-      if (marker === 0xFFE1) { // APP1
-        const len = view.getUint16(offset); const exifStart = offset + 2
-        const header = getAscii(view, exifStart, 4)
-        if (header === 'Exif') {
-          const tiff = exifStart + 6
-          const little = view.getUint16(tiff) === 0x4949
-          const get16 = (o) => little ? view.getUint16(o, true) : view.getUint16(o, false)
-          const get32 = (o) => little ? view.getUint32(o, true) : view.getUint32(o, false)
-          const ifd0 = tiff + get32(tiff + 4)
-          const entries = get16(ifd0)
-          for (let i = 0; i < entries; i++) {
-            const entry = ifd0 + 2 + i * 12
-            const tag = get16(entry)
-            if (tag === 0x0112) {
-              const val = get16(entry + 8)
-              return exifOrientationToTransform(val)
-            }
-          }
-        }
-        offset = exifStart + len
-      } else if ((marker & 0xFF00) !== 0xFF00) break
-      else {
-        const len = view.getUint16(offset); offset += len
-      }
+/* ---------- Line/Index utilities ---------- */
+function splitLinesWithIndex(s) {
+  const text = String(s || '')
+  const rawLines = text.split(/\r?\n/)
+  const lines = []
+  let pos = 0
+  for (let i = 0; i < rawLines.length; i++) {
+    const t = rawLines[i]
+    const start = pos
+    const end = start + t.length
+    lines.push({ start, end, text: t, lower: t.toLowerCase() })
+    pos = end + 1 // account for "\n"
+  }
+  // If the OCR had few newlines, also try to infer line-like chunks by separators
+  if (lines.length <= 1) {
+    const chunks = text.split(/(?: {2,}|\s\|\s|—|-{2,}|:{1}\s)/)
+    const alt = []; let p = 0
+    for (const ch of chunks) {
+      const idx = text.indexOf(ch, p)
+      if (idx === -1) continue
+      alt.push({ start: idx, end: idx + ch.length, text: ch, lower: ch.toLowerCase() })
+      p = idx + ch.length
     }
-  } catch {}
-  return { angle: 0, flipX: false }
-}
-function exifOrientationToTransform(o) {
-  switch (o) {
-    case 2: return { angle: 0, flipX: true }
-    case 3: return { angle: 180, flipX: false }
-    case 4: return { angle: 180, flipX: true }
-    case 5: return { angle: 90, flipX: true }
-    case 6: return { angle: 90, flipX: false }
-    case 7: return { angle: 270, flipX: true }
-    case 8: return { angle: 270, flipX: false }
-    default: return { angle: 0, flipX: false }
+    return alt.length ? alt : lines
   }
+  return lines
 }
-function getAscii(view, start, len) {
-  let s = ''
-  for (let i = 0; i < len && start + i < view.byteLength; i++) {
-    s += String.fromCharCode(view.getUint8(start + i))
+function lineIndexFromGlobalPos(idx, lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return 0
+  for (let i = 0; i < lines.length; i++) {
+    const { start, end } = lines[i]
+    if (idx >= start && idx < end + 1) return i
   }
-  return s
+  return lines.length - 1
 }
