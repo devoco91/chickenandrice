@@ -15,6 +15,8 @@ import {
 } from './../../store/cartSlice';
 import { setOrderDetails } from './../../store/orderSlice';
 
+const MIN_ORDER_AMOUNT = 8850;
+
 const RAW_API = process.env.NEXT_PUBLIC_API_URL || '';
 const UPLOADS_BASE =
   process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
@@ -146,9 +148,8 @@ export default function CartPage() {
     }));
   }, [subtotal, deliveryFee, tax, total, dispatch]);
 
-  // === Min selection enforcement (3 units) ===
-  const totalPacks = cartItems.reduce((s, i) => s + (i?.quantity || 0), 0);
-  const belowMin = totalPacks < 3;
+  // === Min selection enforcement (₦8,850 items subtotal) ===
+  const belowMin = itemsSubtotal < MIN_ORDER_AMOUNT;
 
   // Cart actions
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
@@ -198,7 +199,7 @@ export default function CartPage() {
           {/* Warning when below min and cart not empty */}
           {belowMin && cartItems.length > 0 && (
             <div className="mb-6 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 font-semibold">
-              Selected item(s) can’t be less than 3.
+              Order subtotal can’t be less than ₦{MIN_ORDER_AMOUNT.toLocaleString()}.
             </div>
           )}
 
@@ -265,7 +266,7 @@ export default function CartPage() {
                 </div>
               ) : (
                 <div className="mb-6 rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 px-4 py-3 font-semibold">
-                  Add at least 3 items to continue to checkout.
+                  Add items worth at least ₦{MIN_ORDER_AMOUNT.toLocaleString()} to continue to checkout.
                 </div>
               )}
 

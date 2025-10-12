@@ -7,23 +7,39 @@ import { useRouter } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
 import { useSelector } from "react-redux";
 
+const MIN_ORDER_AMOUNT = 8850;
+
 function Navbar() {
   const cartItems = useSelector((s) => s.cart.cartItem);
+
   const totalPacks = useMemo(
     () =>
       Array.isArray(cartItems)
-        ? cartItems.reduce((s, i) => s + (i?.quantity || 0), 0)
+        ? cartItems.reduce((s, i) => s + (Number(i?.quantity) || 0), 0)
         : 0,
     [cartItems]
   );
+
+  const itemsSubtotal = useMemo(
+    () =>
+      Array.isArray(cartItems)
+        ? cartItems.reduce(
+            (s, i) =>
+              s + (Number(i?.price) || 0) * (Number(i?.quantity) || 0),
+            0
+          )
+        : 0,
+    [cartItems]
+  );
+
   const router = useRouter();
   const [message, setMessage] = useState("");
 
   const handleCartClick = () => {
-    if (totalPacks < 3) {
-      // why: show clear warning and auto-hide; anchored beneath icon on mobile
+    if (itemsSubtotal < MIN_ORDER_AMOUNT) {
+      // why: block until items subtotal reaches the minimum amount
       setMessage(
-        `⚠️ You currently have ${totalPacks} pack${totalPacks === 1 ? "" : "s"}. Minimum of 3 packs required before checkout.`
+        `⚠️ Subtotal is ₦${itemsSubtotal.toLocaleString()}. Minimum is ₦${MIN_ORDER_AMOUNT.toLocaleString()} before checkout.`
       );
       setTimeout(() => setMessage(""), 6000);
       return;
@@ -45,14 +61,14 @@ function Navbar() {
 
         {/* Right cluster: message (left) + cart button (right) */}
         <div className="flex items-center gap-3">
-          {/* Desktop/Tablet inline warning (unchanged) */}
+          {/* Desktop/Tablet inline warning */}
           {message && (
             <div className="hidden sm:block max-w-[420px] text-red-700 font-bold text-xs md:text-sm leading-snug text-right">
               {message}
             </div>
           )}
 
-          {/* Cart button + badge + Mobile toast */}
+          {/* Cart button + badges + Mobile toast */}
           <div className="relative">
             <button
               onClick={handleCartClick}
@@ -65,13 +81,22 @@ function Navbar() {
                 (e.currentTarget.style.backgroundColor = "oklch(85.2% 0.199 91.936)")
               }
               aria-label="Shopping cart"
+              title={`Items: ${totalPacks} • Subtotal: ₦${itemsSubtotal.toLocaleString()}`}
             >
               <ShoppingCart className="w-6 h-6" />
             </button>
 
+            {/* Count badge */}
             {totalPacks > 0 && (
               <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[11px] font-bold rounded-full min-w-5 h-5 px-[6px] flex items-center justify-center shadow-md">
                 {totalPacks}
+              </span>
+            )}
+
+            {/* Subtotal badge */}
+            {itemsSubtotal > 0 && (
+              <span className="absolute -bottom-2 left-0 bg-gray-900 text-white text-[10px] font-semibold rounded px-2 py-[2px] shadow-md">
+                ₦{itemsSubtotal.toLocaleString()}
               </span>
             )}
 

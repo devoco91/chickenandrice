@@ -16,6 +16,9 @@ import Navbar from "../components/Navbar/Navbar";
 import MinOrderNotice from "../components/MinOrderNotice";
 import { motion, AnimatePresence } from "framer-motion";
 
+/* Config */
+const MIN_ORDER_AMOUNT = 8850;
+
 /* API + image utils */
 const RAW = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/+$/, "");
 const API_BASE = /\/api(?:\/v\d+)?$/i.test(RAW) ? RAW : `${RAW}/api`;
@@ -82,12 +85,18 @@ const Detailspage = () => {
     () => (Array.isArray(cartItems) ? cartItems.reduce((s, i) => s + (i?.quantity || 0), 0) : 0),
     [cartItems]
   );
+  const itemsSubtotal = useMemo(
+    () => (Array.isArray(cartItems) ? cartItems.reduce((s, i) => s + (Number(i?.price) || 0) * (Number(i?.quantity) || 0), 0) : 0),
+    [cartItems]
+  );
+  const belowMin = itemsSubtotal < MIN_ORDER_AMOUNT;
+
   const [message, setMessage] = useState("");
 
   const handleCartFabClick = () => {
-    if (totalPacks < 3) {
+    if (belowMin) {
       setMessage(
-        `⚠️ You currently have ${totalPacks} item${totalPacks === 1 ? "" : "s"}. Minimum of 3 items required before checkout.`
+        `⚠️ Current items subtotal is ₦${itemsSubtotal.toLocaleString()}. Minimum order is ₦${MIN_ORDER_AMOUNT.toLocaleString()} to proceed to cart.`
       );
       setTimeout(() => setMessage(""), 6000);
       return;
@@ -301,7 +310,10 @@ const Detailspage = () => {
           aria-label="Open cart"
         >
           <ShoppingCart className="w-5 h-5" />
-          <span className="font-semibold">( {totalPacks} )</span>
+          {/* Show both count and subtotal on the button */}
+          <span className="font-semibold">
+            ( {totalPacks} | ₦{itemsSubtotal.toLocaleString()} )
+          </span>
           {totalPacks > 0 && (
             <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[11px] font-bold rounded-full min-w-5 h-5 px-[6px] flex items-center justify-center shadow-md">
               {totalPacks}
