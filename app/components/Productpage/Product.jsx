@@ -19,6 +19,7 @@ import { motion } from "framer-motion";
 import { API_BASE } from "../../../app/utils/apiBase";
 import { getImageUrl } from "../../../app/utils/img";
 import MinOrderNotice from "../MinOrderNotice";
+import SupportWhatsApp from "../SupportWhatsApp"; // <-- added
 
 /* Popular logic */
 export const isPopularItem = (p) => {
@@ -291,6 +292,9 @@ const FastFoodProducts = ({ onRequireLocation }) => {
             ))}
           </div>
         </div>
+
+        {/* Floating WhatsApp support */}
+        <SupportWhatsApp />
       </div>
     );
   }
@@ -331,6 +335,9 @@ const FastFoodProducts = ({ onRequireLocation }) => {
           )}
         </section>
       </div>
+
+      {/* Floating WhatsApp support */}
+      <SupportWhatsApp />
     </div>
   );
 };

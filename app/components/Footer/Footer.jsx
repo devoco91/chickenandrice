@@ -37,10 +37,10 @@ function Footer() {
                 <p className="text-sm">114, Iju Road, Ifako-Ijaiye, Lagos</p>
               </div>
 
-              <div className="text-sm">
+              {/* <div className="text-sm">
                 <p className="text-gray-600">We have outlets all over Lagos</p>
                 <p className="text-gray-500">Other Cities Loading...</p>
-              </div>
+              </div> */}
 
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -75,10 +75,10 @@ function Footer() {
                   <span>Mon - Sat:</span>
                   <span className="font-medium">9:00 AM – 10:00 PM</span>
                 </div>
-                <div className="flex justify-between">
+                {/* <div className="flex justify-between">
                   <span>Sunday:</span>
                   <span className="font-medium">12:00 PM – 10:00 PM</span>
-                </div>
+                </div> */}
               </div>
             </div>
           </div>

@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar/Navbar";
 import MinOrderNotice from "../components/MinOrderNotice";
 import { motion, AnimatePresence } from "framer-motion";
+import SupportWhatsApp from "../components/SupportWhatsApp"; // <-- added
 
 /* Config */
 const MIN_ORDER_AMOUNT = 8850;
@@ -191,6 +192,7 @@ const Detailspage = () => {
             className="w-full h-full object-cover"
             onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
           />
+        {/* Popular flag */}
           {isPopularItem(product) && (
             <span className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-semibold px-2 py-[2px] rounded">
               Popular
@@ -335,6 +337,9 @@ const Detailspage = () => {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Floating WhatsApp support */}
+      <SupportWhatsApp />
 
       {/* Optional: image zoom modal kept from prior versions if needed */}
       <AnimatePresence>{/* ... */}</AnimatePresence>
