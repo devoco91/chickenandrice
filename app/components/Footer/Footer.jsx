@@ -54,10 +54,10 @@ function Footer() {
                 <div className="flex items-center gap-3">
                   <span className="text-green-500 text-lg">✉️</span>
                   <Link
-                    href="mailto:mychickenandrice@gmail.com"
+                    href="mailto:chickenandriceltd@gmail.com"
                     className="hover:text-green-600 hover:underline transition-colors text-sm"
                   >
-                    @mychickenandrice
+                    chickenandriceltd@gmail.com
                   </Link>
                 </div>
               </div>
