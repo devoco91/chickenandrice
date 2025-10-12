@@ -1,80 +1,91 @@
 // components/SupportWhatsApp.jsx
 "use client";
 
-import React, { useMemo } from "react";
-import { useSelector } from "react-redux";
+import React, { useCallback } from "react";
 import { MessageCircle } from "lucide-react";
 
 const PHONE = "2349040002075";
 
-const formatCurrency = (n) =>
-  Number.isFinite(+n)
-    ? Number(n).toLocaleString("en-NG", { maximumFractionDigits: 0 })
-    : String(n || "");
-
 export default function SupportWhatsApp() {
-  const cartItems = useSelector((s) => s.cart.cartItem || []);
-
-  const { lines, subtotal } = useMemo(() => {
-    const s = Array.isArray(cartItems)
-      ? cartItems.reduce(
-          (acc, it) =>
-            acc +
-            (Number(it?.price) || 0) * (Number(it?.quantity) || 0),
-          0
-        )
-      : 0;
-    const topLines = (Array.isArray(cartItems) ? cartItems : [])
-      .filter((it) => (it?.quantity || 0) > 0)
-      .slice(0, 8)
-      .map(
-        (it) =>
-          `• ${it?.name ?? "Item"} x${it?.quantity} @ ₦${formatCurrency(
-            it?.price
-          )}`
-      );
-    return { lines: topLines, subtotal: s };
-  }, [cartItems]);
-
+  // Preset message (exactly as requested)
   const text = [
     "Hello 👋, I'd like to place a personalized order.",
-    "",
-    lines.length ? "My current cart:" : "I haven't added anything yet.",
-    ...(lines.length ? lines : []),
-    lines.length ? `Subtotal: ₦${formatCurrency(subtotal)}` : "",
-    "",
     "Here are my preferences / custom request:",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ].join("\n\n");
 
-  // wa.me link ensures direct chat open
-  const href = `https://wa.me/${PHONE}?text=${encodeURIComponent(text)}`;
+  // Primary web URL (works everywhere)
+  const webUrl = `https://wa.me/${PHONE}?text=${encodeURIComponent(text)}`;
+  // App deep-link (tries WhatsApp / WhatsApp Business first)
+  const appUrl = `whatsapp://send?phone=${PHONE}&text=${encodeURIComponent(text)}`;
+
+  const handleClick = useCallback(
+    (e) => {
+      e.preventDefault();
+      let fellBack = false;
+      const fallbackTimer = setTimeout(() => {
+        fellBack = true;
+        window.open(webUrl, "_blank", "noopener,noreferrer");
+      }, 350);
+      try {
+        window.location.href = appUrl; // attempt to open installed app
+      } catch {
+        if (!fellBack) {
+          clearTimeout(fallbackTimer);
+          window.open(webUrl, "_blank", "noopener,noreferrer");
+        }
+      }
+    },
+    [appUrl, webUrl]
+  );
 
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Chat on WhatsApp"
-      title="Personalize your order on WhatsApp"
-      className={[
-        "fixed z-50 right-5 bottom-5",
-        "group inline-flex items-center gap-2",
-        "rounded-full shadow-xl border border-emerald-200",
-        "bg-gradient-to-r from-emerald-500 to-emerald-700",
-        "text-white px-4 py-3",
-        "hover:opacity-95 active:scale-[0.98] transition",
-      ].join(" ")}
-    >
-      <MessageCircle className="w-5 h-5" />
-      <span className="font-semibold hidden sm:block">Want to personalize you order? Chat</span>
-      <span className="sr-only">WhatsApp</span>
-      {subtotal > 0 && (
-        <span className="ml-1 hidden md:inline-block text-xs bg-white/20 rounded-full px-2 py-[2px] font-medium">
-          Subtotal ₦{formatCurrency(subtotal)}
+    <>
+      <a
+        href={webUrl}
+        onClick={handleClick}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Chat on WhatsApp"
+        title="Personalize your order on WhatsApp"
+        className={[
+          "fixed z-50 right-5 bottom-5",
+          "group inline-flex items-center gap-3",
+          // Premium, more visible pill
+          "rounded-full px-5 py-3.5",
+          "text-white",
+          "shadow-[0_12px_30px_rgba(16,185,129,0.35)]",
+          "ring-2 ring-emerald-300/70",
+          "bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-700",
+          "hover:from-emerald-500 hover:via-emerald-600 hover:to-emerald-700",
+          "active:scale-[0.98] transition-transform duration-150",
+        ].join(" ")}
+      >
+        <span className="relative flex items-center justify-center w-8 h-8 rounded-full bg-white/15">
+          <MessageCircle className="w-[18px] h-[18px] text-white" />
+          {/* subtle pulse halo for visibility */}
+          <span className="absolute inset-0 rounded-full animate-[pulse_2.2s_ease-in-out_infinite] bg-emerald-300/0" />
         </span>
-      )}
-    </a>
+
+        {/* Visible on mobile + desktop */}
+        <span className="relative font-semibold text-sm sm:text-base">
+          Want to personalize your order?{" "}
+          <span className="shimmer underline decoration-white/70 underline-offset-4">
+            Chat
+          </span>
+        </span>
+      </a>
+
+      {/* Local shimmer animation (subtle, classy) */}
+      <style jsx>{`
+        @keyframes shimmerPulse {
+          0% { opacity: 0.9; text-shadow: 0 0 0 rgba(255,255,255,0); }
+          50% { opacity: 1; text-shadow: 0 0 10px rgba(255,255,255,0.55); }
+          100% { opacity: 0.95; text-shadow: 0 0 0 rgba(255,255,255,0); }
+        }
+        .shimmer {
+          animation: shimmerPulse 2.2s ease-in-out infinite;
+        }
+      `}</style>
+    </>
   );
 }
