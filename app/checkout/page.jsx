@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 
 /** Config */
-const SHOP = { lat: 6.63656, lng: 3.323821 };
+const SHOP = { lat: 6.651608, lng: 3.323317 };
+// 6.651608, 3.323317
 const RATE_PER_KM = 300;
 
 /** Distance fallback */
