@@ -1,4 +1,3 @@
-// /app/layout.js
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ReduxProvider from "./store/ReduxProvider";
@@ -9,6 +8,7 @@ import IOSA2HSBanner from "./components/IOSA2HSBanner";
 import LocalBusinessJsonLd from "./seo/LocalBusinessJsonLd"; // JSON-LD (safe, no UI impact)
 import "react-toastify/dist/ReactToastify.css";
 import { ToastContainer } from "react-toastify";
+import FacebookPixel from "./components/FacebookPixel"; // ✅ added
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,6 +22,8 @@ const geistMono = Geist_Mono({
 
 // Safe fallback if NEXT_PUBLIC_APP_URL isn’t set
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+// ✅ Pixel ID from env; harmless fallback
+const pixelId = process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID || "YOUR_PIXEL_ID";
 
 export const metadata = {
   metadataBase: new URL(appUrl),
@@ -76,7 +78,11 @@ export default function RootLayout({ children }) {
         {/* JSON-LD for Restaurant rich results (harmless script) */}
         <LocalBusinessJsonLd />
         {/* Redux store available everywhere */}
-        <ReduxProvider>{children}</ReduxProvider>
+        <ReduxProvider>
+          {/* ✅ Facebook Pixel globally available */}
+          <FacebookPixel pixelId={pixelId} />
+          {children}
+        </ReduxProvider>
 
         {/* iOS Safari hint (only shows on iOS + not already installed) */}
         <IOSA2HSBanner />

@@ -25,6 +25,32 @@ const WHATSAPP_E164 = '2349040002074'
 const LS_KEY = 'paypage_v1'
 const SHARE_TTL_MS = 2 * 60 * 60 * 1000
 
+/* === META (Pixel + CAPI) — safe additions, no logic change === */
+const SERVER_BASE =
+  process.env.NEXT_PUBLIC_SERVER_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  ''
+
+function _readCookie(name) {
+  if (typeof document === 'undefined') return ''
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)'))
+  return m ? decodeURIComponent(m[1]) : ''
+}
+function _getFbpFbc() {
+  const fbp = _readCookie('_fbp') || ''
+  let fbc = _readCookie('_fbc') || ''
+  try {
+    const url = new URL(window.location.href)
+    const fbclid = url.searchParams.get('fbclid')
+    if (fbclid && !fbc) {
+      const ts = Math.floor(Date.now() / 1000)
+      fbc = `fb.1.${ts}.${fbclid}`
+      document.cookie = `_fbc=${encodeURIComponent(fbc)}; path=/; max-age=${60 * 60 * 24 * 90}`
+    }
+  } catch {}
+  return { fbp, fbc }
+}
+
 /* ======= Utils ======= */
 const formatNGN = (n = 0) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2 }).format(Number(n || 0))
@@ -244,6 +270,44 @@ export default function PaymentPage() {
     setIsPaying(true)
     try {
       await submitOrderToBackend()
+
+      /* ===== META Pixel + Conversion API (added; safe; non-blocking) ===== */
+      try {
+        if (typeof window !== 'undefined' && window.fbq) {
+          window.fbq('track', 'Purchase', {
+            value: Number(total || 0),
+            currency: 'NGN',
+          })
+        }
+        const { fbp, fbc } = _getFbpFbc()
+        const endpoint = SERVER_BASE
+          ? `${SERVER_BASE.replace(/\/+$/,'')}/facebook/conversion`
+          : '/api/facebook/conversion'
+
+        const email =
+          order.email ||
+          order.customerEmail ||
+          (order.user && (order.user.email || order.userEmail)) ||
+          ''
+
+        await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_name: 'Purchase',
+            value: Number(total || 0),
+            currency: 'NGN',
+            event_source_url: typeof window !== 'undefined' ? window.location.href : '',
+            email,
+            fbp,
+            fbc,
+          }),
+        }).catch(() => {})
+      } catch (err) {
+        console.error('⚠️ Facebook tracking failed:', err)
+      }
+      /* ===== END META additions ===== */
+
       dispatch(clearCart()); dispatch(clearOrderDetails())
       toast.success('Order sent!', {
         autoClose: 1400,
@@ -261,7 +325,7 @@ export default function PaymentPage() {
   return (
     <>
       <NavbarDark />
-      <div className="relative min-h:[100dvh] text-slate-100 bg-slate-950">
+      <div className="relative min-h-[100dvh] text-slate-100 bg-slate-950">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
@@ -335,14 +399,14 @@ export default function PaymentPage() {
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
               <div className="mt-6 overflow-hidden rounded-2xl border border-white bg-slate-900">
                 <div className="p-5 sm:p-6 space-y-1">
-                  <h3 className="flex items-center gap-2 text.base font-medium">
+                  <h3 className="flex items-center gap-2 text-base font-medium">
                     <Smartphone className="h-5 w-5" /> Transfer with your banking app
                   </h3>
                   <p className="text-sm text-slate-300">Use the details below. Include the reference in your narration/description.</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-2 sm:p-6">
-                  <div className="flex flex-col items.center justify-center rounded-2xl border border-white bg-slate-900 p-6">
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-white bg-slate-900 p-6">
                     <QRCodeSVG
                       value={`banktransfer://pay?acc=${ACCOUNT_NUMBER}&bank=${encodeURIComponent(BANK_NAME)}&name=${encodeURIComponent(ACCOUNT_NAME)}&amt=${Number(total || 0)}&ref=${paymentRef.current}`}
                       size={176}
@@ -354,7 +418,7 @@ export default function PaymentPage() {
                       <label htmlFor="ref" className="text-sm text-slate-200">Payment Reference</label>
                       <div className="mt-1 flex items-center gap-2">
                         <input id="ref" value={paymentRef.current} readOnly className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none" />
-                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg.black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
+                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
                           {copiedKey === 'ref' ? (<><Check className="h-4 w-4" /> Copied</>) : (<><ClipboardCopy className="h-4 w-4" /> Copy</>)}
                         </button>
                       </div>
@@ -574,7 +638,7 @@ function preprocessReceiptText(input) {
     .trim()
 
   // Preserve line breaks where OCR produced them; also infer breaks around clear separators
-  s = s.replace(/([A-Za-z]:)\s+(?=[A-Za-z])/g, '$1 ') // keep labels tight
+  s = s.replace(/([A-Za-z]:)\s+(?=[A-Za-z])/g, '$1 ')
        .replace(/(\r?\n)\s+/g, '$1')
 
   // collapse spaced letters/digits (OCR artifacts)
@@ -711,11 +775,11 @@ function collectMoneyCandidatesWithIndex(s, lines = null) {
   const src = String(s || '')
 
   const patterns = [
-    new RegExp(`(?:₦|NGN|N)[${Usp}\\s]*[\\d${Usp}\\s.,]+(?:[.,]\\d{1,2})?`, 'gi'), // currency lead
-    new RegExp(`\\b\\d{1,3}(?:[${Usp}\\s.,]\\d{3})+(?:[.,]\\d{2})?\\b`, 'g'),      // 1,234.56 / 1 234,56
-    /\b\d{4,}(?:[.,]\d{2})\b/g,                                                    // 5400.00 / 12345,67
-    /\b\d{5,}\b/g,                                                                  // long plain digits (IDs)
-    /\b\d{1,3}(?:[.,]\d{1,2})?\s*[kK]\b/g,                                         // 10k / 10.5k
+    new RegExp(`(?:₦|NGN|N)[${Usp}\\s]*[\\d${Usp}\\s.,]+(?:[.,]\\d{1,2})?`, 'gi'),
+    new RegExp(`\\b\\d{1,3}(?:[${Usp}\\s.,]\\d{3})+(?:[.,]\\d{2})?\\b`, 'g'),
+    /\b\d{4,}(?:[.,]\d{2})\b/g,
+    /\b\d{5,}\b/g,
+    /\b\d{1,3}(?:[.,]\d{1,2})?\s*[kK]\b/g,
   ]
 
   for (const pat of patterns) {
@@ -842,7 +906,6 @@ async function extractTextFromFile(file) {
 
 /* ---------- Load pdf.js with robust fallbacks ---------- */
 async function loadPdfJs() {
-  // 1) local ESM build
   try {
     const pdfjsLib = await import('pdfjs-dist/build/pdf')
     try {
@@ -853,7 +916,6 @@ async function loadPdfJs() {
     }
     return { pdfjsLib }
   } catch {
-    // 2) CDN v4 runtime import (stable)
     try {
       const pdfjsLib = await import(/* webpackIgnore: true */ 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.mjs')
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs'
@@ -914,7 +976,6 @@ async function ocrPdfAsImages(file, { aggressive = true } = {}) {
           for (const th of thresholds) {
             const ctx2 = cloneOnNewCanvas(ctx, canvas.width, canvas.height)
 
-            // Local contrast + sharpen for faded PDF text
             enhanceCanvas(ctx2, canvas.width, canvas.height, { grayscale: true, contrast: 1.35, brightness: 1.1, threshold: th, sharpen: true, localContrast: true })
             if (invert) invertCanvas(ctx2, canvas.width, canvas.height)
 
@@ -957,8 +1018,8 @@ async function ocrBlobWithTesseract(blob, Tesseract) {
   try {
     const { data } = await Tesseract.recognize(blob, 'eng', {
       tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
-      tessedit_pageseg_mode: '6',        // assume uniform block of text
-      user_defined_dpi: '320',           // helps clarity
+      tessedit_pageseg_mode: '6',
+      user_defined_dpi: '320',
       preserve_interword_spaces: '1',
     })
     const txt = (data?.text || '').trim()
@@ -984,11 +1045,9 @@ async function ocrImageFile(file, opts = {}) {
     const Tesseract = mod.default ?? mod
     const bitmap = await createImageBitmap(file)
 
-    // Work at higher resolution for faded text
     const target = Math.max(2200, Math.min(3600, Math.max(bitmap.width, bitmap.height)))
     const { canvas, ctx } = fitBitmapToCanvas(bitmap, target)
 
-    // two-stage: fast and enhanced passes, with rotations to recover orientation
     const rotations = [0, 90, 180, 270]
     let bestText = '', bestLen = 0
 
@@ -1036,7 +1095,6 @@ function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness
   let img = ctx.getImageData(0, 0, w, h)
   let d = img.data
 
-  // Grayscale + global contrast/brightness
   const c = Math.max(0, contrast), b = Math.max(0, brightness)
   const cf = (259 * (c * 255 + 255)) / (255 * (259 - c * 255))
   for (let i = 0; i < d.length; i += 4) {
@@ -1049,7 +1107,6 @@ function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness
   }
   ctx.putImageData(img, 0, 0)
 
-  // Local contrast (tile-based CLAHE-lite) — helps faded backgrounds.
   if (localContrast) {
     applyLocalContrast(ctx, w, h, 64, 64, 0.75)
   }
@@ -1070,7 +1127,6 @@ function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness
   }
 
   if (sharpen) {
-    // Mild sharpen to pop thin digits
     convolve3x3(ctx, w, h, [0, -1, 0, -1, 5, -1, 0, -1, 0])
   }
 }
@@ -1175,11 +1231,10 @@ function splitLinesWithIndex(s) {
   for (let i = 0; i < rawLines.length; i++) {
     const t = rawLines[i]
     const start = pos
-    const end = start + t.length
+       const end = start + t.length
     lines.push({ start, end, text: t, lower: t.toLowerCase() })
     pos = end + 1 // account for "\n"
   }
-  // If the OCR had few newlines, also try to infer line-like chunks by separators
   if (lines.length <= 1) {
     const chunks = text.split(/(?: {2,}|\s\|\s|—|-{2,}|:{1}\s)/)
     const alt = []; let p = 0
