@@ -13,7 +13,7 @@ export async function GET(req, ctx) {
       ? (api.endsWith('/api') ? api.replace(/\/api$/, '/uploads') : api.replace(/\/$/, '') + '/uploads')
       : (process.env.NODE_ENV === 'development'
           ? 'http://localhost:5000/uploads'
-          : 'https://fastfolderbackend.fly.dev/uploads'));
+          : 'https://chickenandrice-server.fly.dev/uploads'));
 
   base = base.replace(/\/+$/, '');
   const target = `${base}/${encodeURI(rel)}`;
