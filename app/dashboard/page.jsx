@@ -2,16 +2,18 @@
 import { useState, useEffect } from "react"
 import NaijaStates from "naija-state-local-government"
 import { useRouter } from "next/navigation"
-import PopulateForm from "../components/PopulateForm"
 import Link from 'next/link'
 import { ArrowRightCircle } from 'lucide-react'
 
-const API_BASE = "/api"
+/* =========================
+   API + Upload base helpers
+   ========================= */
+const API_BASE = "/api" // relies on next.config rewrites in prod
 
 const RAW_API = process.env.NEXT_PUBLIC_API_URL || ''
 const UPLOADS_BASE =
   process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
-  (RAW_API ? RAW_API.replace(/\/api$/, '') + '/uploads' : '/uploads')
+  (RAW_API ? RAW_API.replace(/\/api(?:\/v\\d+)?$/i, '') + '/uploads' : '/uploads')
 
 const getImageUrl = (val) => {
   let s = val
@@ -24,11 +26,15 @@ const getImageUrl = (val) => {
   }
   if (!s) return "/fallback.jpg"
   if (/^https?:\/\//i.test(s)) return s
-  const cleaned = String(s).replace(/\\/g, "/").replace(/^\/+/, "").replace(/^uploads\//i, "")
+  // normalize things like "/uploads/foo", "uploads/foo", "foo", "foods/foo"
+  const cleaned = String(s)
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/^uploads\//i, "")
   return `${UPLOADS_BASE}/${encodeURI(cleaned)}`
 }
 
-/** ------- Helpers to normalize “popular” flag across shapes ------- **/
+/** ------- “Popular” normalization ------- **/
 const toBool = (v) =>
   v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true"
 
@@ -41,6 +47,32 @@ const isPopularItem = (p) =>
 const resolveCategoryLabel = (item) =>
   isPopularItem(item) ? "Popular" : (item?.category || "All Items")
 
+/* =========================
+   Small fetch helper (better errors)
+   ========================= */
+async function fetchJSON(input, init) {
+  const res = await fetch(input, init)
+  let data = null
+  const ct = res.headers.get('content-type') || ''
+  try {
+    data = ct.includes('application/json') ? await res.json() : await res.text()
+  } catch {
+    // ignore parse error; leave data as null
+  }
+
+  if (!res.ok) {
+    const msg =
+      (data && typeof data === 'object' && data.error) ||
+      (typeof data === 'string' && data) ||
+      `HTTP ${res.status}`
+    const err = new Error(msg)
+    err.status = res.status
+    err.body = data
+    throw err
+  }
+  return data
+}
+
 export default function Dashboard() {
   // ===== FOOD STATE =====
   const [foods, setFoods] = useState([])
@@ -50,7 +82,7 @@ export default function Dashboard() {
     name: "",
     description: "",
     price: "",
-    category: "All Items", // "Popular" | "All Items" (we derive isPopular from this)
+    category: "All Items",
     isAvailable: true,
     state: "Lagos",
     lgas: [],
@@ -84,21 +116,27 @@ export default function Dashboard() {
   // ===== FETCHERS =====
   const fetchFoods = async () => {
     try {
-      const res = await fetch(`${API_BASE}/foods`, { cache: "no-store" })
-      if (!res.ok) throw new Error("Failed to fetch foods")
-      setFoods(await res.json())
+      const data = await fetchJSON(`${API_BASE}/foods`, { cache: "no-store" })
+      setFoods(data)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[foods] fetched', data.length)
+      }
     } catch (err) {
-      setError(err.message)
+      console.error("fetchFoods failed:", err)
+      setError(err.message || 'Failed to fetch foods')
     }
   }
 
   const fetchDrinks = async () => {
     try {
-      const res = await fetch(`${API_BASE}/drinks`, { cache: "no-store" })
-      if (!res.ok) throw new Error("Failed to fetch drinks")
-      setDrinks(await res.json())
+      const data = await fetchJSON(`${API_BASE}/drinks`, { cache: "no-store" })
+      setDrinks(data)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[drinks] fetched', data.length)
+      }
     } catch (err) {
-      setDrinkError(err.message)
+      console.error("fetchDrinks failed:", err)
+      setDrinkError(err.message || 'Failed to fetch drinks')
     }
   }
 
@@ -141,33 +179,45 @@ export default function Dashboard() {
     // Derive boolean from category selector
     const isPopular = form.category === "Popular"
 
-    const formData = new FormData()
-    Object.entries(form).forEach(([key, val]) => {
-      if (Array.isArray(val)) {
-        formData.append(key, JSON.stringify(val))
-      } else {
-        formData.append(key, val)
-      }
-    })
-    // ✅ Ensure backend receives a real popular flag, regardless of the field name it expects
-    formData.set("isPopular", String(isPopular))
-    formData.set("popular", String(isPopular))   // compatibility
-    formData.set("featured", String(isPopular))  // compatibility
+    // Build FormData safely
+    const fd = new FormData()
+    fd.append("name", form.name)
+    fd.append("description", form.description || "")
+    fd.append("price", String(form.price || "")) // backend expects number; cast on server
+    fd.append("category", form.category || "All Items")
+    fd.append("isAvailable", String(!!form.isAvailable))
+    fd.append("state", form.state || "Lagos")
+    fd.append("lgas", JSON.stringify(Array.isArray(form.lgas) ? form.lgas : []))
+    // popular flags (backend will consume any of these)
+    fd.set("isPopular", String(isPopular))
+    fd.set("popular", String(isPopular))
+    fd.set("featured", String(isPopular))
 
-    if (imageFile) formData.append("imageFile", imageFile)
+    if (imageFile) fd.append("imageFile", imageFile)
 
     try {
-      const res = await fetch(url, {
+      const data = await fetchJSON(url, {
         method: editingFoodId ? "PUT" : "POST",
-        body: formData,
+        body: fd,
       })
-      if (!res.ok) throw new Error("Failed to save food")
-      await res.json()
-      fetchFoods()
-      setSuccess(editingFoodId ? "Food updated!" : "Food added!")
+
+      // Show success info incl. returned image path
+      setSuccess(
+        `${editingFoodId ? "Food updated!" : "Food added!"}${
+          data?.image ? `  (image: ${data.image})` : ""
+        }`
+      )
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[foods] save success:', data)
+      }
+
+      await fetchFoods()
       resetForm()
     } catch (err) {
-      setError(err.message)
+      // Surface detailed error
+      console.error("save food failed:", { message: err.message, status: err.status, body: err.body })
+      setError(err.message || 'Failed to save food')
     } finally {
       setLoading(false)
     }
@@ -195,14 +245,14 @@ export default function Dashboard() {
       name: food.name,
       description: food.description || "",
       price: food.price,
-      // ✅ Pre-fill category from any of the popular markers
+      // Pre-fill category from any popular marker
       category: isPopularItem(food) ? "Popular" : "All Items",
       isAvailable: food.isAvailable,
       state: "Lagos",
       lgas: food.lgas || [],
     })
     setImageFile(null)
-    setImagePreview(food.image ? food.image : null)
+    setImagePreview(food.image ? getImageUrl(food.image) : null)
     setEditingFoodId(food._id)
     setShowForm(true)
   }
@@ -210,10 +260,12 @@ export default function Dashboard() {
   const handleDeleteFood = async (id) => {
     if (!confirm("Delete this food?")) return
     try {
-      await fetch(`${API_BASE}/foods/${id}`, { method: "DELETE" })
-      fetchFoods()
+      await fetchJSON(`${API_BASE}/foods/${id}`, { method: "DELETE" })
+      await fetchFoods()
+      setSuccess("Food deleted")
     } catch (err) {
-      setError(err.message)
+      console.error("delete food failed:", err)
+      setError(err.message || 'Failed to delete food')
     }
   }
 
@@ -247,21 +299,27 @@ export default function Dashboard() {
 
     const fd = new FormData()
     fd.append("name", drinkForm.name)
-    fd.append("price", drinkForm.price)
+    fd.append("price", String(drinkForm.price || ""))
     if (drinkImageFile) fd.append("imageFile", drinkImageFile)
 
     try {
-      const res = await fetch(url, {
+      const data = await fetchJSON(url, {
         method: editingDrinkId ? "PUT" : "POST",
         body: fd,
       })
-      if (!res.ok) throw new Error("Failed to save drink")
-      await res.json()
-      fetchDrinks()
-      setDrinkSuccess(editingDrinkId ? "Drink updated!" : "Drink added!")
+      setDrinkSuccess(
+        `${editingDrinkId ? "Drink updated!" : "Drink added!"}${
+          data?.image ? `  (image: ${data.image})` : ""
+        }`
+      )
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[drinks] save success:', data)
+      }
+      await fetchDrinks()
       resetDrinkForm()
     } catch (err) {
-      setDrinkError(err.message)
+      console.error("save drink failed:", { message: err.message, status: err.status, body: err.body })
+      setDrinkError(err.message || 'Failed to save drink')
     } finally {
       setDrinkLoading(false)
     }
@@ -273,7 +331,7 @@ export default function Dashboard() {
       price: drink.price || "",
     })
     setDrinkImageFile(null)
-    setDrinkImagePreview(drink.image ? drink.image : null)
+    setDrinkImagePreview(drink.image ? getImageUrl(drink.image) : null)
     setEditingDrinkId(drink._id)
     setShowDrinkForm(true)
   }
@@ -281,10 +339,12 @@ export default function Dashboard() {
   const handleDeleteDrink = async (id) => {
     if (!confirm("Delete this drink?")) return
     try {
-      await fetch(`${API_BASE}/drinks/${id}`, { method: "DELETE" })
-      fetchDrinks()
+      await fetchJSON(`${API_BASE}/drinks/${id}`, { method: "DELETE" })
+      await fetchDrinks()
+      setDrinkSuccess("Drink deleted")
     } catch (err) {
-      setDrinkError(err.message)
+      console.error("delete drink failed:", err)
+      setDrinkError(err.message || 'Failed to delete drink')
     }
   }
 
@@ -303,19 +363,18 @@ export default function Dashboard() {
   const indexOfLast = currentPage * rowsPerPage
   const indexOfFirst = indexOfLast - rowsPerPage
   const currentFoods = foods.slice(indexOfFirst, indexOfLast)
-  const totalPages = Math.ceil(foods.length / rowsPerPage)
+  const totalPages = Math.ceil(Math.max(foods.length, 1) / Math.max(rowsPerPage, 1))
 
   // drinks pagination
   const drinkIndexOfLast = currentDrinkPage * drinkRowsPerPage
   const drinkIndexOfFirst = drinkIndexOfLast - drinkRowsPerPage
   const currentDrinks = drinks.slice(drinkIndexOfFirst, drinkIndexOfLast)
-  const drinkTotalPages = Math.ceil(drinks.length / drinkRowsPerPage)
+  const drinkTotalPages = Math.ceil(Math.max(drinks.length, 1) / Math.max(drinkRowsPerPage, 1))
 
   // ====== RETURN UI ======
   return (
     <div className="min-h-screen bg-red-50 p-6 text-gray-900">
       <h1 className="text-3xl font-bold mb-6 text-red-700">Dashboard</h1>
-
 
       <div className="relative inline-block mb-6">
         <Link
@@ -389,7 +448,7 @@ export default function Dashboard() {
 
           <input type="text" value="Lagos" disabled className="w-full border p-2 rounded bg-gray-100" />
 
-          {/* ✅ Dropdown with checkboxes for LGAs */}
+          {/* LGAs */}
           <div className="border rounded p-2 max-h-32 overflow-y-auto">
             {lgas.map((lga) => (
               <label key={lga} className="flex items-center space-x-2">
@@ -414,7 +473,12 @@ export default function Dashboard() {
 
           <input type="file" accept="image/*" onChange={handleFileChange} />
           {imagePreview && (
-            <img src={imagePreview} className="w-24 h-24 object-cover rounded mx-auto" />
+            <img
+              src={imagePreview}
+              className="w-24 h-24 object-cover rounded mx-auto"
+              alt="Preview"
+              onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+            />
           )}
 
           <div className="flex justify-center gap-2">
@@ -446,7 +510,12 @@ export default function Dashboard() {
 
           <input type="file" accept="image/*" onChange={handleDrinkFileChange} />
           {drinkImagePreview && (
-            <img src={drinkImagePreview} className="w-24 h-24 object-cover rounded mx-auto" />
+            <img
+              src={drinkImagePreview}
+              className="w-24 h-24 object-cover rounded mx-auto"
+              alt="Preview"
+              onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+            />
           )}
 
           <div className="flex justify-center gap-2">
@@ -465,7 +534,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {currentFoods.map((food) => (
           <div key={food._id} className="border rounded-2xl p-4 bg-white shadow h-full flex flex-col border-gray-200">
-            {food.image && <img src={getImageUrl(food.image)} className="w-full h-40 object-cover rounded mb-2" />}
+            {food.image && (
+              <img
+                src={getImageUrl(food.image)}
+                className="w-full h-40 object-cover rounded mb-2"
+                alt={food.name}
+                onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+              />
+            )}
             <h3 className="font-bold">{food.name}</h3>
             <p className="text-sm text-gray-600 flex-grow">{food.description}</p>
             <p className="text-red-600 font-semibold">₦{food.price}</p>
@@ -496,7 +572,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {currentDrinks.map((drink) => (
           <div key={drink._id} className="border rounded-2xl p-4 bg-white shadow h-full flex flex-col border-gray-200">
-            {drink.image && <img src={getImageUrl(drink.image)} className="w-full h-40 object-cover rounded mb-2" />}
+            {drink.image && (
+              <img
+                src={getImageUrl(drink.image)}
+                className="w-full h-40 object-cover rounded mb-2"
+                alt={drink.name}
+                onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+              />
+            )}
             <h3 className="font-bold">{drink.name}</h3>
             <p className="text-red-600 font-semibold">₦{drink.price}</p>
             <div className="flex gap-2 mt-2">
