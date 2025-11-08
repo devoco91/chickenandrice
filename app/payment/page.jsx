@@ -31,11 +31,15 @@ const SERVER_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   '';
 
+/* Cookie helpers for fbp/fbc */
 function _readCookie(name) {
   if (typeof document === 'undefined') return '';
-  const pair = document.cookie.split('; ').find(row => row.startsWith(`${name}=`));
-  return pair ? decodeURIComponent(pair.slice(name.length + 1)) : '';
+  // Escape regex meta in cookie name once
+  const safeName = name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1');
+  const m = document.cookie.match(new RegExp('(?:^|; )' + safeName + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : '';
 }
+
 
 function _getFbpFbc() {
   const fbp = _readCookie('_fbp') || '';
@@ -219,6 +223,8 @@ export default function PaymentPage() {
   };
 
   async function submitOrderToBackend() {
+    const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/,''); // e.g. https://your-backend/api
+
     const payload = {
       items: cartItems.map((item) => ({ foodId: item._id, quantity: item.quantity, name: item.name, price: item.price, isDrink: !!item.isDrink })),
       deliveryMethod: order.deliveryMethod || 'pickup',
@@ -240,7 +246,12 @@ export default function PaymentPage() {
       paymentMethod: tab,
     };
 
-    const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    // 👉 Call your real backend API (prevents 404 on the frontend domain)
+    const res = await fetch(`${API_BASE}/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || data.message || `Failed to submit order (status ${res.status}).`);
 
@@ -274,23 +285,16 @@ export default function PaymentPage() {
 
       /* ===== META Pixel + Conversion API (non-blocking) ===== */
       try {
-        const eventId = `${paymentRef.current}-${Date.now()}`; // ✅ dedup key
-
         if (typeof window !== 'undefined' && window.fbq) {
-          window.fbq(
-            'track',
-            'Purchase',
-            {
-              value: Number(total || 0),
-              currency: 'NGN',
-            },
-            { eventID: eventId } // ✅ pass eventID to pixel
-          );
+          window.fbq('track', 'Purchase', {
+            value: Number(total || 0),
+            currency: 'NGN',
+          });
         }
         const { fbp, fbc } = _getFbpFbc();
-        const endpoint = SERVER_BASE
-          ? `${SERVER_BASE.replace(/\/+$/,'')}/api/facebook`
-          : '/api/facebook';
+
+        // Your Next API route lives at app/api/facebook/route.js -> /api/facebook
+        const endpoint = '/api/facebook';
 
         const email =
           order.email ||
@@ -309,7 +313,6 @@ export default function PaymentPage() {
             email,
             fbp,
             fbc,
-            event_id: eventId, // ✅ same id to CAPI
             test_event_code: process.env.NEXT_PUBLIC_FB_TEST_EVENT_CODE || ''
           }),
         }).catch(() => {});
@@ -944,7 +947,6 @@ async function loadPdfJs() {
       const worker = new Worker(new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url), { type: 'module' });
       pdfjsLib.GlobalWorkerOptions.workerPort = worker;
     } catch {
-      // CDN fallback
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '5.4.149'}/build/pdf.worker.min.mjs`;
     }
     return { pdfjsLib };
@@ -982,7 +984,6 @@ async function ocrPdfAsImagesFast(file, { timeLeft }) {
     const data = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data }).promise;
 
-    // Reduced set: fast, sufficient for receipts
     const scales = [2.4, 3.0];
     const thresholds = [undefined, 190];
     const invertFlags = [false];
@@ -1061,11 +1062,10 @@ async function ocrImageFileFast(file, { timeLeft }) {
     const Tesseract = mod.default ?? mod;
     const bitmap = await createImageBitmap(file);
 
-    // Ensure min-side large enough so Tesseract doesn’t complain
     const target = Math.min(3200, Math.max(1600, Math.max(bitmap.width, bitmap.height)));
     const { canvas, ctx } = fitBitmapToCanvas(bitmap, target);
 
-    const rotations = [0, 90]; // cut down to keep fast
+    const rotations = [0, 90];
     let bestText = '', bestScore = 0;
 
     for (const angle of rotations) {
@@ -1083,7 +1083,7 @@ async function ocrImageFileFast(file, { timeLeft }) {
         const txt = await ocrBlobWithTesseract(await canvasToPngBlob(k2.canvas), Tesseract, timeLeft());
         const score = scoreText(txt);
         if (score > bestScore) { bestScore = score; bestText = txt; }
-        if (bestScore >= 100) break; // early exit if good enough
+        if (bestScore >= 100) break;
       }
       if (bestScore >= 100) break;
     }
@@ -1095,7 +1095,7 @@ async function ocrImageFileFast(file, { timeLeft }) {
 }
 function fitBitmapToCanvas(bitmap, maxSide = 2200) {
   const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const w = Math.max(8, Math.floor(bitmap.width * ratio));  // min 8px to avoid tiny-line warnings
+  const w = Math.max(8, Math.floor(bitmap.width * ratio));
   const h = Math.max(8, Math.floor(bitmap.height * ratio));
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;

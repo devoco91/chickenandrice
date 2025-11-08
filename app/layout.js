@@ -8,7 +8,7 @@ import IOSA2HSBanner from "./components/IOSA2HSBanner";
 import LocalBusinessJsonLd from "./seo/LocalBusinessJsonLd";
 import "react-toastify/dist/ReactToastify.css";
 import { ToastContainer } from "react-toastify";
-import FacebookPixel from "./components/FacebookPixel"; // ✅ single pixel loader
+import FacebookPixel from "./components/FacebookPixel";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,9 +20,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Safe fallback if NEXT_PUBLIC_APP_URL isn’t set
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-// ✅ Pixel ID from env; harmless fallback
 const pixelId = process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID || "YOUR_PIXEL_ID";
 
 export const metadata = {
@@ -73,29 +71,27 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="antialiased">
-        {/* JSON-LD for Restaurant rich results (harmless script) */}
         <LocalBusinessJsonLd />
 
-        {/* Redux store everywhere */}
         <ReduxProvider>
-          {/* ✅ Facebook Pixel globally available (single init, localhost-safe) */}
+          {/* ✅ Single guarded pixel init (no duplicates) */}
           <FacebookPixel pixelId={pixelId} />
           {children}
         </ReduxProvider>
 
-        {/* iOS Safari hint (only shows on iOS + not already installed) */}
         <IOSA2HSBanner />
-
-        {/* Install button (Android/Desktop; hidden if already installed) */}
         <InstallPWAButton className="fixed bottom-4 right-4 px-4 py-2 rounded-xl bg-gray-900 text-white shadow" />
-
-        {/* Registers /sw.js (safe) */}
         <PWARegister />
 
-        {/* Toasts */}
-        <ToastContainer position="top-center" newestOnTop pauseOnHover closeOnClick draggable />
+        <ToastContainer
+          position="top-center"
+          newestOnTop
+          pauseOnHover
+          closeOnClick
+          draggable
+        />
 
-        {/* Lazy load Google Maps API */}
+        {/* Lazy-load Google Maps */}
         <Script
           src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
           strategy="lazyOnload"

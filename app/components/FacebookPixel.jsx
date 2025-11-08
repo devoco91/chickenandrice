@@ -1,14 +1,11 @@
-// ============================================================================
-// File: app/components/FacebookPixel.jsx
-// ============================================================================
 'use client';
 
 import { useEffect } from 'react';
 
 /**
- * Loads Meta Pixel once per app lifetime.
- * Prevents: duplicate init, conflicting versions, repeated script loads.
- * Respects NEXT_PUBLIC_DISABLE_PIXEL_ON_LOCALHOST.
+ * Single, guarded Meta Pixel init.
+ * - Prevents duplicate inits & conflicting versions
+ * - Respects NEXT_PUBLIC_DISABLE_PIXEL_ON_LOCALHOST=1
  */
 export default function FacebookPixel({ pixelId }) {
   useEffect(() => {
@@ -19,18 +16,20 @@ export default function FacebookPixel({ pixelId }) {
       process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID ||
       process.env.NEXT_PUBLIC_FB_PIXEL_ID;
 
-    const disableOnLocal =
+    if (!PIXEL_ID) return;
+
+    const disableLocal =
       String(process.env.NEXT_PUBLIC_DISABLE_PIXEL_ON_LOCALHOST || '1') === '1';
-    const isLocal =
+
+    const isLocalhost =
       window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1';
 
-    if (!PIXEL_ID || (disableOnLocal && isLocal)) return;
+    if (disableLocal && isLocalhost) return;
 
-    // Track which Pixel IDs we've already inited
+    // Track which Pixel IDs we’ve inited
     window.__fbPixelIds = window.__fbPixelIds || new Set();
 
-    // If this ID is already initialized, do nothing
     if (window.__fbPixelIds.has(PIXEL_ID)) return;
 
     // Create fbq shim if not present
@@ -49,7 +48,7 @@ export default function FacebookPixel({ pixelId }) {
       window.fbq = fbq;
     }
 
-    // If the script tag already exists, reuse it; else add it once
+    // Load SDK once
     if (!document.getElementById('fb-pixel-sdk')) {
       const s = document.createElement('script');
       s.async = true;
@@ -59,18 +58,14 @@ export default function FacebookPixel({ pixelId }) {
     }
 
     try {
-      // Guard against accidental re-init on HMR
-      if (!window.__fbPixelIds.has(PIXEL_ID)) {
-        window.fbq('init', PIXEL_ID);
-        window.fbq('track', 'PageView');
-        window.__fbPixelIds.add(PIXEL_ID);
-      }
+      window.fbq('init', PIXEL_ID);
+      window.fbq('track', 'PageView');
+      window.__fbPixelIds.add(PIXEL_ID);
     } catch {
       // ignore
     }
   }, [pixelId]);
 
-  // NoScript fallback (harmless)
   const id =
     pixelId ||
     process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID ||
