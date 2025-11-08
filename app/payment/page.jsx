@@ -1,5 +1,5 @@
 // ================================
-// app/payment/page.jsx — FINAL (robust PDF→OCR; line-aware amount detection; faded receipt boosts)
+// File: app/payment/page.jsx
 // ================================
 'use client'
 
@@ -25,11 +25,12 @@ const WHATSAPP_E164 = '2349040002074'
 const LS_KEY = 'paypage_v1'
 const SHARE_TTL_MS = 2 * 60 * 60 * 1000
 
-/* === META (Pixel + CAPI) — safe additions, no logic change === */
-const SERVER_BASE =
+/* === META (Pixel + CAPI) — safe additions === */
+const SERVER_BASE = (
   process.env.NEXT_PUBLIC_SERVER_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
   ''
+).replace(/\/+$/, '')
 
 function _readCookie(name) {
   if (typeof document === 'undefined') return ''
@@ -72,8 +73,8 @@ export default function PaymentPage() {
   const [proof, setProof] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [parsing, setParsing] = useState(false)
-  const [verifying, setVerifying] = useState(false) // bold "Verifying…" cue
-  const [receiptText, setReceiptText] = useState('') // normalized
+  const [verifying, setVerifying] = useState(false)
+  const [receiptText, setReceiptText] = useState('')
 
   // Amount & name checks
   const [receiptAmountOK, setReceiptAmountOK] = useState(false)
@@ -265,13 +266,13 @@ export default function PaymentPage() {
     if (isPaying) return
     if (!proof) return toast.error('Upload payment receipt to continue.')
     if (!receiptAmountOK) return toast.error('Receipt amount is less than the order total.')
-    if (!accountNameOK) return toast.error('Receipt account name must include “chicken and rice”.')
+    if (!accountNameOK) return toast.error('Receipt account name must include “chicken”, “rice”, or “chicken and rice”.')
 
     setIsPaying(true)
     try {
       await submitOrderToBackend()
 
-      /* ===== META Pixel + Conversion API (added; safe; non-blocking) ===== */
+      /* ===== META Pixel + Conversion API ===== */
       try {
         if (typeof window !== 'undefined' && window.fbq) {
           window.fbq('track', 'Purchase', {
@@ -281,7 +282,7 @@ export default function PaymentPage() {
         }
         const { fbp, fbc } = _getFbpFbc()
         const endpoint = SERVER_BASE
-          ? `${SERVER_BASE.replace(/\/+$/,'')}/facebook/conversion`
+          ? `${SERVER_BASE}/api/facebook/conversion`
           : '/api/facebook/conversion'
 
         const email =
@@ -533,9 +534,9 @@ export default function PaymentPage() {
 
                           <div className="mt-2">
                             {accountNameOK ? (
-                              <span className="text-emerald-400">✓ Account name contains “chicken and rice”.</span>
+                              <span className="text-emerald-400">✓ Account name contains “chicken”, “rice”, or “chicken and rice”.</span>
                             ) : (
-                              <span className="text-rose-300">Account name not confirmed. Receipt must include “chicken and rice”.</span>
+                              <span className="text-rose-300">Account name not confirmed. Receipt must include “chicken”, “rice”, or “chicken and rice”.</span>
                             )}
                             {accountNameSnippet && (
                               <div className="mt-1">
@@ -612,7 +613,7 @@ export default function PaymentPage() {
                 <h3 className="text-lg font-semibold">Finalizing your order…</h3>
                 <p className="mt-1 text-sm text-slate-300">Please hold while we verify and finalize your order.</p>
                 <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-700">
-                  <div className="h-full" style={{ width: `${progress}%`, transition: 'width 120ms linear', background: 'linear-gradient(90deg, #2563eb, #4f46e5)' }} />
+                  <div className="h-full" style={{ width: `${progress}%`, transition: 'width 120ms linear' }} />
                 </div>
               </motion.div>
             </motion.div>
@@ -753,14 +754,23 @@ function detectReceiptAmount(text, orderAmount) {
   return { ok, bestAmount: top ? top.val : null, snippet: top ? top.tok : '' }
 }
 
-/** Account-name verifier: tolerates &/and, punctuation, suffixes. */
+/** Account-name verifier: tolerates &/and, punctuation, suffixes, and also accepts "chicken" or "rice". */
 function verifyAccountNameStrict(text) {
   const raw = String(text || '')
   const lettersOnly = preprocessReceiptText._lettersOnly || raw.toLowerCase().replace(/[^a-z]/g, '')
-  const ok = lettersOnly.includes('chickenandrice') || lettersOnly.includes('chickenrice')
+  const ok =
+    lettersOnly.includes('chickenandrice') ||
+    /chicken[\s\-_.]*and[\s\-_.]*rice/i.test(raw) ||
+    lettersOnly.includes('chicken') ||
+    lettersOnly.includes('rice')
+
   let snippet = ''
   try {
-    const m = raw.match(/chicken[\s\-_.]*(&|and)?[\s\-_.]*rice/i) || raw.match(/chickenandrice/i)
+    const m =
+      raw.match(/chicken[\s\-_.]*and[\s\-_.]*rice/i) ||
+      raw.match(/chickenandrice/i) ||
+      raw.match(/\bchicken\b/i) ||
+      raw.match(/\brice\b/i)
     if (m && m[0]) snippet = m[0]
   } catch {}
   return { ok, snippet }
@@ -961,6 +971,7 @@ async function ocrPdfAsImages(file, { aggressive = true } = {}) {
     const scales = aggressive ? [2.0, 2.6, 3.2, 3.8, 4.4] : [2.2]
     const thresholds = aggressive ? [undefined, 160, 175, 190, 205, 220] : [undefined, 190]
     const invertFlags = aggressive ? [false, true] : [false]
+    const psms = aggressive ? [6, 4, 11] : [6]
 
     const parts = []
     const maxPages = Math.min(doc.numPages || 0, aggressive ? 10 : 5)
@@ -980,7 +991,11 @@ async function ocrPdfAsImages(file, { aggressive = true } = {}) {
             if (invert) invertCanvas(ctx2, canvas.width, canvas.height)
 
             const blob = await canvasToPngBlob(ctx2.canvas)
-            const txt = await ocrBlobWithTesseract(blob, Tesseract)
+            let txt = ''
+            for (const psm of psms) {
+              txt = await ocrBlobWithTesseract(blob, Tesseract, psm)
+              if (txt && /total|amount|paid|₦|ngn/i.test(txt)) break
+            }
             if (txt) { pageText = txt; break }
           }
           if (pageText) break
@@ -1014,28 +1029,17 @@ async function renderPageToCanvas(page, scale) {
 async function canvasToPngBlob(canvas) {
   return await new Promise((resolve) => canvas.toBlob((b) => resolve(b || new Blob()), 'image/png', 1.0))
 }
-async function ocrBlobWithTesseract(blob, Tesseract) {
+async function ocrBlobWithTesseract(blob, Tesseract, psm = 6) {
   try {
     const { data } = await Tesseract.recognize(blob, 'eng', {
       tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
-      tessedit_pageseg_mode: '6',
+      tessedit_pageseg_mode: String(psm),
       user_defined_dpi: '320',
       preserve_interword_spaces: '1',
     })
     const txt = (data?.text || '').trim()
     return txt.length >= 6 ? txt : ''
   } catch { return '' }
-}
-function cloneOnNewCanvas(srcCtx, w, h) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h
-  const dst = c.getContext('2d', { willReadFrequently: true })
-  dst.drawImage(srcCtx.canvas, 0, 0); return dst
-}
-function invertCanvas(ctx, w, h) {
-  const img = ctx.getImageData(0, 0, w, h)
-  const d = img.data
-  for (let i = 0; i < d.length; i += 4) { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2] }
-  ctx.putImageData(img, 0, 0)
 }
 
 /* ---------- Image OCR ---------- */
@@ -1061,15 +1065,21 @@ async function ocrImageFile(file, opts = {}) {
       for (const p of passOpts) {
         const k2 = cloneOnNewCanvas(k, c.width, c.height)
         enhanceCanvas(k2, c.width, c.height, p)
-        const { data } = await Tesseract.recognize(k2.canvas, 'eng', {
-          tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
-          tessedit_pageseg_mode: '6',
-          user_defined_dpi: '320',
-          preserve_interword_spaces: '1',
-        })
+        const psms = [6, 4, 11]
+        let data = { text: '' }
+        for (const psm of psms) {
+          const out = await Tesseract.recognize(k2.canvas, 'eng', {
+            tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
+            tessedit_pageseg_mode: String(psm),
+            user_defined_dpi: '320',
+            preserve_interword_spaces: '1',
+          })
+          data = out?.data || { text: '' }
+          if ((data?.text || '').match(/total|amount|paid|₦|ngn/i)) break
+        }
         const txt = (data?.text ?? '').trim()
         if (txt.length > bestLen) { bestText = txt; bestLen = txt.length }
-        if (bestLen > 100 && /total|amount|paid|₦|ngn/i.test(bestText)) break
+        if (bestLen > 120 && /total|amount|paid|₦|ngn/i.test(bestText)) break
       }
       if (bestLen > 120 && /total|amount|paid|₦|ngn/i.test(bestText)) break
     }
@@ -1231,7 +1241,7 @@ function splitLinesWithIndex(s) {
   for (let i = 0; i < rawLines.length; i++) {
     const t = rawLines[i]
     const start = pos
-       const end = start + t.length
+    const end = start + t.length
     lines.push({ start, end, text: t, lower: t.toLowerCase() })
     pos = end + 1 // account for "\n"
   }
