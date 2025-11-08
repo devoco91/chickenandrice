@@ -1,137 +1,137 @@
-// ================================
+// ============================================================================
 // File: app/payment/page.jsx
-// ================================
-'use client'
+// ============================================================================
+'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useDispatch, useSelector } from 'react-redux'
-import { clearCart } from '../store/cartSlice'
-import { clearOrderDetails } from '../store/orderSlice'
-import NavbarDark from '../components/Navbar/NavbarDark'
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useDispatch, useSelector } from 'react-redux';
+import { clearCart } from '../store/cartSlice';
+import { clearOrderDetails } from '../store/orderSlice';
+import NavbarDark from '../components/Navbar/NavbarDark';
 import {
   Banknote, Check, ClipboardCopy, Clock, Info, Loader2, Lock, Printer, ShieldCheck,
   Smartphone, Wallet, Sparkles, Upload,
-} from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { QRCodeSVG } from 'qrcode.react'
-import { toast } from 'react-toastify'
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { QRCodeSVG } from 'qrcode.react';
+import { toast } from 'react-toastify';
 
 /* ======= Constants ======= */
-const ACCOUNT_NUMBER = '8986626630'
-const ACCOUNT_NAME = 'ChickenAndRice Ltd'
-const BANK_NAME = 'Palmpay'
-const WHATSAPP_E164 = '2349040002074'
-const LS_KEY = 'paypage_v1'
-const SHARE_TTL_MS = 2 * 60 * 60 * 1000
+const ACCOUNT_NUMBER = '8986626630';
+const ACCOUNT_NAME = 'ChickenAndRice Ltd';
+const BANK_NAME = 'Palmpay';
+const WHATSAPP_E164 = '2349040002074';
+const LS_KEY = 'paypage_v1';
+const SHARE_TTL_MS = 2 * 60 * 60 * 1000;
 
 /* === META (Pixel + CAPI) — safe additions === */
-const SERVER_BASE = (
+const SERVER_BASE =
   process.env.NEXT_PUBLIC_SERVER_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  ''
-).replace(/\/+$/, '')
+  '';
 
 function _readCookie(name) {
-  if (typeof document === 'undefined') return ''
-  const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)'))
-  return m ? decodeURIComponent(m[1]) : ''
+  if (typeof document === 'undefined') return '';
+  const pair = document.cookie.split('; ').find(row => row.startsWith(`${name}=`));
+  return pair ? decodeURIComponent(pair.slice(name.length + 1)) : '';
 }
+
 function _getFbpFbc() {
-  const fbp = _readCookie('_fbp') || ''
-  let fbc = _readCookie('_fbc') || ''
+  const fbp = _readCookie('_fbp') || '';
+  let fbc = _readCookie('_fbc') || '';
   try {
-    const url = new URL(window.location.href)
-    const fbclid = url.searchParams.get('fbclid')
+    const url = new URL(window.location.href);
+    const fbclid = url.searchParams.get('fbclid');
     if (fbclid && !fbc) {
-      const ts = Math.floor(Date.now() / 1000)
-      fbc = `fb.1.${ts}.${fbclid}`
-      document.cookie = `_fbc=${encodeURIComponent(fbc)}; path=/; max-age=${60 * 60 * 24 * 90}`
+      const ts = Math.floor(Date.now() / 1000);
+      fbc = `fb.1.${ts}.${fbclid}`;
+      document.cookie = `_fbc=${encodeURIComponent(fbc)}; path=/; max-age=${60 * 60 * 24 * 90}`;
     }
   } catch {}
-  return { fbp, fbc }
+  return { fbp, fbc };
 }
 
 /* ======= Utils ======= */
 const formatNGN = (n = 0) =>
-  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2 }).format(Number(n || 0))
+  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2 }).format(Number(n || 0));
 
 export default function PaymentPage() {
-  const router = useRouter()
-  const dispatch = useDispatch()
+  const router = useRouter();
+  const dispatch = useDispatch();
 
-  const [isPaying, setIsPaying] = useState(false)
-  const [copiedKey, setCopiedKey] = useState(null)
-  const [isMounted, setIsMounted] = useState(false)
-  const [tab, setTab] = useState('transfer')
+  const [isPaying, setIsPaying] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const [tab, setTab] = useState('transfer');
 
-  const cartItems = useSelector((s) => s.cart.cartItem || [])
-  const order = useSelector((s) => s.order || {})
-  const total = Number(order.total || 0)
+  const cartItems = useSelector((s) => s.cart.cartItem || []);
+  const order = useSelector((s) => s.order || {});
+  const total = Number(order.total || 0);
 
   // Receipt/OCR state
-  const [proof, setProof] = useState(null)
-  const [previewUrl, setPreviewUrl] = useState('')
-  const [parsing, setParsing] = useState(false)
-  const [verifying, setVerifying] = useState(false)
-  const [receiptText, setReceiptText] = useState('')
+  const [proof, setProof] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [parsing, setParsing] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [receiptText, setReceiptText] = useState('');
 
   // Amount & name checks
-  const [receiptAmountOK, setReceiptAmountOK] = useState(false)
-  const [detectedAmount, setDetectedAmount] = useState(null)
-  const [amountSnippet, setAmountSnippet] = useState('')
-  const [accountNameOK, setAccountNameOK] = useState(false)
-  const [accountNameSnippet, setAccountNameSnippet] = useState('')
+  const [receiptAmountOK, setReceiptAmountOK] = useState(false);
+  const [detectedAmount, setDetectedAmount] = useState(null);
+  const [amountSnippet, setAmountSnippet] = useState('');
+  const [accountNameOK, setAccountNameOK] = useState(false);
+  const [accountNameSnippet, setAccountNameSnippet] = useState('');
 
   // WhatsApp flow (optional)
-  const [shareStartedAt, setShareStartedAt] = useState(null)
-  const [shareConfirmed, setShareConfirmed] = useState(false)
+  const [shareStartedAt, setShareStartedAt] = useState(null);
+  const [shareConfirmed, setShareConfirmed] = useState(false);
 
-  useEffect(() => setIsMounted(true), [])
+  useEffect(() => setIsMounted(true), []);
 
   const paymentRef = useRef(
     `REF-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`
-  )
+  );
 
-  const [progress, setProgress] = useState(0)
+  const [progress, setProgress] = useState(0);
   useEffect(() => {
-    if (!isPaying) return
-    setProgress(0)
-    const id = setInterval(() => setProgress((p) => Math.min(100, p + 8)), 120)
-    return () => clearInterval(id)
-  }, [isPaying])
+    if (!isPaying) return;
+    setProgress(0);
+    const id = setInterval(() => setProgress((p) => Math.min(100, p + 8)), 120);
+    return () => clearInterval(id);
+  }, [isPaying]);
 
   // Persist WhatsApp
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY)
-      if (!raw) return
-      const s = JSON.parse(raw) || {}
-      setShareStartedAt(s.shareStartedAt ?? null)
-      setShareConfirmed(Boolean(s.shareConfirmed))
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw) || {};
+      setShareStartedAt(s.shareStartedAt ?? null);
+      setShareConfirmed(Boolean(s.shareConfirmed));
     } catch {}
-  }, [])
+  }, []);
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY)
-      const prev = raw ? JSON.parse(raw) : {}
-      localStorage.setItem(LS_KEY, JSON.stringify({ ...prev, shareStartedAt, shareConfirmed }))
+      const raw = localStorage.getItem(LS_KEY);
+      const prev = raw ? JSON.parse(raw) : {};
+      localStorage.setItem(LS_KEY, JSON.stringify({ ...prev, shareStartedAt, shareConfirmed }));
     } catch {}
-  }, [shareStartedAt, shareConfirmed])
+  }, [shareStartedAt, shareConfirmed]);
 
-  const totalLabel = formatNGN(total)
-  const normalizedAmount = useMemo(() => Math.floor(Math.abs(Number(total || 0))), [total])
+  const totalLabel = formatNGN(total);
+  const normalizedAmount = useMemo(() => Math.floor(Math.abs(Number(total || 0))), [total]);
 
   /* ======= Copy helpers ======= */
   const handleCopy = async (key, value) => {
     try {
-      await navigator.clipboard.writeText(value)
-      setCopiedKey(key)
-      setTimeout(() => setCopiedKey(null), 1300)
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1300);
     } catch {
-      toast.error('Copy failed')
+      toast.error('Copy failed');
     }
-  }
+  };
   const copyAllDetails = async () => {
     const text = [
       `Amount: ${totalLabel}`,
@@ -139,84 +139,84 @@ export default function PaymentPage() {
       `Bank: ${BANK_NAME}`,
       `Account Name: ${ACCOUNT_NAME}`,
       `Reference: ${paymentRef.current}`,
-    ].join('\n')
-    await handleCopy('all', text)
-  }
+    ].join('\n');
+    await handleCopy('all', text);
+  };
 
   /* ======= File handling & OCR ======= */
-  const revokePreview = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl('') }
+  const revokePreview = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(''); };
 
   const handleProofChange = async (e) => {
-    const f = e.target.files?.[0] ?? null
-    setProof(f)
-    setReceiptText('')
-    setReceiptAmountOK(false)
-    setDetectedAmount(null)
-    setAmountSnippet('')
-    setAccountNameOK(false)
-    setAccountNameSnippet('')
-    revokePreview()
-    if (!f) return
+    const f = e.target.files?.[0] ?? null;
+    setProof(f);
+    setReceiptText('');
+    setReceiptAmountOK(false);
+    setDetectedAmount(null);
+    setAmountSnippet('');
+    setAccountNameOK(false);
+    setAccountNameSnippet('');
+    revokePreview();
+    if (!f) return;
 
-    const url = URL.createObjectURL(f)
-    setPreviewUrl(url)
+    const url = URL.createObjectURL(f);
+    setPreviewUrl(url);
 
-    setParsing(true)
+    setParsing(true);
     try {
-      const { text: raw } = await extractTextFromFile(f) // robust PDF→OCR pipeline
-      const text = preprocessReceiptText(raw)
-      setReceiptText(text || '')
+      const { text: raw } = await extractTextFromFileFast(f); // optimized OCR
+      const text = preprocessReceiptText(raw);
+      setReceiptText(text || '');
     } catch {
-      toast.error('Could not read receipt text. Try a clearer file.')
+      toast.error('Could not read receipt text. Try a clearer file.');
     } finally {
-      setParsing(false)
+      setParsing(false);
     }
-  }
+  };
 
   // Re-run verification on changes
   useEffect(() => {
     if (!receiptText || !normalizedAmount) {
-      setReceiptAmountOK(false); setDetectedAmount(null); setAmountSnippet('')
-      setAccountNameOK(false); setAccountNameSnippet(''); return
+      setReceiptAmountOK(false); setDetectedAmount(null); setAmountSnippet('');
+      setAccountNameOK(false); setAccountNameSnippet(''); return;
     }
-    const amt = detectReceiptAmount(receiptText, normalizedAmount)
-    setReceiptAmountOK(amt.ok); setDetectedAmount(amt.bestAmount); setAmountSnippet(amt.snippet || '')
-    const nameRes = verifyAccountNameStrict(receiptText)
-    setAccountNameOK(nameRes.ok); setAccountNameSnippet(nameRes.snippet || '')
-  }, [receiptText, normalizedAmount])
+    const amt = detectReceiptAmount(receiptText, normalizedAmount);
+    setReceiptAmountOK(amt.ok); setDetectedAmount(amt.bestAmount); setAmountSnippet(amt.snippet || '');
+    const nameRes = verifyAccountNameStrict(receiptText);
+    setAccountNameOK(nameRes.ok); setAccountNameSnippet(nameRes.snippet || '');
+  }, [receiptText, normalizedAmount]);
 
   const rerunVerification = async () => {
-    if (!proof) return toast.error('Upload payment receipt first.')
-    setVerifying(true)
-    await new Promise((r) => setTimeout(r, 50))
-    const amt = detectReceiptAmount(receiptText, normalizedAmount)
-    setReceiptAmountOK(amt.ok); setDetectedAmount(amt.bestAmount); setAmountSnippet(amt.snippet || '')
-    const nameRes = verifyAccountNameStrict(receiptText)
-    setAccountNameOK(nameRes.ok); setAccountNameSnippet(nameRes.snippet || '')
-    setVerifying(false)
+    if (!proof) return toast.error('Upload payment receipt first.');
+    setVerifying(true);
+    await new Promise((r) => setTimeout(r, 50));
+    const amt = detectReceiptAmount(receiptText, normalizedAmount);
+    setReceiptAmountOK(amt.ok); setDetectedAmount(amt.bestAmount); setAmountSnippet(amt.snippet || '');
+    const nameRes = verifyAccountNameStrict(receiptText);
+    setAccountNameOK(nameRes.ok); setAccountNameSnippet(nameRes.snippet || '');
+    setVerifying(false);
     toast[amt.ok && nameRes.ok ? 'success' : 'error'](
       amt.ok && nameRes.ok ? 'Verified against receipt.' : 'Verification failed: amount and/or account name.'
-    )
-  }
+    );
+  };
 
   /* ======= WhatsApp (optional) ======= */
-  const isShareRecent = (ts) => !!ts && Date.now() - ts < SHARE_TTL_MS
+  const isShareRecent = (ts) => !!ts && Date.now() - ts < SHARE_TTL_MS;
   const shareToWhatsApp = async () => {
-    if (!proof) return toast.error('Select a receipt file first.')
-    const text = `Hello, please find my proof of payment for my order (${totalLabel}).\nRef: ${paymentRef.current}`
-    const encoded = encodeURIComponent(text)
-    const now = Date.now()
-    setShareStartedAt(now); setShareConfirmed(false)
-    try { const raw = localStorage.getItem(LS_KEY); const s = raw ? JSON.parse(raw) : {}; localStorage.setItem(LS_KEY, JSON.stringify({ ...s, shareStartedAt: now, shareConfirmed: false })) } catch {}
+    if (!proof) return toast.error('Select a receipt file first.');
+    const text = `Hello, please find my proof of payment for my order (${totalLabel}).\nRef: ${paymentRef.current}`;
+    const encoded = encodeURIComponent(text);
+    const now = Date.now();
+    setShareStartedAt(now); setShareConfirmed(false);
+    try { const raw = localStorage.getItem(LS_KEY); const s = raw ? JSON.parse(raw) : {}; localStorage.setItem(LS_KEY, JSON.stringify({ ...s, shareStartedAt: now, shareConfirmed: false })); } catch {}
     try {
       if (navigator.canShare && navigator.canShare({ files: [proof] })) {
-        await navigator.share({ files: [proof], text, title: 'Proof of Payment' })
-        toast.success('Share dialog opened. Please send on WhatsApp.')
-        return
+        await navigator.share({ files: [proof], text, title: 'Proof of Payment' });
+        toast.success('Share dialog opened. Please send on WhatsApp.');
+        return;
       }
     } catch {}
-    window.location.href = `https://wa.me/${WHATSAPP_E164}?text=${encoded}`
-  }
+    window.location.href = `https://wa.me/${WHATSAPP_E164}?text=${encoded}`;
+  };
 
   async function submitOrderToBackend() {
     const payload = {
@@ -238,11 +238,11 @@ export default function PaymentPage() {
       total: Number(order.total || 0),
       paymentReference: paymentRef.current,
       paymentMethod: tab,
-    }
+    };
 
-    const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || data.message || `Failed to submit order (status ${res.status}).`)
+    const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || `Failed to submit order (status ${res.status}).`);
 
     try {
       const summary = {
@@ -256,40 +256,47 @@ export default function PaymentPage() {
         customerName: payload.customerName,
         phone: payload.phone,
         address: [payload.houseNumber, payload.street].filter(Boolean).join(', ') || null,
-      }
-      sessionStorage.setItem('lastOrderSummary', JSON.stringify(summary))
+      };
+      sessionStorage.setItem('lastOrderSummary', JSON.stringify(summary));
     } catch {}
-    return data
+    return data;
   }
 
   const handlePay = async () => {
-    if (isPaying) return
-    if (!proof) return toast.error('Upload payment receipt to continue.')
-    if (!receiptAmountOK) return toast.error('Receipt amount is less than the order total.')
-    if (!accountNameOK) return toast.error('Receipt account name must include “chicken”, “rice”, or “chicken and rice”.')
+    if (isPaying) return;
+    if (!proof) return toast.error('Upload payment receipt to continue.');
+    if (!receiptAmountOK) return toast.error('Receipt amount is less than the order total.');
+    if (!accountNameOK) return toast.error('Receipt account name must include “chicken”, “rice”, “chicken and rice”, or “chickenandriceltd”.');
 
-    setIsPaying(true)
+    setIsPaying(true);
     try {
-      await submitOrderToBackend()
+      await submitOrderToBackend();
 
-      /* ===== META Pixel + Conversion API ===== */
+      /* ===== META Pixel + Conversion API (non-blocking) ===== */
       try {
+        const eventId = `${paymentRef.current}-${Date.now()}`; // ✅ dedup key
+
         if (typeof window !== 'undefined' && window.fbq) {
-          window.fbq('track', 'Purchase', {
-            value: Number(total || 0),
-            currency: 'NGN',
-          })
+          window.fbq(
+            'track',
+            'Purchase',
+            {
+              value: Number(total || 0),
+              currency: 'NGN',
+            },
+            { eventID: eventId } // ✅ pass eventID to pixel
+          );
         }
-        const { fbp, fbc } = _getFbpFbc()
+        const { fbp, fbc } = _getFbpFbc();
         const endpoint = SERVER_BASE
-          ? `${SERVER_BASE}/api/facebook/conversion`
-          : '/api/facebook/conversion'
+          ? `${SERVER_BASE.replace(/\/+$/,'')}/api/facebook`
+          : '/api/facebook';
 
         const email =
           order.email ||
           order.customerEmail ||
           (order.user && (order.user.email || order.userEmail)) ||
-          ''
+          '';
 
         await fetch(endpoint, {
           method: 'POST',
@@ -302,26 +309,28 @@ export default function PaymentPage() {
             email,
             fbp,
             fbc,
+            event_id: eventId, // ✅ same id to CAPI
+            test_event_code: process.env.NEXT_PUBLIC_FB_TEST_EVENT_CODE || ''
           }),
-        }).catch(() => {})
+        }).catch(() => {});
       } catch (err) {
-        console.error('⚠️ Facebook tracking failed:', err)
+        console.error('⚠️ Facebook tracking failed:', err);
       }
       /* ===== END META additions ===== */
 
-      dispatch(clearCart()); dispatch(clearOrderDetails())
+      dispatch(clearCart()); dispatch(clearOrderDetails());
       toast.success('Order sent!', {
         autoClose: 1400,
-        onClose: () => { dispatch(clearCart()); dispatch(clearOrderDetails()); router.push('/success') },
-      })
+        onClose: () => { dispatch(clearCart()); dispatch(clearOrderDetails()); router.push('/success'); },
+      });
     } catch (e) {
-      console.error(e)
-      toast.error(e.message || 'Payment failed. Please try again.')
-      setIsPaying(false)
+      console.error(e);
+      toast.error(e.message || 'Payment failed. Please try again.');
+      setIsPaying(false);
     }
-  }
+  };
 
-  if (!isMounted) return null
+  if (!isMounted) return null;
 
   return (
     <>
@@ -534,9 +543,9 @@ export default function PaymentPage() {
 
                           <div className="mt-2">
                             {accountNameOK ? (
-                              <span className="text-emerald-400">✓ Account name contains “chicken”, “rice”, or “chicken and rice”.</span>
+                              <span className="text-emerald-400">✓ Account name contains “chicken”, “rice”, “chicken and rice”, or “chickenandriceltd”.</span>
                             ) : (
-                              <span className="text-rose-300">Account name not confirmed. Receipt must include “chicken”, “rice”, or “chicken and rice”.</span>
+                              <span className="text-rose-300">Account name not confirmed. Receipt must include “chicken”, “rice”, “chicken and rice”, or “chickenandriceltd”.</span>
                             )}
                             {accountNameSnippet && (
                               <div className="mt-1">
@@ -613,7 +622,7 @@ export default function PaymentPage() {
                 <h3 className="text-lg font-semibold">Finalizing your order…</h3>
                 <p className="mt-1 text-sm text-slate-300">Please hold while we verify and finalize your order.</p>
                 <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-700">
-                  <div className="h-full" style={{ width: `${progress}%`, transition: 'width 120ms linear' }} />
+                  <div className="h-full" style={{ width: `${progress}%`, transition: 'width 120ms linear', background: 'linear-gradient(90deg, #2563eb, #4f46e5)' }} />
                 </div>
               </motion.div>
             </motion.div>
@@ -621,12 +630,11 @@ export default function PaymentPage() {
         </AnimatePresence>
       </div>
     </>
-  )
+  );
 }
 
 /* ================= Helpers ================= */
 
-/** Normalize receipt text for reliable matches. */
 function preprocessReceiptText(input) {
   let s = String(input || '')
     .normalize('NFKC')
@@ -636,153 +644,141 @@ function preprocessReceiptText(input) {
     .replace(/₦\s*/g, '₦')
     .replace(/\s+[|]\s+/g, ' | ')
     .replace(/[ ]{2,}/g, ' ')
-    .trim()
+    .trim();
 
-  // Preserve line breaks where OCR produced them; also infer breaks around clear separators
   s = s.replace(/([A-Za-z]:)\s+(?=[A-Za-z])/g, '$1 ')
-       .replace(/(\r?\n)\s+/g, '$1')
+       .replace(/(\r?\n)\s+/g, '$1');
 
-  // collapse spaced letters/digits (OCR artifacts)
   s = s.replace(/\b([A-Za-z])(?:\s+([A-Za-z]))+\b/g, (m) => m.replace(/\s+/g, ''))
-       .replace(/\b(\d)(?:\s+(\d))+(\s*\.\s*\d{2})?\b/g, (m) => m.replace(/\s+/g, ''))
+       .replace(/\b(\d)(?:\s+(\d))+(\s*\.\s*\d{2})?\b/g, (m) => m.replace(/\s+/g, ''));
 
   preprocessReceiptText._lettersOnly = s.toLowerCase()
     .replace(/&/g, 'and')
     .replace(/\b(limited|ltd|plc|llc)\b/g, '')
-    .replace(/[^a-z]/g, '')
+    .replace(/[^a-z]/g, '');
 
-  // Keep a line index map for context-aware scoring
-  preprocessReceiptText._lines = splitLinesWithIndex(s)
+  preprocessReceiptText._lines = splitLinesWithIndex(s);
 
-  return s
+  return s;
 }
 
-/** Context-scored amount detector (labels/currency preferred; IDs penalized; line-aware). */
+/** Detect amount with line-aware scoring. */
 function detectReceiptAmount(text, orderAmount) {
-  const src = String(text || '')
-  const hay = src.toLowerCase()
+  const src = String(text || '');
+  const hay = src.toLowerCase();
 
   const posLabels = [
     'total amount','total','amount','amount due','amount paid','amount sent','paid','debit','credit',
     'transfer amount','txn amount','transaction amount','subtotal','payment amount','amt','ngn','₦',
-    'cash received','you paid','customer paid','charges','charge','sum','vat','fee','grand total'
-  ]
+    'cash received','you paid','customer paid','grand total'
+  ];
   const negLabels = [
     'transaction no','transaction number','transaction id','trx id','rrn','stan','reference','ref',
     'wallet','date','time','account number','recipient details','balance','session id','auth code',
-    'terminal','pos','card','pan','masked','rrn:','stan:','ref:','acct','account','acct no','account no'
-  ]
+    'terminal','pos','card','pan','masked','acct','account','acct no','account no'
+  ];
 
-  const lines = preprocessReceiptText._lines?.length ? preprocessReceiptText._lines : splitLinesWithIndex(src)
+  const lines = preprocessReceiptText._lines?.length ? preprocessReceiptText._lines : splitLinesWithIndex(src);
 
-  // Build line label maps
-  const posLineIdx = new Set()
-  const negLineIdx = new Set()
+  const posLineIdx = new Set();
+  const negLineIdx = new Set();
   for (let i = 0; i < lines.length; i++) {
-    const L = lines[i].lower
-    for (const p of posLabels) if (L.includes(p)) { posLineIdx.add(i); break }
-    for (const n of negLabels) if (L.includes(n)) { negLineIdx.add(i); break }
+    const L = lines[i].lower;
+    for (const p of posLabels) if (L.includes(p)) { posLineIdx.add(i); break; }
+    for (const n of negLabels) if (L.includes(n)) { negLineIdx.add(i); break; }
   }
 
-  // Windows for legacy scoring (keep)
-  const WINDOW = 180
-  const posWins = buildLabelWindows(hay, posLabels, WINDOW)
-  const negWins = buildLabelWindows(hay, negLabels, WINDOW)
+  const WINDOW = 140;
+  const posWins = buildLabelWindows(hay, posLabels, WINDOW);
+  const negWins = buildLabelWindows(hay, negLabels, WINDOW);
 
-  const tokens = collectMoneyCandidatesWithIndex(src, lines)
+  const tokens = collectMoneyCandidatesWithIndex(src, lines);
 
-  const o = Math.max(1, Math.floor(Math.abs(Number(orderAmount || 0))))
-  const candidates = []
+  const o = Math.max(1, Math.floor(Math.abs(Number(orderAmount || 0))));
+  const candidates = [];
+  const seen = new Set();
 
-  const seen = new Set()
   for (const { tok, idx, lineIndex } of tokens) {
-    const n = parseMoneyTokenToNaira(tok)
-    if (n == null) continue
-    const whole = Math.floor(Math.abs(n))
-    const key = `${tok}@${idx}:${whole}`
-    if (seen.has(key)) continue
-    seen.add(key)
+    const n = parseMoneyTokenToNaira(tok);
+    if (n == null) continue;
+    const whole = Math.floor(Math.abs(n));
+    const key = `${tok}@${idx}:${whole}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-    const hasCur = /[₦]|NGN/i.test(tok) || /\bk\b/i.test(tok)
-    const digitsLen = tok.replace(/[^\d]/g, '').length
-    const hasDecimals = /[.,]\d{2}\b/.test(tok)
+    const hasCur = /[₦]|NGN/i.test(tok) || /\bk\b/i.test(tok);
+    const digitsLen = tok.replace(/[^\d]/g, '').length;
+    const hasDecimals = /[.,]\d{2}\b/.test(tok);
 
-    let score = 0
-    // Currency & decimals
-    if (hasCur) score += 8
-    if (hasDecimals) score += 3
+    let score = 0;
+    if (hasCur) score += 8;
+    if (hasDecimals) score += 3;
 
-    // Legacy windows
-    if (inAnyWindow(idx, posWins)) score += 5
-    if (inAnyWindow(idx, negWins)) score -= 8
+    if (inAnyWindow(idx, posWins)) score += 5;
+    if (inAnyWindow(idx, negWins)) score -= 8;
 
-    // Line-aware: same/adjacent line to positive labels
-    if (posLineIdx.has(lineIndex)) score += 10
-    if (posLineIdx.has(lineIndex - 1) || posLineIdx.has(lineIndex + 1)) score += 4
+    if (posLineIdx.has(lineIndex)) score += 10;
+    if (posLineIdx.has(lineIndex - 1) || posLineIdx.has(lineIndex + 1)) score += 4;
 
-    // Negative lines & neighbors
-    if (negLineIdx.has(lineIndex)) score -= 10
-    if (negLineIdx.has(lineIndex - 1) || negLineIdx.has(lineIndex + 1)) score -= 5
+    if (negLineIdx.has(lineIndex)) score -= 10;
+    if (negLineIdx.has(lineIndex - 1) || negLineIdx.has(lineIndex + 1)) score -= 5;
 
-    // Penalize ID-looking numbers
-    if (!hasCur && digitsLen >= 9) score -= 10
-    if (!hasCur && digitsLen >= 10) score -= 14
-    if (digitsLen >= 12) score -= 10
+    if (!hasCur && digitsLen >= 9) score -= 10;
+    if (!hasCur && digitsLen >= 10) score -= 14;
+    if (digitsLen >= 12) score -= 10;
 
-    // Very likely IDs if the same line contains typical ID labels
-    const L = lines[lineIndex]?.lower || ''
-    if (/\b(rrn|stan|ref|reference|account|acct|terminal|pos|auth)\b/.test(L)) score -= 12
+    const L = lines[lineIndex]?.lower || '';
+    if (/\b(rrn|stan|ref|reference|account|acct|terminal|pos|auth)\b/.test(L)) score -= 12;
 
-    // Reward reasonable magnitude relative to order
-    if (whole >= o) score += 2
-    if (whole < o * 0.5) score -= 2
+    if (whole >= o) score += 2;
+    if (whole < o * 0.5) score -= 2;
 
-    candidates.push({ val: whole, tok, idx, score, hasCur, lineIndex })
+    candidates.push({ val: whole, tok, idx, score, hasCur, lineIndex });
   }
 
-  if (!candidates.length) return { ok: false, bestAmount: null, snippet: '' }
+  if (!candidates.length) return { ok: false, bestAmount: null, snippet: '' };
 
-  // Drop absurd outliers unless clearly currency-labeled
-  const filtered = candidates.filter(c => c.hasCur || c.val <= Math.max(o * 5, 2_000_000))
+  const filtered = candidates.filter(c => c.hasCur || c.val <= Math.max(o * 5, 2_000_000));
+  filtered.sort((a, b) => (b.score - a.score) || (a.val - b.val));
+  const top = (filtered.length ? filtered : candidates.sort((a,b)=>(b.score-a.score)||(a.val-b.val)))[0];
+  const ok = !!top && top.val >= o;
 
-  // Sort by score desc, then value asc
-  filtered.sort((a, b) => (b.score - a.score) || (a.val - b.val))
-
-  const top = (filtered.length ? filtered : candidates.sort((a,b)=>(b.score-a.score)||(a.val-b.val)))[0]
-  const ok = !!top && top.val >= o
-
-  return { ok, bestAmount: top ? top.val : null, snippet: top ? top.tok : '' }
+  return { ok, bestAmount: top ? top.val : null, snippet: top ? top.tok : '' };
 }
 
-/** Account-name verifier: tolerates &/and, punctuation, suffixes, and also accepts "chicken" or "rice". */
+/** Accepts chicken, rice, chicken and rice, chickenandriceltd (punctuation/spacing tolerant). */
 function verifyAccountNameStrict(text) {
-  const raw = String(text || '')
-  const lettersOnly = preprocessReceiptText._lettersOnly || raw.toLowerCase().replace(/[^a-z]/g, '')
-  const ok =
-    lettersOnly.includes('chickenandrice') ||
-    /chicken[\s\-_.]*and[\s\-_.]*rice/i.test(raw) ||
-    lettersOnly.includes('chicken') ||
-    lettersOnly.includes('rice')
+  const raw = String(text || '');
+  const lettersOnly = (preprocessReceiptText._lettersOnly ||
+    raw.toLowerCase().replace(/[^a-z]/g, '')
+  );
 
-  let snippet = ''
+  const ok =
+    lettersOnly.includes('chickenandriceltd') ||
+    lettersOnly.includes('chickenandrice') ||
+    lettersOnly.includes('chickenrice') ||
+    lettersOnly.includes('chicken') ||
+    lettersOnly.includes('rice');
+
+  let snippet = '';
   try {
     const m =
-      raw.match(/chicken[\s\-_.]*and[\s\-_.]*rice/i) ||
-      raw.match(/chickenandrice/i) ||
+      raw.match(/chicken[\s\-_.]*(&|and)?[\s\-_.]*rice[\s\-_.]*ltd/i) ||
+      raw.match(/chicken[\s\-_.]*(&|and)?[\s\-_.]*rice/i) ||
       raw.match(/\bchicken\b/i) ||
-      raw.match(/\brice\b/i)
-    if (m && m[0]) snippet = m[0]
+      raw.match(/\brice\b/i);
+    if (m && m[0]) snippet = m[0];
   } catch {}
-  return { ok, snippet }
+
+  return { ok, snippet };
 }
 
 /* ===== Money parsing helpers ===== */
 
-// Collect tokens WITH indices + line index for context scoring.
 function collectMoneyCandidatesWithIndex(s, lines = null) {
-  const out = []
-  const Usp = '\u00A0\u2007\u2009\u202F'
-  const src = String(s || '')
+  const out = [];
+  const Usp = '\u00A0\u2007\u2009\u202F';
+  const src = String(s || '');
 
   const patterns = [
     new RegExp(`(?:₦|NGN|N)[${Usp}\\s]*[\\d${Usp}\\s.,]+(?:[.,]\\d{1,2})?`, 'gi'),
@@ -790,479 +786,405 @@ function collectMoneyCandidatesWithIndex(s, lines = null) {
     /\b\d{4,}(?:[.,]\d{2})\b/g,
     /\b\d{5,}\b/g,
     /\b\d{1,3}(?:[.,]\d{1,2})?\s*[kK]\b/g,
-  ]
+  ];
 
   for (const pat of patterns) {
     for (const m of src.matchAll(pat)) {
-      const tok = m[0]
-      const idx = m.index ?? -1
-      const li = lineIndexFromGlobalPos(idx, lines || splitLinesWithIndex(src))
-      out.push({ tok, idx, lineIndex: li })
+      const tok = m[0];
+      const idx = m.index ?? -1;
+      const li = lineIndexFromGlobalPos(idx, lines || splitLinesWithIndex(src));
+      out.push({ tok, idx, lineIndex: li });
     }
   }
-  return out
+  return out;
 }
 
 function buildLabelWindows(hay, labels, win) {
-  const wins = []
+  const wins = [];
   for (const label of labels) {
-    let i = 0
-    const needle = String(label).toLowerCase()
+    let i = 0;
+    const needle = String(label).toLowerCase();
     while ((i = hay.indexOf(needle, i)) !== -1) {
-      const start = Math.max(0, i - win)
-      const end = Math.min(hay.length, i + needle.length + win)
-      wins.push([start, end])
-      i += needle.length
+      const start = Math.max(0, i - win);
+      const end = Math.min(hay.length, i + needle.length + win);
+      wins.push([start, end]);
+      i += needle.length;
     }
   }
-  return wins
+  return wins;
 }
 function inAnyWindow(idx, wins) {
-  for (const [s, e] of wins) if (idx >= s && idx <= e) return true
-  return false
+  for (const [s, e] of wins) if (idx >= s && idx <= e) return true;
+  return false;
 }
 
 function parseMoneyTokenToNaira(tok) {
-  if (!tok) return null
-  let s = String(tok)
+  if (!tok) return null;
+  let s = String(tok);
 
-  const hasK = /k$/i.test(s.replace(/\s+/g, ''))
+  const hasK = /k$/i.test(s.replace(/\s+/g, ''));
 
-  // OCR confusions
   s = s
-    .replace(/[\u00A0\u2007\u2009\u202F]/g, '')
+    .replace(/[\u00A0\u2007\u2009\u202F]/g, ' ')
     .replace(/[Oo]/g, '0')
     .replace(/[Il|]/g, '1')
     .replace(/S/g, '5')
     .replace(/B/g, '8')
-    .replace(/Z/g, '2')
+    .replace(/Z/g, '2');
 
-  // Strip currency & normalize
   s = s
     .replace(/\s+/g, '')
     .replace(/₦/g, '')
     .replace(/N\s*G\s*N/gi, 'NGN')
     .replace(/NGN/gi, '')
-    .replace(/\bN\b/gi, '')
+    .replace(/\bN\b/gi, '');
 
-  let multiplier = 1
-  if (hasK) { s = s.replace(/k$/i, ''); multiplier = 1000 }
+  let multiplier = 1;
+  if (hasK) { s = s.replace(/k$/i, ''); multiplier = 1000; }
 
-  const hasComma = s.includes(','), hasDot = s.includes('.')
+  const hasComma = s.includes(','), hasDot = s.includes('.');
   if (hasComma && hasDot) {
-    const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.')
-    const decSep = lastDot > lastComma ? '.' : ','
-    s = s.replace(decSep === '.' ? /,/g : /\./g, '')
-    if (decSep === ',') s = s.replace(',', '.')
-  } else s = s.replace(/,/g, '')
+    const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.');
+    const decSep = lastDot > lastComma ? '.' : ',';
+    s = s.replace(decSep === '.' ? /,/g : /\./g, '');
+    if (decSep === ',') s = s.replace(',', '.');
+  } else s = s.replace(/,/g, '');
 
-  const n = Number.parseFloat(s.replace(/[^\d.]/g, ''))
-  return Number.isFinite(n) ? n * multiplier : null
+  const n = Number.parseFloat(s.replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? n * multiplier : null;
 }
 
-function canonicalDigits(s) {
-  return unicodeSpaceCollapse(s).normalize('NFKD')
-    .replace(/\u0660/g, '0').replace(/\u0661/g, '1').replace(/\u0662/g, '2').replace(/\u0663/g, '3').replace(/\u0664/g, '4')
-    .replace(/\u0665/g, '5').replace(/\u0666/g, '6').replace(/\u0667/g, '7').replace(/\u0668/g, '8').replace(/\u06F9/g, '9')
-    .replace(/\u06F0/g, '0').replace(/\u06F1/g, '1').replace(/\u06F2/g, '2').replace(/\u06F3/g, '3').replace(/\u06F4/g, '4')
-    .replace(/\u06F5/g, '5').replace(/\u06F6/g, '6').replace(/\u06F7/g, '7').replace(/\u06F8/g, '8').replace(/\u06F9/g, '9')
-    .replace(/O/g, '0').replace(/o/g, '0')
+function splitLinesWithIndex(s) {
+  const text = String(s || '');
+  const rawLines = text.split(/\r?\n/);
+  const lines = [];
+  let pos = 0;
+  for (let i = 0; i < rawLines.length; i++) {
+    const t = rawLines[i];
+    const start = pos;
+    const end = start + t.length;
+    lines.push({ start, end, text: t, lower: t.toLowerCase() });
+    pos = end + 1;
+  }
+  if (lines.length <= 1) {
+    const chunks = text.split(/(?: {2,}|\s\|\s|—|-{2,}|:{1}\s)/);
+    const alt = []; let p = 0;
+    for (const ch of chunks) {
+      const idx = text.indexOf(ch, p);
+      if (idx === -1) continue;
+      alt.push({ start: idx, end: idx + ch.length, text: ch, lower: ch.toLowerCase() });
+      p = idx + ch.length;
+    }
+    return alt.length ? alt : lines;
+  }
+  return lines;
 }
-function unicodeSpaceCollapse(input) { return String(input).replace(/[\u00A0\u2007\u2009\u202F]/g, ' ').replace(/\s+/g, ' ') }
+function lineIndexFromGlobalPos(idx, lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return 0;
+  for (let i = 0; i < lines.length; i++) {
+    const { start, end } = lines[i];
+    if (idx >= start && idx < end + 1) return i;
+  }
+  return lines.length - 1;
+}
 
-/* === OCR / PDF extraction === */
-async function extractTextFromFile(file) {
-  if (typeof window === 'undefined') return { text: '', method: 'ssr' }
+/* ---------- PDF & Image OCR (optimized) ---------- */
+
+async function extractTextFromFileFast(file) {
+  if (typeof window === 'undefined') return { text: '', method: 'ssr' };
+
+  const deadlineMs = 12000; // hard cap ~12s
+  const start = Date.now();
+  const timeLeft = () => Math.max(0, deadlineMs - (Date.now() - start));
 
   try {
-    const looksLikePdf = await isProbablyPdf(file)
+    const isPdf = await isProbablyPdf(file);
 
-    if (looksLikePdf) {
-      const { pdfjsLib } = await loadPdfJs()
-      if (!pdfjsLib) return { text: '', method: 'pdf-ocr' }
+    if (isPdf) {
+      const { pdfjsLib } = await loadPdfJs();
+      if (!pdfjsLib) return { text: '', method: 'pdf-ocr' };
 
-      // 1) Try PDF text layer quickly
+      // 1) Fast text layer
       try {
-        const data = await file.arrayBuffer()
-        const doc = await pdfjsLib.getDocument({ data, disableCombineTextItems: false }).promise
-        let text = ''
-        const pages = Math.min(doc.numPages || 0, 12)
+        const data = await file.arrayBuffer();
+        const doc = await pdfjsLib.getDocument({ data, disableCombineTextItems: false }).promise;
+        let text = '';
+        const pages = Math.min(doc.numPages || 0, 8);
         for (let i = 1; i <= pages; i++) {
-          const page = await doc.getPage(i)
-          const content = await page.getTextContent({ includeMarkedContent: true })
-          text += ' ' + (content.items || []).map((it) => it?.str ?? '').join(' ')
+          const page = await doc.getPage(i);
+          const content = await page.getTextContent({ includeMarkedContent: true });
+          text += ' ' + (content.items || []).map((it) => it?.str ?? '').join(' ');
+          if (text.length > 80 && /₦|ngn|amount|total|paid/i.test(text)) break;
+          if (timeLeft() <= 0) break;
         }
-        text = (text || '').trim()
-        if (text.length >= 6) return { text, method: 'pdf-text' }
+        text = (text || '').trim();
+        if (text.length >= 6) return { text, method: 'pdf-text' };
       } catch {}
 
-      // 2) Rasterize pages → OCR with aggressive enhancement
-      const { text: ocr } = await ocrPdfAsImages(file, { aggressive: true })
-      return { text: (ocr || '').trim(), method: 'pdf-ocr' }
+      // 2) Single-pass rasterize → OCR
+      const { text: ocr } = await ocrPdfAsImagesFast(file, { timeLeft });
+      return { text: (ocr || '').trim(), method: 'pdf-ocr' };
     }
 
     // Images
     if (file.type?.startsWith?.('image/') || !file.type) {
-      let text = await ocrImageFile(file, { enhance: false })
-      if (text && text.trim().length >= 6) return { text: text.trim(), method: 'image-ocr-fast' }
-      text = await ocrImageFile(file, { enhance: true })
-      return { text: (text || '').trim(), method: 'image-ocr-enhanced' }
+      const text = await ocrImageFileFast(file, { timeLeft });
+      return { text: (text || '').trim(), method: 'image-ocr' };
     }
   } catch {
-    return { text: '', method: 'unknown' }
+    return { text: '', method: 'unknown' };
   }
-  return { text: '', method: 'unknown' }
+  return { text: '', method: 'unknown' };
 }
 
-/* ---------- Load pdf.js with robust fallbacks ---------- */
 async function loadPdfJs() {
   try {
-    const pdfjsLib = await import('pdfjs-dist/build/pdf')
+    const pdfjsLib = await import('pdfjs-dist/build/pdf');
     try {
-      const worker = new Worker(new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url), { type: 'module' })
-      pdfjsLib.GlobalWorkerOptions.workerPort = worker
+      const worker = new Worker(new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url), { type: 'module' });
+      pdfjsLib.GlobalWorkerOptions.workerPort = worker;
     } catch {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
+      // CDN fallback
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '5.4.149'}/build/pdf.worker.min.mjs`;
     }
-    return { pdfjsLib }
+    return { pdfjsLib };
   } catch {
     try {
-      const pdfjsLib = await import(/* webpackIgnore: true */ 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.mjs')
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs'
-      return { pdfjsLib }
+      const pdfjsLib = await import(/* webpackIgnore: true */ 'https://unpkg.com/pdfjs-dist@5.4.149/build/pdf.min.mjs');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.149/build/pdf.worker.min.mjs';
+      return { pdfjsLib };
     } catch {
-      try {
-        const pdfjsLib = await import(/* webpackIgnore: true */ 'https://unpkg.com/pdfjs-dist@4.8.69/build/pdf.min.mjs')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs'
-        return { pdfjsLib }
-      } catch {
-        return {}
-      }
+      return {};
     }
   }
 }
 
-/* ---------- PDF helpers ---------- */
 async function isProbablyPdf(file) {
-  if (!file) return false
-  if (file.type && /pdf/i.test(file.type)) return true
-  if (file.name && /\.pdf$/i.test(file.name)) return true
+  if (!file) return false;
+  if (file.type && /pdf/i.test(file.type)) return true;
+  if (file.name && /\.pdf$/i.test(file.name)) return true;
   try {
-    const slice = file.slice(0, 5)
-    const buf = await slice.arrayBuffer()
-    const head = new TextDecoder('ascii').decode(new Uint8Array(buf))
-    return head.startsWith('%PDF')
-  } catch { return false }
+    const slice = file.slice(0, 5);
+    const buf = await slice.arrayBuffer();
+    const head = new TextDecoder('ascii').decode(new Uint8Array(buf));
+    return head.startsWith('%PDF');
+  } catch { return false; }
 }
-function isLikelyPdfPreview(file) { return !!(file && (file.type?.toLowerCase?.().includes('pdf') || /\.pdf$/i.test(file.name))) }
+function isLikelyPdfPreview(file) { return !!(file && (file.type?.toLowerCase?.().includes('pdf') || /\.pdf$/i.test(file.name))); }
 
-/* ---------- PDF OCR (render to canvas → OCR) ---------- */
-async function ocrPdfAsImages(file, { aggressive = true } = {}) {
+async function ocrPdfAsImagesFast(file, { timeLeft }) {
   try {
-    const { pdfjsLib } = await loadPdfJs()
-    if (!pdfjsLib) return { text: '' }
+    const { pdfjsLib } = await loadPdfJs();
+    if (!pdfjsLib) return { text: '' };
+    const mod = await import('tesseract.js');
+    const Tesseract = mod.default ?? mod;
 
-    const mod = await import('tesseract.js')
-    const Tesseract = mod.default ?? mod
+    const data = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data }).promise;
 
-    const data = await file.arrayBuffer()
-    const doc = await pdfjsLib.getDocument({ data }).promise
+    // Reduced set: fast, sufficient for receipts
+    const scales = [2.4, 3.0];
+    const thresholds = [undefined, 190];
+    const invertFlags = [false];
 
-    const scales = aggressive ? [2.0, 2.6, 3.2, 3.8, 4.4] : [2.2]
-    const thresholds = aggressive ? [undefined, 160, 175, 190, 205, 220] : [undefined, 190]
-    const invertFlags = aggressive ? [false, true] : [false]
-    const psms = aggressive ? [6, 4, 11] : [6]
-
-    const parts = []
-    const maxPages = Math.min(doc.numPages || 0, aggressive ? 10 : 5)
+    const parts = [];
+    const maxPages = Math.min(doc.numPages || 0, 5);
 
     for (let i = 1; i <= maxPages; i++) {
-      const page = await doc.getPage(i)
-      let pageText = ''
+      if (timeLeft() <= 0) break;
+      const page = await doc.getPage(i);
+      let pageText = '';
 
       for (const scale of scales) {
-        const { ctx, canvas } = await renderPageToCanvas(page, scale)
+        if (timeLeft() <= 0) break;
+        const { ctx, canvas } = await renderPageToCanvas(page, scale);
 
         for (const invert of invertFlags) {
           for (const th of thresholds) {
-            const ctx2 = cloneOnNewCanvas(ctx, canvas.width, canvas.height)
-
-            enhanceCanvas(ctx2, canvas.width, canvas.height, { grayscale: true, contrast: 1.35, brightness: 1.1, threshold: th, sharpen: true, localContrast: true })
-            if (invert) invertCanvas(ctx2, canvas.width, canvas.height)
-
-            const blob = await canvasToPngBlob(ctx2.canvas)
-            let txt = ''
-            for (const psm of psms) {
-              txt = await ocrBlobWithTesseract(blob, Tesseract, psm)
-              if (txt && /total|amount|paid|₦|ngn/i.test(txt)) break
-            }
-            if (txt) { pageText = txt; break }
+            if (timeLeft() <= 0) break;
+            const k2 = cloneOnNewCanvas(ctx, canvas.width, canvas.height);
+            enhanceCanvas(k2, canvas.width, canvas.height, {
+              grayscale: true, contrast: 1.35, brightness: 1.1, threshold: th, sharpen: true
+            });
+            if (invert) invertCanvas(k2, canvas.width, canvas.height);
+            const blob = await canvasToPngBlob(k2.canvas);
+            const txt = await ocrBlobWithTesseract(blob, Tesseract, timeLeft());
+            if (txt && (txt.length > 40 || /₦|ngn|amount|total|paid/i.test(txt))) { pageText = txt; break; }
           }
-          if (pageText) break
+          if (pageText) break;
         }
-
-        canvas.width = 0; canvas.height = 0
-        if (pageText) break
+        canvas.width = 0; canvas.height = 0;
+        if (pageText) break;
       }
-
-      if (pageText) parts.push(pageText)
+      if (pageText) parts.push(pageText);
     }
-
-    return { text: parts.join('\n\n') }
+    return { text: parts.join('\n\n') };
   } catch {
-    return { text: '' }
+    return { text: '' };
   }
 }
 
-/* ---------- Render helpers (canvas only) ---------- */
 async function renderPageToCanvas(page, scale) {
-  const viewport = page.getViewport({ scale })
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.floor(viewport.width))
-  canvas.height = Math.max(1, Math.floor(viewport.height))
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  ctx.fillStyle = '#fff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  await page.render({ canvasContext: ctx, viewport, background: 'rgba(255,255,255,1)' }).promise
-  return { canvas, ctx }
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(viewport.width));
+  canvas.height = Math.max(1, Math.floor(viewport.height));
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport, background: 'rgba(255,255,255,1)' }).promise;
+  return { canvas, ctx };
 }
 async function canvasToPngBlob(canvas) {
-  return await new Promise((resolve) => canvas.toBlob((b) => resolve(b || new Blob()), 'image/png', 1.0))
+  return await new Promise((resolve) => canvas.toBlob((b) => resolve(b || new Blob()), 'image/png', 1.0));
 }
-async function ocrBlobWithTesseract(blob, Tesseract, psm = 6) {
-  try {
-    const { data } = await Tesseract.recognize(blob, 'eng', {
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
-      tessedit_pageseg_mode: String(psm),
-      user_defined_dpi: '320',
-      preserve_interword_spaces: '1',
-    })
-    const txt = (data?.text || '').trim()
-    return txt.length >= 6 ? txt : ''
-  } catch { return '' }
+async function ocrBlobWithTesseract(blob, Tesseract, timeoutMs = 8000) {
+  let done = false;
+  const p = Tesseract.recognize(blob, 'eng', {
+    tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
+    tessedit_pageseg_mode: '6',
+    user_defined_dpi: '320',
+    preserve_interword_spaces: '1',
+  }).then(({ data }) => {
+    done = true;
+    const txt = (data?.text || '').trim();
+    return txt.length >= 6 ? txt : '';
+  }).catch(() => '');
+  const t = new Promise((resolve) => setTimeout(() => resolve(done ? '' : ''), timeoutMs));
+  const res = await Promise.race([p, t]);
+  return res || '';
 }
 
-/* ---------- Image OCR ---------- */
-async function ocrImageFile(file, opts = {}) {
+async function ocrImageFileFast(file, { timeLeft }) {
   try {
-    const mod = await import('tesseract.js')
-    const Tesseract = mod.default ?? mod
-    const bitmap = await createImageBitmap(file)
+    const mod = await import('tesseract.js');
+    const Tesseract = mod.default ?? mod;
+    const bitmap = await createImageBitmap(file);
 
-    const target = Math.max(2200, Math.min(3600, Math.max(bitmap.width, bitmap.height)))
-    const { canvas, ctx } = fitBitmapToCanvas(bitmap, target)
+    // Ensure min-side large enough so Tesseract doesn’t complain
+    const target = Math.min(3200, Math.max(1600, Math.max(bitmap.width, bitmap.height)));
+    const { canvas, ctx } = fitBitmapToCanvas(bitmap, target);
 
-    const rotations = [0, 90, 180, 270]
-    let bestText = '', bestLen = 0
+    const rotations = [0, 90]; // cut down to keep fast
+    let bestText = '', bestScore = 0;
 
     for (const angle of rotations) {
-      const { c, k } = angle ? rotateCanvas(ctx.canvas, angle) : { c: ctx.canvas, k: ctx }
-      const passOpts = opts.enhance
-        ? [{ grayscale: true, contrast: 1.4, brightness: 1.12, sharpen: true, localContrast: true },
-           { grayscale: true, contrast: 1.55, brightness: 1.18, threshold: 195, sharpen: true, localContrast: true, denoise: true }]
-        : [{ grayscale: true, contrast: 1.1, brightness: 1.05 }]
+      if (timeLeft() <= 0) break;
+      const { c, k } = angle ? rotateCanvas(ctx.canvas, angle) : { c: ctx.canvas, k: ctx };
+      const passes = [
+        { grayscale: true, contrast: 1.25, brightness: 1.08, sharpen: true },
+        { grayscale: true, contrast: 1.4, brightness: 1.12, threshold: 190, sharpen: true }
+      ];
 
-      for (const p of passOpts) {
-        const k2 = cloneOnNewCanvas(k, c.width, c.height)
-        enhanceCanvas(k2, c.width, c.height, p)
-        const psms = [6, 4, 11]
-        let data = { text: '' }
-        for (const psm of psms) {
-          const out = await Tesseract.recognize(k2.canvas, 'eng', {
-            tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ₦NnGg.,:-/&',
-            tessedit_pageseg_mode: String(psm),
-            user_defined_dpi: '320',
-            preserve_interword_spaces: '1',
-          })
-          data = out?.data || { text: '' }
-          if ((data?.text || '').match(/total|amount|paid|₦|ngn/i)) break
-        }
-        const txt = (data?.text ?? '').trim()
-        if (txt.length > bestLen) { bestText = txt; bestLen = txt.length }
-        if (bestLen > 120 && /total|amount|paid|₦|ngn/i.test(bestText)) break
+      for (const p of passes) {
+        if (timeLeft() <= 0) break;
+        const k2 = cloneOnNewCanvas(k, c.width, c.height);
+        enhanceCanvas(k2, c.width, c.height, p);
+        const txt = await ocrBlobWithTesseract(await canvasToPngBlob(k2.canvas), Tesseract, timeLeft());
+        const score = scoreText(txt);
+        if (score > bestScore) { bestScore = score; bestText = txt; }
+        if (bestScore >= 100) break; // early exit if good enough
       }
-      if (bestLen > 120 && /total|amount|paid|₦|ngn/i.test(bestText)) break
+      if (bestScore >= 100) break;
     }
 
-    canvas.width = canvas.height = 0
-    bitmap.close?.()
-    return bestText
-  } catch { return '' }
+    canvas.width = canvas.height = 0;
+    bitmap.close?.();
+    return bestText;
+  } catch { return ''; }
 }
 function fitBitmapToCanvas(bitmap, maxSide = 2200) {
-  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
-  const w = Math.max(1, Math.floor(bitmap.width * ratio))
-  const h = Math.max(1, Math.floor(bitmap.height * ratio))
-  const canvas = document.createElement('canvas')
-  canvas.width = w; canvas.height = h
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  ctx.drawImage(bitmap, 0, 0, w, h)
-  return { canvas, ctx }
+  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(8, Math.floor(bitmap.width * ratio));  // min 8px to avoid tiny-line warnings
+  const h = Math.max(8, Math.floor(bitmap.height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  return { canvas, ctx };
+}
+function rotateCanvas(canvas, angleDeg) {
+  const rad = angleDeg * Math.PI / 180;
+  const s = Math.abs(Math.sin(rad)), c = Math.abs(Math.cos(rad));
+  const w = canvas.width, h = canvas.height;
+  const nw = Math.max(8, Math.floor(w * c + h * s)), nh = Math.max(8, Math.floor(w * s + h * c));
+  const out = document.createElement('canvas'); out.width = nw; out.height = nh;
+  const k = out.getContext('2d', { willReadFrequently: true });
+  k.translate(nw / 2, nh / 2);
+  k.rotate(rad);
+  k.drawImage(canvas, -w / 2, -h / 2);
+  return { c: out, k };
 }
 
-/** Image enhancement: optional local contrast, sharpen, denoise, threshold for faded receipts. */
-function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness = 1.0, threshold, sharpen = false, localContrast = false, denoise = false } = {}) {
-  let img = ctx.getImageData(0, 0, w, h)
-  let d = img.data
-
-  const c = Math.max(0, contrast), b = Math.max(0, brightness)
-  const cf = (259 * (c * 255 + 255)) / (255 * (259 - c * 255))
+function enhanceCanvas(ctx, w, h, { grayscale = true, contrast = 1.0, brightness = 1.0, threshold, sharpen = false } = {}) {
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const c = Math.max(0, contrast), b = Math.max(0, brightness);
+  const cf = (259 * (c * 255 + 255)) / (255 * (259 - c * 255));
   for (let i = 0; i < d.length; i += 4) {
-    let r = d[i], g = d[i + 1], bl = d[i + 2]
-    if (grayscale) { const y = 0.299*r + 0.587*g + 0.114*bl; r = g = bl = y }
-    r = cf * ((r * b) - 128) + 128
-    g = cf * ((g * b) - 128) + 128
-    bl = cf * ((bl * b) - 128) + 128
-    d[i] = clamp8(r); d[i + 1] = clamp8(g); d[i + 2] = clamp8(bl)
+    let r = d[i], g = d[i + 1], bl = d[i + 2];
+    if (grayscale) { const y = 0.299*r + 0.587*g + 0.114*bl; r = g = bl = y; }
+    r = cf * ((r * b) - 128) + 128;
+    g = cf * ((g * b) - 128) + 128;
+    bl = cf * ((bl * b) - 128) + 128;
+    d[i] = clamp8(r); d[i + 1] = clamp8(g); d[i + 2] = clamp8(bl);
   }
-  ctx.putImageData(img, 0, 0)
-
-  if (localContrast) {
-    applyLocalContrast(ctx, w, h, 64, 64, 0.75)
-  }
-
-  if (denoise) {
-    medianFilter(ctx, w, h)
-  }
+  ctx.putImageData(img, 0, 0);
 
   if (typeof threshold === 'number') {
-    const im = ctx.getImageData(0, 0, w, h)
-    const dd = im.data
+    const im = ctx.getImageData(0, 0, w, h);
+    const dd = im.data;
     for (let i = 0; i < dd.length; i += 4) {
-      const y = (dd[i] + dd[i+1] + dd[i+2]) / 3
-      const v = y >= threshold ? 255 : 0
-      dd[i] = dd[i+1] = dd[i+2] = v
+      const y = (dd[i] + dd[i+1] + dd[i+2]) / 3;
+      const v = y >= threshold ? 255 : 0;
+      dd[i] = dd[i+1] = dd[i+2] = v;
     }
-    ctx.putImageData(im, 0, 0)
+    ctx.putImageData(im, 0, 0);
   }
 
   if (sharpen) {
-    convolve3x3(ctx, w, h, [0, -1, 0, -1, 5, -1, 0, -1, 0])
+    convolve3x3(ctx, w, h, [0, -1, 0, -1, 5, -1, 0, -1, 0]);
   }
 }
-function clamp8(x) { return x < 0 ? 0 : x > 255 ? 255 : x | 0 }
-
-// --- Advanced image helpers (fast approximations) ---
-function applyLocalContrast(ctx, w, h, tileW = 64, tileH = 64, amount = 0.75) {
-  const img = ctx.getImageData(0, 0, w, h)
-  const data = img.data
-  for (let ty = 0; ty < h; ty += tileH) {
-    for (let tx = 0; tx < w; tx += tileW) {
-      const ex = Math.min(tx + tileW, w)
-      const ey = Math.min(ty + tileH, h)
-      let sum = 0, sum2 = 0, count = 0
-      for (let y = ty; y < ey; y++) {
-        for (let x = tx; x < ex; x++) {
-          const i = (y * w + x) * 4
-          const yv = (data[i] + data[i+1] + data[i+2]) / 3
-          sum += yv; sum2 += yv*yv; count++
-        }
-      }
-      const mean = sum / count
-      const variance = Math.max(1, (sum2 / count) - mean*mean)
-      const std = Math.sqrt(variance)
-      const scale = Math.min(3.0, 1 + amount * (128 / std))
-      for (let y = ty; y < ey; y++) {
-        for (let x = tx; x < ex; x++) {
-          const i = (y * w + x) * 4
-          let r = data[i], g = data[i+1], b = data[i+2]
-          let yv = (r + g + b) / 3
-          yv = clamp8((yv - mean) * scale + mean)
-          data[i] = data[i+1] = data[i+2] = yv
-        }
-      }
-    }
-  }
-  ctx.putImageData(img, 0, 0)
-}
+function clamp8(x) { return x < 0 ? 0 : x > 255 ? 255 : x | 0; }
 function convolve3x3(ctx, w, h, kernel) {
-  const src = ctx.getImageData(0, 0, w, h)
-  const dst = ctx.createImageData(w, h)
-  const s = src.data, d = dst.data
-  const k = kernel
+  const src = ctx.getImageData(0, 0, w, h);
+  const dst = ctx.createImageData(w, h);
+  const s = src.data, d = dst.data, k = kernel;
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
-      let sum = 0, idx = (y * w + x) * 4
+      let sum = 0, idx = (y * w + x) * 4;
       for (let ky = -1; ky <= 1; ky++) {
         for (let kx = -1; kx <= 1; kx++) {
-          const i = ((y + ky) * w + (x + kx)) * 4
-          const yv = (s[i] + s[i+1] + s[i+2]) / 3
-          sum += yv * k[(ky + 1) * 3 + (kx + 1)]
+          const i = ((y + ky) * w + (x + kx)) * 4;
+          const yv = (s[i] + s[i+1] + s[i+2]) / 3;
+          sum += yv * k[(ky + 1) * 3 + (kx + 1)];
         }
       }
-      const v = clamp8(sum)
-      d[idx] = d[idx+1] = d[idx+2] = v
-      d[idx+3] = 255
+      const v = clamp8(sum);
+      d[idx] = d[idx+1] = d[idx+2] = v;
+      d[idx+3] = 255;
     }
   }
-  ctx.putImageData(dst, 0, 0)
+  ctx.putImageData(dst, 0, 0);
 }
-function medianFilter(ctx, w, h) {
-  const src = ctx.getImageData(0, 0, w, h)
-  const dst = ctx.createImageData(w, h)
-  const s = src.data, d = dst.data
-  const window = new Array(9)
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      for (let ky = -1, n = 0; ky <= 1; ky++) {
-        for (let kx = -1; kx <= 1; kx++, n++) {
-          const i = ((y + ky) * w + (x + kx)) * 4
-          window[n] = (s[i] + s[i+1] + s[i+2]) / 3
-        }
-      }
-      window.sort((a,b)=>a-b)
-      const v = window[4] | 0
-      const idx = (y * w + x) * 4
-      d[idx] = d[idx+1] = d[idx+2] = v
-      d[idx+3] = 255
-    }
-  }
-  ctx.putImageData(dst, 0, 0)
+function cloneOnNewCanvas(srcCtx, w, h) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const dst = c.getContext('2d', { willReadFrequently: true });
+  dst.drawImage(srcCtx.canvas, 0, 0); return dst;
 }
-function rotateCanvas(canvas, angleDeg) {
-  const rad = angleDeg * Math.PI / 180
-  const s = Math.abs(Math.sin(rad)), c = Math.abs(Math.cos(rad))
-  const w = canvas.width, h = canvas.height
-  const nw = Math.floor(w * c + h * s), nh = Math.floor(w * s + h * c)
-  const out = document.createElement('canvas'); out.width = nw; out.height = nh
-  const k = out.getContext('2d', { willReadFrequently: true })
-  k.translate(nw / 2, nh / 2)
-  k.rotate(rad)
-  k.drawImage(canvas, -w / 2, -h / 2)
-  return { c: out, k }
+function invertCanvas(ctx, w, h) {
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2]; }
+  ctx.putImageData(img, 0, 0);
 }
-
-/* ---------- Line/Index utilities ---------- */
-function splitLinesWithIndex(s) {
-  const text = String(s || '')
-  const rawLines = text.split(/\r?\n/)
-  const lines = []
-  let pos = 0
-  for (let i = 0; i < rawLines.length; i++) {
-    const t = rawLines[i]
-    const start = pos
-    const end = start + t.length
-    lines.push({ start, end, text: t, lower: t.toLowerCase() })
-    pos = end + 1 // account for "\n"
-  }
-  if (lines.length <= 1) {
-    const chunks = text.split(/(?: {2,}|\s\|\s|—|-{2,}|:{1}\s)/)
-    const alt = []; let p = 0
-    for (const ch of chunks) {
-      const idx = text.indexOf(ch, p)
-      if (idx === -1) continue
-      alt.push({ start: idx, end: idx + ch.length, text: ch, lower: ch.toLowerCase() })
-      p = idx + ch.length
-    }
-    return alt.length ? alt : lines
-  }
-  return lines
-}
-function lineIndexFromGlobalPos(idx, lines) {
-  if (!Array.isArray(lines) || lines.length === 0) return 0
-  for (let i = 0; i < lines.length; i++) {
-    const { start, end } = lines[i]
-    if (idx >= start && idx < end + 1) return i
-  }
-  return lines.length - 1
+function scoreText(t) {
+  if (!t) return 0;
+  let s = 0;
+  if (/₦|ngn/i.test(t)) s += 40;
+  if (/total|amount|paid|debit|credit/i.test(t)) s += 40;
+  const digits = (t.match(/\d/g) || []).length;
+  s += Math.min(40, Math.floor(digits / 6) * 10);
+  return s;
 }

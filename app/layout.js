@@ -5,10 +5,10 @@ import Script from "next/script";
 import PWARegister from "./components/PWARegister";
 import InstallPWAButton from "./components/InstallPWAButton";
 import IOSA2HSBanner from "./components/IOSA2HSBanner";
-import LocalBusinessJsonLd from "./seo/LocalBusinessJsonLd"; // JSON-LD (safe, no UI impact)
+import LocalBusinessJsonLd from "./seo/LocalBusinessJsonLd";
 import "react-toastify/dist/ReactToastify.css";
 import { ToastContainer } from "react-toastify";
-import FacebookPixel from "./components/FacebookPixel"; // ✅ added
+import FacebookPixel from "./components/FacebookPixel"; // ✅ single pixel loader
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,11 +41,9 @@ export const metadata = {
     statusBarStyle: "black-translucent",
     title: "chickenandrice",
   },
-  // ✅ added canonical (SEO; no runtime behavior change)
   alternates: {
     canonical: appUrl,
   },
-  // ✅ link web manifest you already expose via /app/manifest.js
   manifest: "/manifest.webmanifest",
   openGraph: {
     title: "chickenandrice",
@@ -77,9 +75,10 @@ export default function RootLayout({ children }) {
       <body className="antialiased">
         {/* JSON-LD for Restaurant rich results (harmless script) */}
         <LocalBusinessJsonLd />
-        {/* Redux store available everywhere */}
+
+        {/* Redux store everywhere */}
         <ReduxProvider>
-          {/* ✅ Facebook Pixel globally available */}
+          {/* ✅ Facebook Pixel globally available (single init, localhost-safe) */}
           <FacebookPixel pixelId={pixelId} />
           {children}
         </ReduxProvider>
@@ -90,10 +89,10 @@ export default function RootLayout({ children }) {
         {/* Install button (Android/Desktop; hidden if already installed) */}
         <InstallPWAButton className="fixed bottom-4 right-4 px-4 py-2 rounded-xl bg-gray-900 text-white shadow" />
 
-        {/* Registers /sw.js (safe, no effect on API/images) */}
+        {/* Registers /sw.js (safe) */}
         <PWARegister />
 
-        {/* Toasts (used by the payment page and elsewhere) */}
+        {/* Toasts */}
         <ToastContainer position="top-center" newestOnTop pauseOnHover closeOnClick draggable />
 
         {/* Lazy load Google Maps API */}
