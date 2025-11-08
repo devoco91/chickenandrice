@@ -572,10 +572,8 @@ export default function PaymentPage() {
                       </div>
                     )}
 
-                    {/* Parsing + verification status */}
+                    {/* Parsing + verification status (hidden while overlay active) */}
                     <div className="text-xs">
-                      {parsing && <span className="font-semibold text-slate-200">Reading receipt…</span>}
-                      {verifying && !parsing && <span className="font-semibold text-slate-200">Verifying receipt…</span>}
                       {!parsing && !verifying && (proof || receiptText) && (
                         <>
                           <div className="mt-1">
@@ -670,7 +668,37 @@ export default function PaymentPage() {
           )}
         </AnimatePresence>
 
-        {/* Blocking overlay while paying */}
+        {/* NEW: Full-screen verifying overlay for parsing or verifying */}
+        <AnimatePresence>
+          {(parsing || verifying) && (
+            <motion.div
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.div
+                initial={{ y: 14, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 14, opacity: 0 }}
+                className="w-[92%] max-w-md rounded-2xl border border-white bg-slate-900 p-6 text-center shadow-2xl"
+              >
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-800">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+                <h3 className="text-xl font-semibold">Verifying payment…</h3>
+                <p className="mt-1 text-sm text-slate-300">
+                  {parsing ? 'Reading receipt and extracting details.' : 'Checking amount and account name on your receipt.'}
+                </p>
+                <div className="mt-5 text-[11px] text-slate-400">
+                  Do not close this window.
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Blocking overlay while paying (unchanged) */}
         <AnimatePresence>
           {isPaying && (
             <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -693,7 +721,6 @@ export default function PaymentPage() {
 }
 
 /* ================= Helpers ================= */
-// (unchanged helpers below)
 
 function preprocessReceiptText(input) {
   let s = String(input || '')
@@ -914,19 +941,23 @@ function parseMoneyTokenToNaira(tok) {
 
 function splitLinesWithIndex(s) {
   const text = String(s || '');
-  const rawLines = text.split(/\r?\n/);
+  const rawLines = text.split(/\r?\n/); // <-- dot before split
   const lines = [];
   let pos = 0;
+
   for (let i = 0; i < rawLines.length; i++) {
     const t = rawLines[i];
     const start = pos;
     const end = start + t.length;
     lines.push({ start, end, text: t, lower: t.toLowerCase() });
-    pos = end + 1;
+    pos = end + 1; // account for the newline we split on
   }
+
+  // If there's only one "line", try to create pseudo-lines using separators
   if (lines.length <= 1) {
     const chunks = text.split(/(?: {2,}|\s\|\s|—|-{2,}|:{1}\s)/);
-    const alt = []; let p = 0;
+    const alt = [];
+    let p = 0;
     for (const ch of chunks) {
       const idx = text.indexOf(ch, p);
       if (idx === -1) continue;
@@ -935,8 +966,11 @@ function splitLinesWithIndex(s) {
     }
     return alt.length ? alt : lines;
   }
+
   return lines;
 }
+
+
 function lineIndexFromGlobalPos(idx, lines) {
   if (!Array.isArray(lines) || lines.length === 0) return 0;
   for (let i = 0; i < lines.length; i++) {
