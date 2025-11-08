@@ -25,11 +25,8 @@ const WHATSAPP_E164 = '2349040002074';
 const LS_KEY = 'paypage_v1';
 const SHARE_TTL_MS = 2 * 60 * 60 * 1000;
 
-/* === META (Pixel + CAPI) — safe additions === */
-const SERVER_BASE =
-  process.env.NEXT_PUBLIC_SERVER_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  '';
+/* === META (Pixel + CAPI) === */
+const PIXEL_ID = process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID || '811877775096101';
 
 /* Cookie helpers for fbp/fbc */
 function _readCookie(name) {
@@ -53,7 +50,7 @@ function _getFbpFbc() {
   return { fbp, fbc };
 }
 
-/* ---- Event ID helpers for dedup (FE+BE share the same id) ---- */
+/* ---- Event ID for dedup ---- */
 const genEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 const getOrCreateEventId = (key = 'meta:purchaseEventId') => {
   if (typeof window === 'undefined') return genEventId();
@@ -70,6 +67,12 @@ const clearEventId = (key = 'meta:purchaseEventId') => {
 /* ======= Utils ======= */
 const formatNGN = (n = 0) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2 }).format(Number(n || 0));
+
+/* Name splitter for Pixel AM */
+function splitName(full = '') {
+  const parts = String(full).trim().split(/\s+/);
+  return { fn: parts[0] || '', ln: parts.slice(1).join(' ') || '' };
+}
 
 export default function PaymentPage() {
   const router = useRouter();
@@ -178,7 +181,7 @@ export default function PaymentPage() {
 
     setParsing(true);
     try {
-      const { text: raw } = await extractTextFromFileFast(f); // optimized OCR
+      const { text: raw } = await extractTextFromFileFast(f);
       const text = preprocessReceiptText(raw);
       setReceiptText(text || '');
     } catch {
@@ -222,7 +225,11 @@ export default function PaymentPage() {
     const encoded = encodeURIComponent(text);
     const now = Date.now();
     setShareStartedAt(now); setShareConfirmed(false);
-    try { const raw = localStorage.getItem(LS_KEY); const s = raw ? JSON.parse(raw) : {}; localStorage.setItem(LS_KEY, JSON.stringify({ ...s, shareStartedAt: now, shareConfirmed: false })); } catch {}
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      const s = raw ? JSON.parse(raw) : {};
+      localStorage.setItem(LS_KEY, JSON.stringify({ ...s, shareStartedAt: now, shareConfirmed: false }));
+    } catch {}
     try {
       if (navigator.canShare && navigator.canShare({ files: [proof] })) {
         await navigator.share({ files: [proof], text, title: 'Proof of Payment' });
@@ -234,7 +241,7 @@ export default function PaymentPage() {
   };
 
   async function submitOrderToBackend() {
-    const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/,''); // e.g. https://your-backend/api
+    const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
 
     const payload = {
       items: cartItems.map((item) => ({ foodId: item._id, quantity: item.quantity, name: item.name, price: item.price, isDrink: !!item.isDrink })),
@@ -257,7 +264,6 @@ export default function PaymentPage() {
       paymentMethod: tab,
     };
 
-    // 👉 Call your real backend API (prevents 404 on the frontend domain)
     const res = await fetch(`${API_BASE}/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -278,7 +284,6 @@ export default function PaymentPage() {
         customerName: payload.customerName,
         phone: payload.phone,
         address: [payload.houseNumber, payload.street].filter(Boolean).join(', ') || null,
-        // optional fields for better match
         email: order.email || order.customerEmail || '',
         firstName: order.firstName || '',
         lastName: order.lastName || '',
@@ -302,62 +307,75 @@ export default function PaymentPage() {
     try {
       await submitOrderToBackend();
 
-      /* ===== META Pixel + Conversion API (non-blocking; now with dedup) ===== */
+      /* ===== META Pixel + CAPI (dedup + AM) ===== */
       try {
-        const eventId = getOrCreateEventId(); // mint once per order
+        const eventId = getOrCreateEventId();
 
-        // 1) Browser pixel with same eventId
-        try {
-          if (typeof window !== 'undefined' && window.fbq) {
-            window.fbq('track', 'Purchase', {
-              value: Number(total || 0),
-              currency: 'NGN',
-            }, { eventID: eventId });
-          }
-        } catch {}
+        const email =
+          order.email ||
+          order.customerEmail ||
+          (order.user && (order.user.email || order.userEmail)) ||
+          '';
+        const phone = order.phone || '';
+        const { fn, ln } = splitName(order.customerName || '');
 
-        // 2) Server (Next API) with same event_id + cookies
-        const { fbp, fbc } = _getFbpFbc(); // optional; server also derives
-        const endpoint = '/api/facebook';
+        // Pixel AM + Purchase with eventID
+        if (typeof window !== 'undefined' && window.fbq) {
+          try {
+            window.fbq('init', PIXEL_ID, {
+              em: email || undefined,
+              ph: phone || undefined,
+              fn: fn || undefined,
+              ln: ln || undefined,
+            });
+          } catch {}
+          window.fbq(
+            'track',
+            'Purchase',
+            { value: Number(total || 0), currency: 'NGN' },
+            { eventID: eventId }
+          );
+        }
+
+        const { fbp, fbc } = _getFbpFbc();
         const items = cartItems.map((i) => ({
           id: String(i._id ?? i.sku ?? i.name ?? 'unknown'),
           quantity: Number(i.quantity ?? 1),
           item_price: Number(i.price ?? 0),
         }));
         const customer = {
-          email: order.email || order.customerEmail || '',
-          phone: order.phone || '',
+          email,
+          phone,
           external_id: order.userId || order.customerId || '',
-          first_name: order.firstName || '',
-          last_name: order.lastName || '',
+          first_name: fn,
+          last_name: ln,
           city: order.city || '',
           state: order.state || '',
           zip: order.zip || '',
           country: order.country || '',
         };
 
-        await fetch(endpoint, {
+        await fetch('/api/facebook', {
           method: 'POST',
-          credentials: 'include', // ensures _fbp cookie is sent
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             event_name: 'Purchase',
-            event_id: eventId,                 // MUST match pixel eventID
+            event_id: eventId,
             value: Number(total || 0),
             currency: 'NGN',
             items,
             customer,
             event_source_url: typeof window !== 'undefined' ? window.location.href : '',
-            // fbp/fbc optional if your API derives them; safe to include:
             fbp, fbc,
-            test_event_code: process.env.NEXT_PUBLIC_FB_TEST_EVENT_CODE || ''
+            // No test_event_code in production
           }),
         }).catch(() => {});
-        clearEventId(); // avoid reuse
+        clearEventId();
       } catch (err) {
         console.error('⚠️ Facebook tracking failed:', err);
       }
-      /* ===== END META additions ===== */
+      /* ===== END META ===== */
 
       dispatch(clearCart()); dispatch(clearOrderDetails());
       toast.success('Order sent!', {
@@ -377,7 +395,7 @@ export default function PaymentPage() {
     <>
       <NavbarDark />
       <div className="relative min-h-[100dvh] text-slate-100 bg-slate-950">
-        <div className="max-w-3xl mx-auto px_4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div>
@@ -416,17 +434,17 @@ export default function PaymentPage() {
 
           {/* Tabs */}
           <div className="grid w-full grid-cols-2 rounded-xl border border-white p-1">
-            <button onClick={() => setTab('transfer')} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text_sm transition ${tab === 'transfer' ? 'bg-white text-black' : 'hover:bg-slate-800'}`}>
+            <button onClick={() => setTab('transfer')} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition ${tab === 'transfer' ? 'bg-white text-black' : 'hover:bg-slate-800'}`}>
               <Banknote className="h-4 w-4" /> Bank Transfer
             </button>
-            <button disabled title="Card payments will be available shortly." className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text_sm opacity-60 cursor-not-allowed">
+            <button disabled title="Card payments will be available shortly." className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm opacity-60 cursor-not-allowed">
               <Wallet className="h-4 w-4" /> Card (coming soon)
             </button>
           </div>
 
           {/* Order Summary */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-            <div className="mt-6 rounded-2xl border border_white bg-slate-900">
+            <div className="mt-6 rounded-2xl border border-white bg-slate-900">
               <div className="p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-medium">Order Summary</h2>
@@ -662,7 +680,7 @@ export default function PaymentPage() {
                 </div>
                 <h3 className="text-lg font-semibold">Finalizing your order…</h3>
                 <p className="mt-1 text-sm text-slate-300">Please hold while we verify and finalize your order.</p>
-                <div className="mt-4 h-2 w-full overflow_hidden rounded-full bg-slate-700">
+                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-700">
                   <div className="h-full" style={{ width: `${progress}%`, transition: 'width 120ms linear', background: 'linear-gradient(90deg, #2563eb, #4f46e5)' }} />
                 </div>
               </motion.div>
@@ -675,6 +693,7 @@ export default function PaymentPage() {
 }
 
 /* ================= Helpers ================= */
+// (unchanged helpers below)
 
 function preprocessReceiptText(input) {
   let s = String(input || '')
@@ -703,7 +722,6 @@ function preprocessReceiptText(input) {
   return s;
 }
 
-/** Detect amount with line-aware scoring. */
 function detectReceiptAmount(text, orderAmount) {
   const src = String(text || '');
   const hay = src.toLowerCase();
@@ -787,7 +805,6 @@ function detectReceiptAmount(text, orderAmount) {
   return { ok, bestAmount: top ? top.val : null, snippet: top ? top.tok : '' };
 }
 
-/** Accepts chicken, rice, chicken and rice, chickenandriceltd (punctuation/spacing tolerant). */
 function verifyAccountNameStrict(text) {
   const raw = String(text || '');
   const lettersOnly = (preprocessReceiptText._lettersOnly ||
@@ -934,7 +951,7 @@ function lineIndexFromGlobalPos(idx, lines) {
 async function extractTextFromFileFast(file) {
   if (typeof window === 'undefined') return { text: '', method: 'ssr' };
 
-  const deadlineMs = 12000; // hard cap ~12s
+  const deadlineMs = 12000;
   const start = Date.now();
   const timeLeft = () => Math.max(0, deadlineMs - (Date.now() - start));
 
@@ -945,7 +962,6 @@ async function extractTextFromFileFast(file) {
       const { pdfjsLib } = await loadPdfJs();
       if (!pdfjsLib) return { text: '', method: 'pdf-ocr' };
 
-      // 1) Fast text layer
       try {
         const data = await file.arrayBuffer();
         const doc = await pdfjsLib.getDocument({ data, disableCombineTextItems: false }).promise;
@@ -962,12 +978,10 @@ async function extractTextFromFileFast(file) {
         if (text.length >= 6) return { text, method: 'pdf-text' };
       } catch {}
 
-      // 2) Single-pass rasterize → OCR
       const { text: ocr } = await ocrPdfAsImagesFast(file, { timeLeft });
       return { text: (ocr || '').trim(), method: 'pdf-ocr' };
     }
 
-    // Images
     if (file.type?.startsWith?.('image/') || !file.type) {
       const text = await ocrImageFileFast(file, { timeLeft });
       return { text: (text || '').trim(), method: 'image-ocr' };
