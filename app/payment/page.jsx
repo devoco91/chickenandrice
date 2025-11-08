@@ -34,13 +34,10 @@ const SERVER_BASE =
 /* Cookie helpers for fbp/fbc */
 function _readCookie(name) {
   if (typeof document === 'undefined') return '';
-  // Escape regex meta in cookie name once
   const safeName = name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1');
   const m = document.cookie.match(new RegExp('(?:^|; )' + safeName + '=([^;]*)'));
   return m ? decodeURIComponent(m[1]) : '';
 }
-
-
 function _getFbpFbc() {
   const fbp = _readCookie('_fbp') || '';
   let fbc = _readCookie('_fbc') || '';
@@ -55,6 +52,20 @@ function _getFbpFbc() {
   } catch {}
   return { fbp, fbc };
 }
+
+/* ---- Event ID helpers for dedup (FE+BE share the same id) ---- */
+const genEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+const getOrCreateEventId = (key = 'meta:purchaseEventId') => {
+  if (typeof window === 'undefined') return genEventId();
+  const existing = sessionStorage.getItem(key);
+  if (existing) return existing;
+  const id = genEventId();
+  sessionStorage.setItem(key, id);
+  return id;
+};
+const clearEventId = (key = 'meta:purchaseEventId') => {
+  if (typeof window !== 'undefined') sessionStorage.removeItem(key);
+};
 
 /* ======= Utils ======= */
 const formatNGN = (n = 0) =>
@@ -267,6 +278,14 @@ export default function PaymentPage() {
         customerName: payload.customerName,
         phone: payload.phone,
         address: [payload.houseNumber, payload.street].filter(Boolean).join(', ') || null,
+        // optional fields for better match
+        email: order.email || order.customerEmail || '',
+        firstName: order.firstName || '',
+        lastName: order.lastName || '',
+        city: order.city || '',
+        state: order.state || '',
+        zip: order.zip || '',
+        country: order.country || '',
       };
       sessionStorage.setItem('lastOrderSummary', JSON.stringify(summary));
     } catch {}
@@ -283,39 +302,58 @@ export default function PaymentPage() {
     try {
       await submitOrderToBackend();
 
-      /* ===== META Pixel + Conversion API (non-blocking) ===== */
+      /* ===== META Pixel + Conversion API (non-blocking; now with dedup) ===== */
       try {
-        if (typeof window !== 'undefined' && window.fbq) {
-          window.fbq('track', 'Purchase', {
-            value: Number(total || 0),
-            currency: 'NGN',
-          });
-        }
-        const { fbp, fbc } = _getFbpFbc();
+        const eventId = getOrCreateEventId(); // mint once per order
 
-        // Your Next API route lives at app/api/facebook/route.js -> /api/facebook
+        // 1) Browser pixel with same eventId
+        try {
+          if (typeof window !== 'undefined' && window.fbq) {
+            window.fbq('track', 'Purchase', {
+              value: Number(total || 0),
+              currency: 'NGN',
+            }, { eventID: eventId });
+          }
+        } catch {}
+
+        // 2) Server (Next API) with same event_id + cookies
+        const { fbp, fbc } = _getFbpFbc(); // optional; server also derives
         const endpoint = '/api/facebook';
-
-        const email =
-          order.email ||
-          order.customerEmail ||
-          (order.user && (order.user.email || order.userEmail)) ||
-          '';
+        const items = cartItems.map((i) => ({
+          id: String(i._id ?? i.sku ?? i.name ?? 'unknown'),
+          quantity: Number(i.quantity ?? 1),
+          item_price: Number(i.price ?? 0),
+        }));
+        const customer = {
+          email: order.email || order.customerEmail || '',
+          phone: order.phone || '',
+          external_id: order.userId || order.customerId || '',
+          first_name: order.firstName || '',
+          last_name: order.lastName || '',
+          city: order.city || '',
+          state: order.state || '',
+          zip: order.zip || '',
+          country: order.country || '',
+        };
 
         await fetch(endpoint, {
           method: 'POST',
+          credentials: 'include', // ensures _fbp cookie is sent
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             event_name: 'Purchase',
+            event_id: eventId,                 // MUST match pixel eventID
             value: Number(total || 0),
             currency: 'NGN',
+            items,
+            customer,
             event_source_url: typeof window !== 'undefined' ? window.location.href : '',
-            email,
-            fbp,
-            fbc,
+            // fbp/fbc optional if your API derives them; safe to include:
+            fbp, fbc,
             test_event_code: process.env.NEXT_PUBLIC_FB_TEST_EVENT_CODE || ''
           }),
         }).catch(() => {});
+        clearEventId(); // avoid reuse
       } catch (err) {
         console.error('⚠️ Facebook tracking failed:', err);
       }
@@ -339,7 +377,7 @@ export default function PaymentPage() {
     <>
       <NavbarDark />
       <div className="relative min-h-[100dvh] text-slate-100 bg-slate-950">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
+        <div className="max-w-3xl mx-auto px_4 sm:px-6 lg:px-8 mt-10 py-10 sm:py-16 relative">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div>
@@ -378,17 +416,17 @@ export default function PaymentPage() {
 
           {/* Tabs */}
           <div className="grid w-full grid-cols-2 rounded-xl border border-white p-1">
-            <button onClick={() => setTab('transfer')} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition ${tab === 'transfer' ? 'bg-white text-black' : 'hover:bg-slate-800'}`}>
+            <button onClick={() => setTab('transfer')} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text_sm transition ${tab === 'transfer' ? 'bg-white text-black' : 'hover:bg-slate-800'}`}>
               <Banknote className="h-4 w-4" /> Bank Transfer
             </button>
-            <button disabled title="Card payments will be available shortly." className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm opacity-60 cursor-not-allowed">
+            <button disabled title="Card payments will be available shortly." className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text_sm opacity-60 cursor-not-allowed">
               <Wallet className="h-4 w-4" /> Card (coming soon)
             </button>
           </div>
 
           {/* Order Summary */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-            <div className="mt-6 rounded-2xl border border-white bg-slate-900">
+            <div className="mt-6 rounded-2xl border border_white bg-slate-900">
               <div className="p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-medium">Order Summary</h2>
@@ -624,7 +662,7 @@ export default function PaymentPage() {
                 </div>
                 <h3 className="text-lg font-semibold">Finalizing your order…</h3>
                 <p className="mt-1 text-sm text-slate-300">Please hold while we verify and finalize your order.</p>
-                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-700">
+                <div className="mt-4 h-2 w-full overflow_hidden rounded-full bg-slate-700">
                   <div className="h-full" style={{ width: `${progress}%`, transition: 'width 120ms linear', background: 'linear-gradient(90deg, #2563eb, #4f46e5)' }} />
                 </div>
               </motion.div>
