@@ -1,4 +1,3 @@
-// app/Detailspage/page.jsx
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -10,12 +9,12 @@ import {
 } from "./../store/cartSlice";
 import { setMeals, resetMeals } from "./../store/mealsSlice";
 import { resetLocation } from "./../store/locationSlice";
-import { ShoppingCart, Plus, Minus, X } from "lucide-react";
+import { ShoppingCart, Plus, Minus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar/Navbar";
 import MinOrderNotice from "../components/MinOrderNotice";
 import { motion, AnimatePresence } from "framer-motion";
-import SupportWhatsApp from "../components/SupportWhatsApp"; // <-- added
+import SupportWhatsApp from "../components/SupportWhatsApp";
 
 /* Config */
 const MIN_ORDER_AMOUNT = 8850;
@@ -37,21 +36,30 @@ const getImageUrl = (val) => {
   if (typeof s !== "string") {
     try {
       if (Array.isArray(s)) s = s[0] || "";
-      else if (typeof s === "object") s = s.url || s.path || s.filename || s.filepath || "";
+      else if (typeof s === "object")
+        s = s.url || s.path || s.filename || s.filepath || "";
     } catch {}
   }
   if (!s) return "/placeholder.png";
   if (/^https?:\/\//i.test(s)) return s;
-  const cleaned = String(s).replace(/\\/g, "/").replace(/^\/+/, "").replace(/^uploads\//i, "");
+  const cleaned = String(s)
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/^uploads\//i, "");
   return `${UPLOADS_BASE}/${encodeURI(cleaned)}`;
 };
 const formatNaira = (n) =>
-  typeof n === "number" ? n.toLocaleString("en-NG", { maximumFractionDigits: 0 }) : String(n || "");
+  typeof n === "number"
+    ? n.toLocaleString("en-NG", { maximumFractionDigits: 0 })
+    : String(n || "");
 
-/* Match product page helpers/skin */
+/* Helpers/skin */
 export const isPopularItem = (p) => {
-  const tagPopular = Array.isArray(p?.tags) && p.tags.some((t) => String(t).trim().toLowerCase() === "popular");
-  const flagPopular = p?.isPopular === true || p?.popular === true || p?.featured === true;
+  const tagPopular =
+    Array.isArray(p?.tags) &&
+    p.tags.some((t) => String(t).trim().toLowerCase() === "popular");
+  const flagPopular =
+    p?.isPopular === true || p?.popular === true || p?.featured === true;
   return tagPopular || flagPopular;
 };
 const PATTERN_SVG = encodeURIComponent(`
@@ -67,7 +75,8 @@ const PATTERN_SVG = encodeURIComponent(`
 </svg>
 `);
 const PATTERN_URL = `url("data:image/svg+xml,${PATTERN_SVG}")`;
-const MEDIA_H = "h-[170px] sm:h-[185px] md:h-[200px] lg:h-[210px] xl:h-[220px]";
+const MEDIA_H =
+  "h-[170px] sm:h-[185px] md:h-[200px] lg:h-[210px] xl:h-[220px]";
 const BORDER_SOFT = "border-orange-200";
 
 const Detailspage = () => {
@@ -83,11 +92,21 @@ const Detailspage = () => {
 
   /* Floating cart state */
   const totalPacks = useMemo(
-    () => (Array.isArray(cartItems) ? cartItems.reduce((s, i) => s + (i?.quantity || 0), 0) : 0),
+    () =>
+      Array.isArray(cartItems)
+        ? cartItems.reduce((s, i) => s + (i?.quantity || 0), 0)
+        : 0,
     [cartItems]
   );
   const itemsSubtotal = useMemo(
-    () => (Array.isArray(cartItems) ? cartItems.reduce((s, i) => s + (Number(i?.price) || 0) * (Number(i?.quantity) || 0), 0) : 0),
+    () =>
+      Array.isArray(cartItems)
+        ? cartItems.reduce(
+            (s, i) =>
+              s + (Number(i?.price) || 0) * (Number(i?.quantity) || 0),
+            0
+          )
+        : 0,
     [cartItems]
   );
   const belowMin = itemsSubtotal < MIN_ORDER_AMOUNT;
@@ -105,14 +124,17 @@ const Detailspage = () => {
     router.push("/cart");
   };
 
-  const getQuantity = (id) => cartItems.find((i) => i._id === id)?.quantity || 0;
+  const getQuantity = (id) =>
+    cartItems.find((i) => i._id === id)?.quantity || 0;
 
   const handleAddToCart = (product) => {
     const cartProduct = { ...product };
     if (location?.isConfirmed) {
       dispatch(addItemCart(cartProduct));
     } else {
-      try { localStorage.setItem("pendingProduct", JSON.stringify(cartProduct)); } catch {}
+      try {
+        localStorage.setItem("pendingProduct", JSON.stringify(cartProduct));
+      } catch {}
       router.push(`/select-location?mealId=${product._id}`);
     }
   };
@@ -136,7 +158,9 @@ const Detailspage = () => {
         }
         let url = `${API_BASE}/foods`;
         if (location?.isConfirmed && location?.state && location?.lga) {
-          url = `${API_BASE}/foods?state=${encodeURIComponent(location.state)}&lga=${encodeURIComponent(location.lga)}`;
+          url = `${API_BASE}/foods?state=${encodeURIComponent(
+            location.state
+          )}&lga=${encodeURIComponent(location.lga)}`;
         }
         const res = await fetch(url, { cache: "no-store" });
         const data = await res.json();
@@ -152,7 +176,10 @@ const Detailspage = () => {
     fetchProducts();
   }, [location, mealsFromStore, dispatch]);
 
-  const popularProducts = useMemo(() => products.filter(isPopularItem), [products]);
+  const popularProducts = useMemo(
+    () => products.filter(isPopularItem),
+    [products]
+  );
 
   const handleCardClick = (product) => {
     const qty = getQuantity(product._id);
@@ -160,7 +187,7 @@ const Detailspage = () => {
     else handleAddToCart(product);
   };
   const stopEnterSpace = (e) => {
-    if (e.key === "Enter" || e.key === " ") e.stopPropagation(); // prevent double fire from card
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
   };
 
   const renderCard = (product, idx) => {
@@ -173,13 +200,21 @@ const Detailspage = () => {
         role="button"
         tabIndex={0}
         onClick={() => handleCardClick(product)}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleCardClick(product)}
+        onKeyDown={(e) =>
+          (e.key === "Enter" || e.key === " ") && handleCardClick(product)
+        }
         className={`group rounded-2xl overflow-hidden border ${BORDER_SOFT} bg-white shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col`}
         initial={{ opacity: 0, y: 22 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: Math.min(idx * 0.02, 0.16), duration: 0.3, ease: "easeOut" }}
+        transition={{
+          delay: Math.min(idx * 0.02, 0.16),
+          duration: 0.3,
+          ease: "easeOut",
+        }}
       >
-        <div className={`px-4 border-b ${BORDER_SOFT} h-[56px] md:h-[60px] flex items-center`}>
+        <div
+          className={`px-4 border-b ${BORDER_SOFT} h-[56px] md:h-[60px] flex items-center`}
+        >
           <h3 className="text-[15px] md:text-base font-semibold text-gray-900 leading-snug line-clamp-2">
             {product.name}
           </h3>
@@ -191,8 +226,11 @@ const Detailspage = () => {
             alt={product.name}
             className="w-full h-full object-cover"
             onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+            /* ✅ React/Next 15 camelCase */
+            fetchPriority="low"
+            loading="lazy"
+            decoding="async"
           />
-        {/* Popular flag */}
           {isPopularItem(product) && (
             <span className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-semibold px-2 py-[2px] rounded">
               Popular
@@ -205,12 +243,14 @@ const Detailspage = () => {
 
         <div className="px-4 pt-3 pb-4 mt-auto">
           {quantity > 0 ? (
-            /* === Compact, no-wrap controls === */
             <div
               className={`flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 max-[403px]:gap-1 rounded-xl p-1.5 bg-white border ${BORDER_SOFT}`}
             >
               <button
-                onClick={(e) => { e.stopPropagation(); handleDecrement(product._id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDecrement(product._id);
+                }}
                 onKeyDown={stopEnterSpace}
                 className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
@@ -222,7 +262,10 @@ const Detailspage = () => {
               </span>
 
               <button
-                onClick={(e) => { e.stopPropagation(); handleIncrement(product._id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleIncrement(product._id);
+                }}
                 onKeyDown={stopEnterSpace}
                 className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
@@ -230,14 +273,20 @@ const Detailspage = () => {
               </button>
             </div>
           ) : (
-            /* === Compact, no-wrap CTA === */
             <button
-              onClick={(e) => { e.stopPropagation(); handleCardClick(product); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCardClick(product);
+              }}
               onKeyDown={stopEnterSpace}
               className="w-full text-white px-4 py-3 max-[403px]:px-3 max-[403px]:py-2 rounded-xl flex items-center justify-center gap-2 max-[403px]:gap-1 whitespace-nowrap transition shadow"
-              style={{ backgroundColor: "#2563eb" }} /* blue-600 */
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")} /* blue-700 */
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
+              style={{ backgroundColor: "#2563eb" }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor = "#1d4ed8")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = "#2563eb")
+              }
             >
               <ShoppingCart className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
               <span className="max-[403px]:text-sm">Add to Cart</span>
@@ -252,7 +301,12 @@ const Detailspage = () => {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ backgroundColor: "#fff6e5", backgroundImage: PATTERN_URL, backgroundRepeat: "repeat", backgroundSize: "220px 220px" }}
+        style={{
+          backgroundColor: "#fff6e5",
+          backgroundImage: PATTERN_URL,
+          backgroundRepeat: "repeat",
+          backgroundSize: "220px 220px",
+        }}
       >
         <p className="text-xl text-gray-700 animate-pulse">Loading menu...</p>
       </div>
@@ -266,7 +320,12 @@ const Detailspage = () => {
       <Navbar />
       <div
         className="min-h-screen relative overflow-hidden pt-16"
-        style={{ backgroundColor: "#fff6e5", backgroundImage: PATTERN_URL, backgroundRepeat: "repeat", backgroundSize: "220px 220px" }}
+        style={{
+          backgroundColor: "#fff6e5",
+          backgroundImage: PATTERN_URL,
+          backgroundRepeat: "repeat",
+          backgroundSize: "220px 220px",
+        }}
       >
         <div className="relative max-w-7xl mx-auto px-6 py-8">
           <div className="flex justify-end mb-6">
@@ -282,14 +341,18 @@ const Detailspage = () => {
           <MinOrderNotice />
 
           <section className="mb-12" id="popular-items">
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">🔥 Popular Items</h2>
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
+              🔥 Popular Items
+            </h2>
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
               {popularProducts.map((p, idx) => renderCard(p, idx))}
             </div>
           </section>
 
           <section id="all-items">
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">🍲 All Items</h2>
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
+              🍲 All Items
+            </h2>
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
               {products.map((p, idx) => renderCard(p, idx))}
             </div>
@@ -297,7 +360,7 @@ const Detailspage = () => {
         </div>
       </div>
 
-      {/* Right-side FAB + message beneath */}
+      {/* Right-side FAB + message */}
       <div className="fixed right-6 top-1/2 -translate-y-1/2 z-50 flex flex-col items-end gap-2">
         <button
           onClick={handleCartFabClick}
@@ -308,11 +371,10 @@ const Detailspage = () => {
             "flex items-center gap-2 hover:opacity-90 transition relative",
             isInactive ? "opacity-50 cursor-not-allowed" : "",
           ].join(" ")}
-          style={{ backgroundColor: "#2563eb" }} /* blue-600 */
+          style={{ backgroundColor: "#2563eb" }}
           aria-label="Open cart"
         >
           <ShoppingCart className="w-5 h-5" />
-          {/* Show both count and subtotal on the button */}
           <span className="font-semibold">
             ( {totalPacks} | ₦{itemsSubtotal.toLocaleString()} )
           </span>
@@ -338,11 +400,8 @@ const Detailspage = () => {
         </AnimatePresence>
       </div>
 
-      {/* Floating WhatsApp support */}
       <SupportWhatsApp />
-
-      {/* Optional: image zoom modal kept from prior versions if needed */}
-      <AnimatePresence>{/* ... */}</AnimatePresence>
+      <AnimatePresence>{/* reserved */}</AnimatePresence>
     </>
   );
 };

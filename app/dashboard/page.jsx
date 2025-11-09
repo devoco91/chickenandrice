@@ -1,4 +1,4 @@
-'use client'
+"use client"
 import { useState, useEffect } from "react"
 import NaijaStates from "naija-state-local-government"
 import { useRouter } from "next/navigation"
@@ -26,7 +26,6 @@ const getImageUrl = (val) => {
   }
   if (!s) return "/fallback.jpg"
   if (/^https?:\/\//i.test(s)) return s
-  // normalize things like "/uploads/foo", "uploads/foo", "foo", "foods/foo"
   const cleaned = String(s)
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
@@ -56,10 +55,7 @@ async function fetchJSON(input, init) {
   const ct = res.headers.get('content-type') || ''
   try {
     data = ct.includes('application/json') ? await res.json() : await res.text()
-  } catch {
-    // ignore parse error; leave data as null
-  }
-
+  } catch {}
   if (!res.ok) {
     const msg =
       (data && typeof data === 'object' && data.error) ||
@@ -118,9 +114,7 @@ export default function Dashboard() {
     try {
       const data = await fetchJSON(`${API_BASE}/foods`, { cache: "no-store" })
       setFoods(data)
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[foods] fetched', data.length)
-      }
+      if (process.env.NODE_ENV !== 'production') console.log('[foods] fetched', data.length)
     } catch (err) {
       console.error("fetchFoods failed:", err)
       setError(err.message || 'Failed to fetch foods')
@@ -131,9 +125,7 @@ export default function Dashboard() {
     try {
       const data = await fetchJSON(`${API_BASE}/drinks`, { cache: "no-store" })
       setDrinks(data)
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[drinks] fetched', data.length)
-      }
+      if (process.env.NODE_ENV !== 'production') console.log('[drinks] fetched', data.length)
     } catch (err) {
       console.error("fetchDrinks failed:", err)
       setDrinkError(err.message || 'Failed to fetch drinks')
@@ -176,23 +168,19 @@ export default function Dashboard() {
       ? `${API_BASE}/foods/${editingFoodId}`
       : `${API_BASE}/foods`
 
-    // Derive boolean from category selector
     const isPopular = form.category === "Popular"
 
-    // Build FormData safely
     const fd = new FormData()
     fd.append("name", form.name)
     fd.append("description", form.description || "")
-    fd.append("price", String(form.price || "")) // backend expects number; cast on server
+    fd.append("price", String(form.price || ""))
     fd.append("category", form.category || "All Items")
     fd.append("isAvailable", String(!!form.isAvailable))
     fd.append("state", form.state || "Lagos")
     fd.append("lgas", JSON.stringify(Array.isArray(form.lgas) ? form.lgas : []))
-    // popular flags (backend will consume any of these)
     fd.set("isPopular", String(isPopular))
     fd.set("popular", String(isPopular))
     fd.set("featured", String(isPopular))
-
     if (imageFile) fd.append("imageFile", imageFile)
 
     try {
@@ -200,22 +188,11 @@ export default function Dashboard() {
         method: editingFoodId ? "PUT" : "POST",
         body: fd,
       })
-
-      // Show success info incl. returned image path
-      setSuccess(
-        `${editingFoodId ? "Food updated!" : "Food added!"}${
-          data?.image ? `  (image: ${data.image})` : ""
-        }`
-      )
-
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[foods] save success:', data)
-      }
-
+      setSuccess(`${editingFoodId ? "Food updated!" : "Food added!"}${data?.image ? `  (image: ${data.image})` : ""}`)
+      if (process.env.NODE_ENV !== 'production') console.log('[foods] save success:', data)
       await fetchFoods()
       resetForm()
     } catch (err) {
-      // Surface detailed error
       console.error("save food failed:", { message: err.message, status: err.status, body: err.body })
       setError(err.message || 'Failed to save food')
     } finally {
@@ -245,7 +222,6 @@ export default function Dashboard() {
       name: food.name,
       description: food.description || "",
       price: food.price,
-      // Pre-fill category from any popular marker
       category: isPopularItem(food) ? "Popular" : "All Items",
       isAvailable: food.isAvailable,
       state: "Lagos",
@@ -307,14 +283,8 @@ export default function Dashboard() {
         method: editingDrinkId ? "PUT" : "POST",
         body: fd,
       })
-      setDrinkSuccess(
-        `${editingDrinkId ? "Drink updated!" : "Drink added!"}${
-          data?.image ? `  (image: ${data.image})` : ""
-        }`
-      )
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[drinks] save success:', data)
-      }
+      setDrinkSuccess(`${editingDrinkId ? "Drink updated!" : "Drink added!"}${data?.image ? `  (image: ${data.image})` : ""}`)
+      if (process.env.NODE_ENV !== 'production') console.log('[drinks] save success:', data)
       await fetchDrinks()
       resetDrinkForm()
     } catch (err) {
@@ -371,7 +341,6 @@ export default function Dashboard() {
   const currentDrinks = drinks.slice(drinkIndexOfFirst, drinkIndexOfLast)
   const drinkTotalPages = Math.ceil(Math.max(drinks.length, 1) / Math.max(drinkRowsPerPage, 1))
 
-  // ====== RETURN UI ======
   return (
     <div className="min-h-screen bg-red-50 p-6 text-gray-900">
       <h1 className="text-3xl font-bold mb-6 text-red-700">Dashboard</h1>
@@ -385,7 +354,6 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* Populate button */}
       <div className="relative inline-block mb-6">
         <Link
           href="/foodpopdashboard"
@@ -395,13 +363,11 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* Alerts */}
       {success && <div className="mb-4 p-3 bg-green-100 text-green-800 rounded">{success}</div>}
       {error && <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">{error}</div>}
       {drinkSuccess && <div className="mb-4 p-3 bg-green-100 text-green-800 rounded">{drinkSuccess}</div>}
       {drinkError && <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">{drinkError}</div>}
 
-      {/* Add Buttons */}
       <div className="flex flex-wrap gap-3 mb-6">
         {!showForm && (
           <button
@@ -478,6 +444,10 @@ export default function Dashboard() {
               className="w-24 h-24 object-cover rounded mx-auto"
               alt="Preview"
               onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+              /* ✅ Fix + perf */
+              fetchPriority="low"
+              loading="lazy"
+              decoding="async"
             />
           )}
 
@@ -515,6 +485,10 @@ export default function Dashboard() {
               className="w-24 h-24 object-cover rounded mx-auto"
               alt="Preview"
               onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+              /* ✅ Fix + perf */
+              fetchPriority="low"
+              loading="lazy"
+              decoding="async"
             />
           )}
 
@@ -540,6 +514,10 @@ export default function Dashboard() {
                 className="w-full h-40 object-cover rounded mb-2"
                 alt={food.name}
                 onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+                /* ✅ Fix + perf */
+                fetchPriority="low"
+                loading="lazy"
+                decoding="async"
               />
             )}
             <h3 className="font-bold">{food.name}</h3>
@@ -578,6 +556,10 @@ export default function Dashboard() {
                 className="w-full h-40 object-cover rounded mb-2"
                 alt={drink.name}
                 onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+                /* ✅ Fix + perf */
+                fetchPriority="low"
+                loading="lazy"
+                decoding="async"
               />
             )}
             <h3 className="font-bold">{drink.name}</h3>
@@ -603,7 +585,6 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Manage Orders */}
       <div className="mt-6 text-center">
         <button onClick={() => router.push("/dispatchCenter")}
           className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700">

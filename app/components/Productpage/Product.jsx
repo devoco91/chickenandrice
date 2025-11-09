@@ -1,4 +1,3 @@
-// components/FastFoodProducts.jsx
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -9,7 +8,6 @@ import {
   ShoppingCart,
   Plus,
   Minus,
-  Star,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -17,14 +15,17 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { API_BASE } from "../../../app/utils/apiBase";
-import { getImageUrl } from "../../../app/utils/img";
+import { getImageUrl, buildImgSources } from "../../../app/utils/img";
 import MinOrderNotice from "../MinOrderNotice";
 import SupportWhatsApp from "../SupportWhatsApp"; // <-- added
 
 /* Popular logic */
 export const isPopularItem = (p) => {
-  const tagPopular = Array.isArray(p?.tags) && p.tags.some((t) => String(t).trim().toLowerCase() === "popular");
-  const flagPopular = p?.isPopular === true || p?.popular === true || p?.featured === true;
+  const tagPopular =
+    Array.isArray(p?.tags) &&
+    p.tags.some((t) => String(t).trim().toLowerCase() === "popular");
+  const flagPopular =
+    p?.isPopular === true || p?.popular === true || p?.featured === true;
   return tagPopular || flagPopular;
 };
 
@@ -33,7 +34,8 @@ export const paginate = (arr, page, per) =>
   Array.isArray(arr) && per > 0 && page > 0 ? arr.slice((page - 1) * per, page * per) : [];
 
 const clamp = (n, min, max) => Math.max(min, Math.min(n, max || min));
-const formatNaira = (n) => (typeof n === "number" ? n.toLocaleString("en-NG", { maximumFractionDigits: 0 }) : String(n || ""));
+const formatNaira = (n) =>
+  typeof n === "number" ? n.toLocaleString("en-NG", { maximumFractionDigits: 0 }) : String(n || "");
 
 /* Food-filled wallpaper */
 const PATTERN_SVG = encodeURIComponent(`
@@ -81,15 +83,28 @@ const Pagination = ({ id, page, totalPages, onChange }) => {
 
   return (
     <nav aria-label={`${id} pagination`} className="mt-6 flex items-center justify-center gap-1.5 select-none">
-      <button onClick={() => go(1)} disabled={page === 1} className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}>
+      <button
+        onClick={() => go(1)}
+        disabled={page === 1}
+        className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}
+      >
         <ChevronsLeft className="w-4 h-4" />
       </button>
-      <button onClick={() => go(page - 1)} disabled={page === 1} className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}>
+      <button
+        onClick={() => go(page - 1)}
+        disabled={page === 1}
+        className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}
+      >
         <ChevronLeft className="w-4 h-4" />
       </button>
       {begin > 1 && (
         <>
-          <button onClick={() => go(1)} className={`h-9 min-w-9 px-3 rounded-lg bg-white border ${BORDER_SOFT} hover:bg-orange-50 shadow-sm`}>1</button>
+          <button
+            onClick={() => go(1)}
+            className={`h-9 min-w-9 px-3 rounded-lg bg-white border ${BORDER_SOFT} hover:bg-orange-50 shadow-sm`}
+          >
+            1
+          </button>
           <span className="px-1 text-orange-600/70">…</span>
         </>
       )}
@@ -102,7 +117,11 @@ const Pagination = ({ id, page, totalPages, onChange }) => {
             "h-9 min-w-9 px-3 rounded-lg border shadow-sm",
             p === page ? "text-white" : `bg-white border ${BORDER_SOFT} hover:bg-orange-50`,
           ].join(" ")}
-          style={p === page ? { backgroundColor: "oklch(85.2% 0.199 91.936)", borderColor: "oklch(85.2% 0.199 91.936)" } : undefined}
+          style={
+            p === page
+              ? { backgroundColor: "oklch(85.2% 0.199 91.936)", borderColor: "oklch(85.2% 0.199 91.936)" }
+              : undefined
+          }
         >
           {p}
         </button>
@@ -110,13 +129,26 @@ const Pagination = ({ id, page, totalPages, onChange }) => {
       {end < totalPages && (
         <>
           <span className="px-1 text-orange-600/70">…</span>
-          <button onClick={() => go(totalPages)} className={`h-9 min-w-9 px-3 rounded-lg bg-white border ${BORDER_SOFT} hover:bg-orange-50 shadow-sm`}>{totalPages}</button>
+          <button
+            onClick={() => go(totalPages)}
+            className={`h-9 min-w-9 px-3 rounded-lg bg-white border ${BORDER_SOFT} hover:bg-orange-50 shadow-sm`}
+          >
+            {totalPages}
+          </button>
         </>
       )}
-      <button onClick={() => go(page + 1)} disabled={page === totalPages} className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}>
+      <button
+        onClick={() => go(page + 1)}
+        disabled={page === totalPages}
+        className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}
+      >
         <ChevronRight className="w-4 h-4" />
       </button>
-      <button onClick={() => go(totalPages)} disabled={page === totalPages} className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}>
+      <button
+        onClick={() => go(totalPages)}
+        disabled={page === totalPages}
+        className={`h-9 px-3 rounded-lg bg-white/80 border ${BORDER_SOFT} hover:bg-white disabled:opacity-50 shadow-sm`}
+      >
         <ChevronsRight className="w-4 h-4" />
       </button>
     </nav>
@@ -142,12 +174,17 @@ const FastFoodProducts = ({ onRequireLocation }) => {
       try {
         let url = `${API_BASE}/foods`;
         if (location?.isConfirmed && location?.state && location?.lga) {
-          url = `${API_BASE}/foods?state=${encodeURIComponent(location.state)}&lga=${encodeURIComponent(location.lga)}`;
+          url = `${API_BASE}/foods?state=${encodeURIComponent(location.state)}&lga=${encodeURIComponent(
+            location.lga
+          )}`;
         }
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
         const data = await res.json();
-        if (!aborted) { setProducts(data); dispatch(setMeals(data)); }
+        if (!aborted) {
+          setProducts(data);
+          dispatch(setMeals(data));
+        }
       } catch (err) {
         console.error("Failed to fetch products:", err);
       } finally {
@@ -161,22 +198,27 @@ const FastFoodProducts = ({ onRequireLocation }) => {
     } else {
       fetchProducts();
     }
-    return () => { aborted = true; };
+    return () => {
+      aborted = true;
+    };
   }, [location?.isConfirmed, location?.state, location?.lga, mealsFromStore, dispatch]);
 
   const popularProducts = useMemo(() => products.filter(isPopularItem), [products]);
 
   const allTotalPages = Math.max(1, Math.ceil((products.length || 0) / itemsPerPage));
   const popularTotalPages = Math.max(1, Math.ceil((popularProducts.length || 0) / itemsPerPage));
+
   useEffect(() => {
     if (allPage > allTotalPages) setAllPage(allTotalPages);
     if (popularPage > popularTotalPages) setPopularPage(popularTotalPages);
-  }, [products.length, popularProducts.length]);
+  }, [products.length, popularProducts.length]); // keep deps in sync
 
   const getQuantity = (id) => cartItems.find((i) => i._id === id)?.quantity || 0;
 
   const handleAddToCart = (product) => {
-    try { localStorage.setItem("pendingProduct", JSON.stringify(product)); } catch {}
+    try {
+      localStorage.setItem("pendingProduct", JSON.stringify(product));
+    } catch {}
     if (typeof onRequireLocation === "function") onRequireLocation(product._id);
   };
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
@@ -190,7 +232,7 @@ const FastFoodProducts = ({ onRequireLocation }) => {
 
   const renderCard = (product, idx) => {
     const quantity = getQuantity(product._id);
-    const src = getImageUrl(product.image);
+    const { src, srcSet, sizes } = buildImgSources(product.image);
 
     return (
       <motion.div
@@ -215,9 +257,14 @@ const FastFoodProducts = ({ onRequireLocation }) => {
         <div className={`relative ${MEDIA_H} w-full bg-white`}>
           <motion.img
             src={src}
+            srcSet={srcSet}
+            sizes={sizes}
             alt={product.name}
             className="w-full h-full object-cover"
             onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+            loading="lazy"
+            decoding="async"
+            fetchPriority={idx === 0 ? "high" : "low"}   // ✅ camelCase fixes React warning
           />
           {isPopularItem(product) && (
             <span className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-semibold px-2 py-[2px] rounded">
@@ -236,16 +283,20 @@ const FastFoodProducts = ({ onRequireLocation }) => {
               className={`flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 max-[403px]:gap-1 rounded-xl p-1.5 bg-white border ${BORDER_SOFT}`}
             >
               <button
-                onClick={(e) => { e.stopPropagation(); handleDecrement(product._id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDecrement(product._id);
+                }}
                 className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
                 <Minus className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
               </button>
-              <span className="min-w-8 text-center font-semibold max-[403px]:text-sm">
-                {quantity}
-              </span>
+              <span className="min-w-8 text-center font-semibold max-[403px]:text-sm">{quantity}</span>
               <button
-                onClick={(e) => { e.stopPropagation(); handleIncrement(product._id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleIncrement(product._id);
+                }}
                 className="px-3 py-2 max-[403px]:p-2 rounded-lg hover:bg-orange-50"
               >
                 <Plus className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />
@@ -253,7 +304,10 @@ const FastFoodProducts = ({ onRequireLocation }) => {
             </div>
           ) : (
             <button
-              onClick={(e) => { e.stopPropagation(); handleCardClick(product); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCardClick(product);
+              }}
               className="w-full text-white px-4 py-3 max-[403px]:px-3 max-[403px]:py-2 rounded-xl flex items-center justify-center gap-2 max-[403px]:gap-1 whitespace-nowrap transition shadow"
               style={{ backgroundColor: "#2563eb" }} /* blue-600 */
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")} /* blue-700 */
@@ -311,13 +365,18 @@ const FastFoodProducts = ({ onRequireLocation }) => {
         <section id="popular-items" className="mb-8">
           <div className="flex items-end justify-between mb-4">
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">🔥 Popular Items</h2>
-            <div className="text-sm text-gray-600">{(products.filter(isPopularItem)).length} item(s)</div>
+            <div className="text-sm text-gray-600">{products.filter(isPopularItem).length} item(s)</div>
           </div>
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
             {paginate(popularProducts, popularPage, itemsPerPage).map((p, idx) => renderCard(p, idx))}
           </div>
           {popularTotalPages > 1 && (
-            <Pagination id="popular" page={popularPage} totalPages={popularTotalPages} onChange={(p) => setPopularPage(clamp(p, 1, popularTotalPages))} />
+            <Pagination
+              id="popular"
+              page={popularPage}
+              totalPages={popularTotalPages}
+              onChange={(p) => setPopularPage(clamp(p, 1, popularTotalPages))}
+            />
           )}
         </section>
 
@@ -330,8 +389,13 @@ const FastFoodProducts = ({ onRequireLocation }) => {
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
             {paginate(products, allPage, itemsPerPage).map((p, idx) => renderCard(p, idx))}
           </div>
-          {allTotalPages > 1 && (
-            <Pagination id="all" page={allPage} totalPages={allTotalPages} onChange={(p) => setAllPage(clamp(p, 1, allTotalPages))} />
+          {Math.max(1, Math.ceil((products.length || 0) / itemsPerPage)) > 1 && (
+            <Pagination
+              id="all"
+              page={allPage}
+              totalPages={Math.max(1, Math.ceil((products.length || 0) / itemsPerPage))}
+              onChange={(p) => setAllPage(clamp(p, 1, Math.max(1, Math.ceil((products.length || 0) / itemsPerPage))))}
+            />
           )}
         </section>
       </div>

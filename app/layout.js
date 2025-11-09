@@ -17,6 +17,11 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 const pixelId = process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID || process.env.NEXT_PUBLIC_FB_PIXEL_ID || "";
 
+// Hosts we fetch from (for preconnect/dns-prefetch)
+const API_HOST = "https://chickenandrice-server.fly.dev";
+// If you also fetch images directly from Firebase Storage, keep this line:
+const STORAGE_HOST = "https://firebasestorage.googleapis.com";
+
 export const metadata = {
   metadataBase: new URL(appUrl),
   title: { default: "chickenandrice", template: "%s | chickenandrice" },
@@ -40,6 +45,14 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <head>
+        {/* Speed up first connection to your API / image host */}
+        <link rel="preconnect" href={API_HOST} crossOrigin="" />
+        <link rel="dns-prefetch" href={API_HOST} />
+        {/* Optional: if images sometimes come directly from Firebase Storage */}
+        <link rel="preconnect" href={STORAGE_HOST} crossOrigin="" />
+        <link rel="dns-prefetch" href={STORAGE_HOST} />
+      </head>
       <body className="antialiased">
         <LocalBusinessJsonLd />
 
