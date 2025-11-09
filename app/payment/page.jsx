@@ -309,7 +309,9 @@ export default function PaymentPage() {
 
       /* ===== META Pixel + CAPI (dedup + AM) ===== */
       try {
-        const eventId = getOrCreateEventId();
+        // Stable per-payment eventId derived from the payment reference
+        const storageKey = `meta:purchaseEventId:${paymentRef.current}`;
+        const eventId = getOrCreateEventId(storageKey);
 
         const email =
           order.email ||
@@ -319,7 +321,7 @@ export default function PaymentPage() {
         const phone = order.phone || '';
         const { fn, ln } = splitName(order.customerName || '');
 
-        // Pixel AM + Purchase with eventID
+        // Pixel AM + Purchase with eventID (use trackSingle for the explicit pixel)
         if (typeof window !== 'undefined' && window.fbq) {
           try {
             window.fbq('init', PIXEL_ID, {
@@ -330,7 +332,8 @@ export default function PaymentPage() {
             });
           } catch {}
           window.fbq(
-            'track',
+            'trackSingle',
+            PIXEL_ID,
             'Purchase',
             { value: Number(total || 0), currency: 'NGN' },
             { eventID: eventId }
@@ -362,16 +365,16 @@ export default function PaymentPage() {
           body: JSON.stringify({
             event_name: 'Purchase',
             event_id: eventId,
+            event_time: Math.floor(Date.now() / 1000),
             value: Number(total || 0),
             currency: 'NGN',
             items,
             customer,
             event_source_url: typeof window !== 'undefined' ? window.location.href : '',
             fbp, fbc,
-            // No test_event_code in production
           }),
         }).catch(() => {});
-        clearEventId();
+        clearEventId(storageKey);
       } catch (err) {
         console.error('⚠️ Facebook tracking failed:', err);
       }
@@ -941,7 +944,7 @@ function parseMoneyTokenToNaira(tok) {
 
 function splitLinesWithIndex(s) {
   const text = String(s || '');
-  const rawLines = text.split(/\r?\n/); // <-- dot before split
+  const rawLines = text.split(/\r?\n/);
   const lines = [];
   let pos = 0;
 
@@ -950,10 +953,9 @@ function splitLinesWithIndex(s) {
     const start = pos;
     const end = start + t.length;
     lines.push({ start, end, text: t, lower: t.toLowerCase() });
-    pos = end + 1; // account for the newline we split on
+    pos = end + 1;
   }
 
-  // If there's only one "line", try to create pseudo-lines using separators
   if (lines.length <= 1) {
     const chunks = text.split(/(?: {2,}|\s\|\s|—|-{2,}|:{1}\s)/);
     const alt = [];
@@ -969,7 +971,6 @@ function splitLinesWithIndex(s) {
 
   return lines;
 }
-
 
 function lineIndexFromGlobalPos(idx, lines) {
   if (!Array.isArray(lines) || lines.length === 0) return 0;

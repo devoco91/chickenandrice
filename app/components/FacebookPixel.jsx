@@ -1,10 +1,59 @@
 // ========================================
 // File: app/components/FacebookPixel.jsx
+// (ADD-ONLY: eventID + fbp/fbc helpers; no behavior change)
 // ========================================
 'use client';
 
 import { useEffect } from 'react';
 
+// ---------- small helpers (safe to import elsewhere) ----------
+export function readCookie(name) {
+  if (typeof document === 'undefined') return undefined;
+  const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : undefined;
+}
+
+export function buildFbcFromUrl(href) {
+  try {
+    const u = new URL(href || (typeof window !== 'undefined' ? window.location.href : ''));
+    const fbclid = u.searchParams.get('fbclid');
+    if (!fbclid) return undefined;
+    const ts = Math.floor(Date.now() / 1000);
+    return `fb.1.${ts}.${fbclid}`;
+  } catch {
+    return undefined;
+  }
+}
+
+export function getFbpFbc() {
+  const fbp = readCookie('_fbp');
+  const fbc = readCookie('_fbc') || buildFbcFromUrl();
+  return { fbp, fbc };
+}
+
+export function genEventId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  const rnd = () => Math.random().toString(16).slice(2);
+  return `evt_${Date.now().toString(16)}_${rnd()}${rnd()}`;
+}
+
+/**
+ * Fire an fbq event with a generated eventID (for CAPI dedupe)
+ * and return { event_id, fbp, fbc } for your server call.
+ */
+export function trackWithEventId(pixelId, event, params = {}) {
+  const event_id = genEventId();
+  const { fbp, fbc } = getFbpFbc();
+  try {
+    if (typeof window !== 'undefined' && window.fbq) {
+      // trackSingle avoids cross-pixel noise if multiple pixels exist
+      window.fbq('trackSingle', pixelId, event, params, { eventID: event_id });
+    }
+  } catch {}
+  return { event_id, fbp, fbc };
+}
+
+// ---------- component (unchanged behavior) ----------
 export default function FacebookPixel({ pixelId }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;

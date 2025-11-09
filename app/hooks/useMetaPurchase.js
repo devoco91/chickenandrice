@@ -17,7 +17,9 @@ export function useMetaPurchase({ order, autoFire = true, testEventCode }) {
     setStatus('running');
     setError(null);
 
-    const eventId = getOrCreateEventId();
+    // Why: stable event_id per order improves dedupe if user refreshes.
+    const storageKey = `meta:purchaseEventId:${order?.id ?? ''}`;
+    const eventId = getOrCreateEventId(storageKey);
 
     try {
       if (typeof window !== 'undefined' && window.fbq) {
@@ -54,9 +56,11 @@ export function useMetaPurchase({ order, autoFire = true, testEventCode }) {
           country: order?.country,
         },
         testEventCode,
+        // Why: improves timestamp validity; server will guard 7d window.
+        eventTime: Math.floor(Date.now() / 1000),
       });
       setStatus('ok');
-      clearEventId();
+      clearEventId(storageKey);
     } catch (e) {
       setStatus('error');
       setError(e instanceof Error ? e.message : String(e));

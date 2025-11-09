@@ -1,5 +1,6 @@
 // ================================
 // File: app/success/page.jsx
+// (ADD-ONLY: stable event_id + fbp/fbc + event_time to CAPI)
 // ================================
 'use client';
 
@@ -12,7 +13,7 @@ import { motion } from 'framer-motion';
 const money = (n = 0) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(Number(n || 0));
 
-// --- Meta helpers (why: single source of truth for dedup eventId) ---
+/* ---- Meta helpers (why: single source of truth for dedupe + cookies) ---- */
 const genEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 const getOrCreateEventId = (key = 'meta:purchaseEventId') => {
   if (typeof window === 'undefined') return genEventId();
@@ -24,6 +25,27 @@ const getOrCreateEventId = (key = 'meta:purchaseEventId') => {
 };
 const clearEventId = (key = 'meta:purchaseEventId') => {
   if (typeof window !== 'undefined') sessionStorage.removeItem(key);
+};
+// Read cookies safely
+const readCookie = (name) => {
+  if (typeof document === 'undefined') return undefined;
+  const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : undefined;
+};
+// Build _fbc from fbclid if cookie missing
+const buildFbcFromUrl = (href) => {
+  try {
+    const u = new URL(href || (typeof window !== 'undefined' ? window.location.href : ''));
+    const fbclid = u.searchParams.get('fbclid');
+    if (!fbclid) return undefined;
+    const ts = Math.floor(Date.now() / 1000);
+    return `fb.1.${ts}.${fbclid}`;
+  } catch { return undefined; }
+};
+const getFbpFbc = () => {
+  const fbp = readCookie('_fbp');
+  const fbc = readCookie('_fbc') || buildFbcFromUrl();
+  return { fbp, fbc };
 };
 
 export default function SuccessPage() {
@@ -40,7 +62,7 @@ export default function SuccessPage() {
     `ORD-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`
   );
 
-  // --- countdown ---
+  // countdown
   useEffect(() => {
     const tick = () => {
       const now = Date.now();
@@ -52,7 +74,7 @@ export default function SuccessPage() {
     return () => clearInterval(id);
   }, []);
 
-  // --- load order summary from sessionStorage ---
+  // load order summary from sessionStorage
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('lastOrderSummary');
@@ -60,13 +82,16 @@ export default function SuccessPage() {
     } catch {}
   }, []);
 
-  // --- Pixel + CAPI (fires once when summary is present) ---
+  // Pixel + CAPI (fires once when summary is present)
   const firedRef = useRef(false);
   useEffect(() => {
     if (!summary || firedRef.current) return;
     firedRef.current = true;
 
-    const eventId = getOrCreateEventId();
+    // Stable per-order key improves dedupe across refresh
+    const storageKey = `meta:purchaseEventId:${orderRef.current}`;
+    const eventId = getOrCreateEventId(storageKey);
+
     const total = Number(summary.total || 0);
     const currency = 'NGN';
     const items =
@@ -77,7 +102,7 @@ export default function SuccessPage() {
         item_price: Number(it.price ?? 0),
       }));
 
-    // Browser Pixel (dedup with same eventId)
+    // Browser Pixel (dedupe with same eventId)
     try {
       if (typeof window !== 'undefined' && window.fbq) {
         window.fbq('track', 'Purchase', { value: total, currency }, { eventID: eventId });
@@ -87,13 +112,18 @@ export default function SuccessPage() {
     // Server CAPI
     (async () => {
       try {
+        const { fbp, fbc } = getFbpFbc(); // better cookie/click matching
+        const event_time = Math.floor(Date.now() / 1000); // valid timestamp
+
         await fetch('/api/facebook', {
           method: 'POST',
-          credentials: 'include', // ensures _fbp cookie reaches server
+          credentials: 'include', // ensures _fbp cookie reaches server too
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             event_name: 'Purchase',
-            event_id: eventId, // dedup key
+            event_id: eventId,         // dedupe key
+            event_time,                // optional; server will guard
+            fbp, fbc,                  // cookie/click signals
             value: total,
             currency,
             items,
@@ -110,11 +140,10 @@ export default function SuccessPage() {
             },
             event_source_url:
               typeof window !== 'undefined' ? window.location.href : undefined,
-            // Optionally pass a test code during validation runs:
-            // test_event_code: process.env.NEXT_PUBLIC_FB_TEST_EVENT_CODE,
+            // test_event_code: process.env.NEXT_PUBLIC_FB_TEST_EVENT_CODE, // optional during validation
           }),
         });
-        clearEventId(); // avoid reuse on next order
+        clearEventId(storageKey); // avoid reuse on next order
       } catch {
         // intentionally silent to not affect UX
       }
