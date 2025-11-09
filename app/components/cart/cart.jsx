@@ -14,6 +14,7 @@ import {
   incrementQuantity, decrementQuantity, removeItemCart, addItemCart,
 } from './../../store/cartSlice';
 import { setOrderDetails } from './../../store/orderSlice';
+import { buildImgSources } from '../utils/img';
 
 const MIN_ORDER_AMOUNT = 8850;
 
@@ -22,6 +23,7 @@ const UPLOADS_BASE =
   process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
   (RAW_API ? RAW_API.replace(/\/api$/, '') + '/uploads' : '/uploads');
 
+/* Kept as a fallback helper (not used in main renders after optimizer) */
 const getImageUrl = (val) => {
   let s = val;
   if (!s) return '/placeholder.png';
@@ -69,14 +71,21 @@ const DrinksSlider = ({ items, onAdd }) => {
           <SwiperSlide key={item._id}>
             <div className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-red-300 hover:shadow-xl transition-all duration-300">
               <div className="relative overflow-hidden">
-                {item.image && (
-                  <img
-                    src={getImageUrl(item.image)}
-                    alt={item.name}
-                    className="w-full h-40 object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => (e.currentTarget.src = '/placeholder.png')}
-                  />
-                )}
+                {item.image && (() => {
+                  const { src, srcSet, sizes } = buildImgSources(item.image, [240, 320, 480]);
+                  return (
+                    <img
+                      src={src}
+                      srcSet={srcSet}
+                      sizes={sizes}
+                      alt={item.name}
+                      className="w-full h-40 object-cover group-hover:scale-105 transition-transform duration-500"
+                      onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  );
+                })()}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-500"></div>
               </div>
               <div className="p-4">
@@ -222,19 +231,26 @@ export default function CartPage() {
               <div className="space-y-6">
                 {cartItems.map((item) => (
                   <div key={item._id} className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300">
-                    {item.image && (
-                      <img
-                        src={getImageUrl(item.image)}
-                        alt={item.name}
-                        className="w-24 h-24 object-cover rounded-xl"
-                        onError={(e) => (e.currentTarget.src = '/placeholder.png')}
-                      />
-                    )}
+                    {item.image && (() => {
+                      const { src, srcSet, sizes } = buildImgSources(item.image, [160, 240, 320]);
+                      return (
+                        <img
+                          src={src}
+                          srcSet={srcSet}
+                          sizes={sizes}
+                          alt={item.name}
+                          className="w-24 h-24 object-cover rounded-xl"
+                          onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      );
+                    })()}
                     <div className="flex-1">
                       <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
                       <p className="text-red-600 font-bold text-base">₦{item.price.toLocaleString()}</p>
                       <div className="flex items-center gap-3 mt-2">
-                        <button onClick={() => handleDecrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Minus className="w-4 h-4" /></button>
+                        <button onClick={() => handleDecrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Plus className="w-4 h-4 rotate-180" /></button>
                         <span className="font-medium">{item.quantity}</span>
                         <button onClick={() => handleIncrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Plus className="w-4 h-4" /></button>
                       </div>

@@ -15,6 +15,7 @@ import Navbar from "../components/Navbar/Navbar";
 import MinOrderNotice from "../components/MinOrderNotice";
 import { motion, AnimatePresence } from "framer-motion";
 import SupportWhatsApp from "../components/SupportWhatsApp";
+import { buildImgSources } from "../utils/img";
 
 /* Config */
 const MIN_ORDER_AMOUNT = 8850;
@@ -30,6 +31,7 @@ const EXPLICIT_UPLOADS_BASE = (
 const API_ROOT = API_BASE.replace(/\/api(?:\/v\d+)?$/i, "");
 const UPLOADS_BASE = EXPLICIT_UPLOADS_BASE || `${API_ROOT}/uploads`;
 
+/* Kept to avoid altering other logic; no longer used for the main grid images */
 const getImageUrl = (val) => {
   let s = val;
   if (!s) return "/placeholder.png";
@@ -192,7 +194,7 @@ const Detailspage = () => {
 
   const renderCard = (product, idx) => {
     const quantity = getQuantity(product._id);
-    const src = getImageUrl(product.image);
+    const { src, srcSet, sizes } = buildImgSources(product.image);
 
     return (
       <motion.div
@@ -223,6 +225,8 @@ const Detailspage = () => {
         <div className={`relative ${MEDIA_H} w-full bg-white`}>
           <motion.img
             src={src}
+            srcSet={srcSet}
+            sizes={sizes}
             alt={product.name}
             className="w-full h-full object-cover"
             onError={(e) => (e.currentTarget.src = "/fallback.jpg")}

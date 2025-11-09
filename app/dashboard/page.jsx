@@ -4,6 +4,7 @@ import NaijaStates from "naija-state-local-government"
 import { useRouter } from "next/navigation"
 import Link from 'next/link'
 import { ArrowRightCircle } from 'lucide-react'
+import { buildImgSources } from "../utils/img"
 
 /* =========================
    API + Upload base helpers
@@ -508,18 +509,23 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {currentFoods.map((food) => (
           <div key={food._id} className="border rounded-2xl p-4 bg-white shadow h-full flex flex-col border-gray-200">
-            {food.image && (
-              <img
-                src={getImageUrl(food.image)}
-                className="w-full h-40 object-cover rounded mb-2"
-                alt={food.name}
-                onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
-                /* ✅ Fix + perf */
-                fetchPriority="low"
-                loading="lazy"
-                decoding="async"
-              />
-            )}
+            {food.image && (() => {
+              const { src, srcSet, sizes } = buildImgSources(food.image, [320, 480, 640])
+              return (
+                <img
+                  src={src}
+                  srcSet={srcSet}
+                  sizes={sizes}
+                  className="w-full h-40 object-cover rounded mb-2"
+                  alt={food.name}
+                  onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+                  /* ✅ Fix + perf */
+                  fetchPriority="low"
+                  loading="lazy"
+                  decoding="async"
+                />
+              )
+            })()}
             <h3 className="font-bold">{food.name}</h3>
             <p className="text-sm text-gray-600 flex-grow">{food.description}</p>
             <p className="text-red-600 font-semibold">₦{food.price}</p>
@@ -550,18 +556,23 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {currentDrinks.map((drink) => (
           <div key={drink._id} className="border rounded-2xl p-4 bg-white shadow h-full flex flex-col border-gray-200">
-            {drink.image && (
-              <img
-                src={getImageUrl(drink.image)}
-                className="w-full h-40 object-cover rounded mb-2"
-                alt={drink.name}
-                onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
-                /* ✅ Fix + perf */
-                fetchPriority="low"
-                loading="lazy"
-                decoding="async"
-              />
-            )}
+            {drink.image && (() => {
+              const { src, srcSet, sizes } = buildImgSources(drink.image, [320, 480, 640])
+              return (
+                <img
+                  src={src}
+                  srcSet={srcSet}
+                  sizes={sizes}
+                  className="w-full h-40 object-cover rounded mb-2"
+                  alt={drink.name}
+                  onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
+                  /* ✅ Fix + perf */
+                  fetchPriority="low"
+                  loading="lazy"
+                  decoding="async"
+                />
+              )
+            })()}
             <h3 className="font-bold">{drink.name}</h3>
             <p className="text-red-600 font-semibold">₦{drink.price}</p>
             <div className="flex gap-2 mt-2">
