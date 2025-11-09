@@ -14,7 +14,7 @@ import {
   incrementQuantity, decrementQuantity, removeItemCart, addItemCart,
 } from './../../store/cartSlice';
 import { setOrderDetails } from './../../store/orderSlice';
-import { buildImgSources } from '../utils/img';
+import { buildImgSources } from '../../utils/img';
 
 const MIN_ORDER_AMOUNT = 8850;
 
