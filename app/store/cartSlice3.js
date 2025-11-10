@@ -1,4 +1,4 @@
-// app/store/cartSlice.js
+// app/store/cartSlice3.js
 import { createSlice } from "@reduxjs/toolkit";
 
 const initialState = {
@@ -14,23 +14,22 @@ const firstAddQty = (item) => {
     const n = Number(item.bulkInitialQty);
     return Number.isFinite(n) && n > 0 ? n : 25;
   }
-  // legacy/defensive: if someone labelled category "Bulk"
+  // allow legacy detection by category label if ever used
   if (String(item.category || "").toLowerCase() === "bulk") return 25;
   return 1;
 };
 
-const cartSlice = createSlice({
+const cartSlice3 = createSlice({
   name: "Cart Item",
   initialState,
   reducers: {
-    // First add => 25 for bulk, 1 otherwise. Subsequent adds => +1
     addItemCart: (state, action) => {
       const item = action.payload;
       const existing = state.cartItem.find((p) => p._id === item._id);
       if (existing) {
-        existing.quantity += 1;
+        existing.quantity += 1; // ✅ subsequent adds
       } else {
-        state.cartItem.push({ ...item, quantity: firstAddQty(item) });
+        state.cartItem.push({ ...item, quantity: firstAddQty(item) }); // ✅ first add
       }
     },
     removeItemCart: (state, action) => {
@@ -58,7 +57,7 @@ const cartSlice = createSlice({
   },
 });
 
-export default cartSlice.reducer;
+export default cartSlice3.reducer;
 
 export const {
   addItemCart,
@@ -72,4 +71,4 @@ export const {
   applyCouponCode,
   removeCouponCode,
   applyDiscount,
-} = cartSlice.actions;
+} = cartSlice3.actions;

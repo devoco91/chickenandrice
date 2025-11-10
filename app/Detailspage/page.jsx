@@ -1,3 +1,5 @@
+// app/detailspage/page.jsx (or wherever this component lives)
+/* unchanged top-of-file path if different */
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -57,6 +59,8 @@ const formatNaira = (n) =>
 
 /* Helpers/skin */
 export const isPopularItem = (p) => {
+  // ✅ ensure bulk combos never show under Popular
+  if (p?.isBulk === true) return false;
   const tagPopular =
     Array.isArray(p?.tags) &&
     p.tags.some((t) => String(t).trim().toLowerCase() === "popular");
@@ -132,7 +136,7 @@ const Detailspage = () => {
   const handleAddToCart = (product) => {
     const cartProduct = { ...product };
     if (location?.isConfirmed) {
-      dispatch(addItemCart(cartProduct));
+      dispatch(addItemCart(cartProduct)); // ✅ bulk first-add=25 handled by cartSlice
     } else {
       try {
         localStorage.setItem("pendingProduct", JSON.stringify(cartProduct));

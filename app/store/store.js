@@ -1,6 +1,6 @@
 // app/store/store.js
 import { configureStore, combineReducers } from "@reduxjs/toolkit";
-import cartSlice from "./cartSlice";       // online buyers
+import cartSlice from "./cartSlice";       // online buyers (now bulk-aware)
 import cartSlice2 from "./cartSlice2";     // in-store buyers
 import locationSlice from "./locationSlice";
 import orderSlice from "./orderSlice";

@@ -1,3 +1,4 @@
+// components/FastFoodProducts.jsx
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -19,8 +20,9 @@ import { getImageUrl, buildImgSources } from "../../../app/utils/img";
 import MinOrderNotice from "../MinOrderNotice";
 import SupportWhatsApp from "../SupportWhatsApp"; // <-- added
 
-/* Popular logic */
+/* Popular logic (bulk never popular) */
 export const isPopularItem = (p) => {
+  if (p?.isBulk === true) return false;
   const tagPopular =
     Array.isArray(p?.tags) &&
     p.tags.some((t) => String(t).trim().toLowerCase() === "popular");
@@ -211,7 +213,7 @@ const FastFoodProducts = ({ onRequireLocation }) => {
   useEffect(() => {
     if (allPage > allTotalPages) setAllPage(allTotalPages);
     if (popularPage > popularTotalPages) setPopularPage(popularTotalPages);
-  }, [products.length, popularProducts.length]); // keep deps in sync
+  }, [products.length, popularProducts.length]);
 
   const getQuantity = (id) => cartItems.find((i) => i._id === id)?.quantity || 0;
 
@@ -264,7 +266,7 @@ const FastFoodProducts = ({ onRequireLocation }) => {
             onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
             loading="lazy"
             decoding="async"
-            fetchPriority={idx === 0 ? "high" : "low"}   // ✅ camelCase fixes React warning
+            fetchPriority={idx === 0 ? "high" : "low"}
           />
           {isPopularItem(product) && (
             <span className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-semibold px-2 py-[2px] rounded">
@@ -276,7 +278,7 @@ const FastFoodProducts = ({ onRequireLocation }) => {
           </span>
         </div>
 
-        {/* ACTIONS (no wrap at ≤403px) */}
+        {/* ACTIONS */}
         <div className="px-4 pt-3 pb-4 mt-auto">
           {quantity > 0 ? (
             <div
@@ -309,8 +311,8 @@ const FastFoodProducts = ({ onRequireLocation }) => {
                 handleCardClick(product);
               }}
               className="w-full text-white px-4 py-3 max-[403px]:px-3 max-[403px]:py-2 rounded-xl flex items-center justify-center gap-2 max-[403px]:gap-1 whitespace-nowrap transition shadow"
-              style={{ backgroundColor: "#2563eb" }} /* blue-600 */
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")} /* blue-700 */
+              style={{ backgroundColor: "#2563eb" }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
             >
               <ShoppingCart className="w-5 h-5 max-[403px]:w-4 max-[403px]:h-4" />

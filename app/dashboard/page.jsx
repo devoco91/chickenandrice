@@ -1,3 +1,4 @@
+// app/dashboard/page.jsx
 "use client"
 import { useState, useEffect } from "react"
 import NaijaStates from "naija-state-local-government"
@@ -14,7 +15,7 @@ const API_BASE = "/api" // relies on next.config rewrites in prod
 const RAW_API = process.env.NEXT_PUBLIC_API_URL || ''
 const UPLOADS_BASE =
   process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
-  (RAW_API ? RAW_API.replace(/\/api(?:\/v\\d+)?$/i, '') + '/uploads' : '/uploads')
+  (RAW_API ? RAW_API.replace(/\/api(?:\/v\d+)?$/i, '') + '/uploads' : '/uploads')
 
 const getImageUrl = (val) => {
   let s = val
@@ -39,13 +40,15 @@ const toBool = (v) =>
   v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true"
 
 const isPopularItem = (p) =>
-  toBool(p?.isPopular) ||
-  toBool(p?.popular) ||
-  toBool(p?.featured) ||
-  (Array.isArray(p?.tags) && p.tags.some((t) => String(t).toLowerCase() === "popular"))
+  !p?.isBulk && (
+    toBool(p?.isPopular) ||
+    toBool(p?.popular) ||
+    toBool(p?.featured) ||
+    (Array.isArray(p?.tags) && p.tags.some((t) => String(t).toLowerCase() === "popular"))
+  )
 
 const resolveCategoryLabel = (item) =>
-  isPopularItem(item) ? "Popular" : (item?.category || "All Items")
+  item?.isBulk ? "All Items" : (isPopularItem(item) ? "Popular" : (item?.category || "All Items"))
 
 /* =========================
    Small fetch helper (better errors)
@@ -79,10 +82,12 @@ export default function Dashboard() {
     name: "",
     description: "",
     price: "",
-    category: "All Items",
+    category: "All Items", // "All Items" | "Popular" | "Bulk"
     isAvailable: true,
     state: "Lagos",
     lgas: [],
+    isBulk: false,
+    bulkInitialQty: 25,
   })
   const [editingFoodId, setEditingFoodId] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -141,10 +146,14 @@ export default function Dashboard() {
   // ===== FOOD HANDLERS =====
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }))
+    setForm((prev) => {
+      const next = { ...prev, [name]: type === "checkbox" ? checked : value }
+      if (name === "category") {
+        next.isBulk = value === "Bulk"
+        if (next.isBulk && (!next.bulkInitialQty || next.bulkInitialQty < 1)) next.bulkInitialQty = 25
+      }
+      return next
+    })
   }
 
   const handleFileChange = (e) => {
@@ -170,6 +179,7 @@ export default function Dashboard() {
       : `${API_BASE}/foods`
 
     const isPopular = form.category === "Popular"
+    const isBulk = form.category === "Bulk"
 
     const fd = new FormData()
     fd.append("name", form.name)
@@ -179,9 +189,13 @@ export default function Dashboard() {
     fd.append("isAvailable", String(!!form.isAvailable))
     fd.append("state", form.state || "Lagos")
     fd.append("lgas", JSON.stringify(Array.isArray(form.lgas) ? form.lgas : []))
+    // Popular flags
     fd.set("isPopular", String(isPopular))
     fd.set("popular", String(isPopular))
     fd.set("featured", String(isPopular))
+    // ✅ Bulk flags
+    fd.set("isBulk", String(isBulk))
+    fd.set("bulkInitialQty", String(form.bulkInitialQty || 25))
     if (imageFile) fd.append("imageFile", imageFile)
 
     try {
@@ -210,6 +224,8 @@ export default function Dashboard() {
       isAvailable: true,
       state: "Lagos",
       lgas: [],
+      isBulk: false,
+      bulkInitialQty: 25,
     })
     setImageFile(null)
     setImagePreview(null)
@@ -223,10 +239,12 @@ export default function Dashboard() {
       name: food.name,
       description: food.description || "",
       price: food.price,
-      category: isPopularItem(food) ? "Popular" : "All Items",
+      category: food.isBulk ? "Bulk" : (isPopularItem(food) ? "Popular" : "All Items"),
       isAvailable: food.isAvailable,
       state: "Lagos",
       lgas: food.lgas || [],
+      isBulk: !!food.isBulk,
+      bulkInitialQty: Number(food.bulkInitialQty || 25),
     })
     setImageFile(null)
     setImagePreview(food.image ? getImageUrl(food.image) : null)
@@ -249,9 +267,7 @@ export default function Dashboard() {
   // ===== DRINK HANDLERS =====
   const handleDrinkInputChange = (e) => {
     const { name, value } = e.target
-    setDrinkForm((prev) => ({ ...prev, [name]: value }))
-  }
-
+    setDrinkForm((prev) => ({ ...prev, [name]: value }))}
   const handleDrinkFileChange = (e) => {
     const file = e.target.files[0]
     setDrinkImageFile(file)
@@ -263,7 +279,6 @@ export default function Dashboard() {
       setDrinkImagePreview(null)
     }
   }
-
   const handleDrinkSubmit = async (e) => {
     e.preventDefault()
     setDrinkLoading(true)
@@ -295,7 +310,6 @@ export default function Dashboard() {
       setDrinkLoading(false)
     }
   }
-
   const handleEditDrink = (drink) => {
     setDrinkForm({
       name: drink.name || "",
@@ -306,7 +320,6 @@ export default function Dashboard() {
     setEditingDrinkId(drink._id)
     setShowDrinkForm(true)
   }
-
   const handleDeleteDrink = async (id) => {
     if (!confirm("Delete this drink?")) return
     try {
@@ -318,7 +331,6 @@ export default function Dashboard() {
       setDrinkError(err.message || 'Failed to delete drink')
     }
   }
-
   const resetDrinkForm = () => {
     setDrinkForm({ name: "", price: "" })
     setDrinkImageFile(null)
@@ -408,7 +420,22 @@ export default function Dashboard() {
             className="w-full border p-2 rounded">
             <option>All Items</option>
             <option>Popular</option>
+            <option>Bulk</option>
           </select>
+
+          {form.category === "Bulk" && (
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-700">First add quantity</label>
+              <input
+                type="number"
+                name="bulkInitialQty"
+                min={1}
+                value={form.bulkInitialQty}
+                onChange={handleInputChange}
+                className="w-28 border p-2 rounded"
+              />
+            </div>
+          )}
 
           <textarea name="description" value={form.description} onChange={handleInputChange}
             placeholder="Description" className="w-full border p-2 rounded" />
@@ -445,7 +472,6 @@ export default function Dashboard() {
               className="w-24 h-24 object-cover rounded mx-auto"
               alt="Preview"
               onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
-              /* ✅ Fix + perf */
               fetchPriority="low"
               loading="lazy"
               decoding="async"
@@ -486,7 +512,6 @@ export default function Dashboard() {
               className="w-24 h-24 object-cover rounded mx-auto"
               alt="Preview"
               onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
-              /* ✅ Fix + perf */
               fetchPriority="low"
               loading="lazy"
               decoding="async"
@@ -519,14 +544,13 @@ export default function Dashboard() {
                   className="w-full h-40 object-cover rounded mb-2"
                   alt={food.name}
                   onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
-                  /* ✅ Fix + perf */
                   fetchPriority="low"
                   loading="lazy"
                   decoding="async"
                 />
               )
             })()}
-            <h3 className="font-bold">{food.name}</h3>
+            <h3 className="font-bold">{food.name}{food.isBulk ? " (Bulk)" : ""}</h3>
             <p className="text-sm text-gray-600 flex-grow">{food.description}</p>
             <p className="text-red-600 font-semibold">₦{food.price}</p>
             <span className="text-xs">{resolveCategoryLabel(food)}</span>
@@ -566,7 +590,6 @@ export default function Dashboard() {
                   className="w-full h-40 object-cover rounded mb-2"
                   alt={drink.name}
                   onError={(e) => { e.currentTarget.src = "/fallback.jpg" }}
-                  /* ✅ Fix + perf */
                   fetchPriority="low"
                   loading="lazy"
                   decoding="async"

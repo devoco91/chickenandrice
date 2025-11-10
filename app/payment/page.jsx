@@ -27,6 +27,7 @@ const SHARE_TTL_MS = 2 * 60 * 60 * 1000;
 
 /* === META (Pixel + CAPI) === */
 const PIXEL_ID = process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID || '811877775096101';
+const fbInitOnce = { done: false };
 
 /* Cookie helpers for fbp/fbc */
 function _readCookie(name) {
@@ -301,7 +302,7 @@ export default function PaymentPage() {
     if (isPaying) return;
     if (!proof) return toast.error('Upload payment receipt to continue.');
     if (!receiptAmountOK) return toast.error('Receipt amount is less than the order total.');
-    if (!accountNameOK) return toast.error('Receipt account name must include “chicken”, “rice”, “chicken and rice”, or “chickenandriceltd”.');
+    if (!accountNameOK) return toast.error('Receipt account name must include “chicken”, “chickenandrice”, “chicken and rice”, or “chickenandrice ltd/limited”.');
 
     setIsPaying(true);
     try {
@@ -309,28 +310,29 @@ export default function PaymentPage() {
 
       /* ===== META Pixel + CAPI (dedup + AM) ===== */
       try {
+        // Init once
+        if (typeof window !== 'undefined' && window.fbq && !fbInitOnce.done) {
+          const email =
+            order.email ||
+            order.customerEmail ||
+            (order.user && (order.user.email || order.userEmail)) ||
+            '';
+          const phone = order.phone || '';
+          const { fn, ln } = splitName(order.customerName || '');
+          window.fbq('init', PIXEL_ID, {
+            em: email || undefined,
+            ph: phone || undefined,
+            fn: fn || undefined,
+            ln: ln || undefined,
+          });
+          fbInitOnce.done = true; // prevent re-init
+        }
+
         // Stable per-payment eventId derived from the payment reference
         const storageKey = `meta:purchaseEventId:${paymentRef.current}`;
         const eventId = getOrCreateEventId(storageKey);
 
-        const email =
-          order.email ||
-          order.customerEmail ||
-          (order.user && (order.user.email || order.userEmail)) ||
-          '';
-        const phone = order.phone || '';
-        const { fn, ln } = splitName(order.customerName || '');
-
-        // Pixel AM + Purchase with eventID (use trackSingle for the explicit pixel)
         if (typeof window !== 'undefined' && window.fbq) {
-          try {
-            window.fbq('init', PIXEL_ID, {
-              em: email || undefined,
-              ph: phone || undefined,
-              fn: fn || undefined,
-              ln: ln || undefined,
-            });
-          } catch {}
           window.fbq(
             'trackSingle',
             PIXEL_ID,
@@ -347,11 +349,15 @@ export default function PaymentPage() {
           item_price: Number(i.price ?? 0),
         }));
         const customer = {
-          email,
-          phone,
+          email:
+            order.email ||
+            order.customerEmail ||
+            (order.user && (order.user.email || order.userEmail)) ||
+            '',
+          phone: order.phone || '',
           external_id: order.userId || order.customerId || '',
-          first_name: fn,
-          last_name: ln,
+          first_name: splitName(order.customerName || '').fn,
+          last_name: splitName(order.customerName || '').ln,
           city: order.city || '',
           state: order.state || '',
           zip: order.zip || '',
@@ -603,9 +609,9 @@ export default function PaymentPage() {
 
                           <div className="mt-2">
                             {accountNameOK ? (
-                              <span className="text-emerald-400">✓ Account name contains “chicken”, “rice”, “chicken and rice”, or “chickenandriceltd”.</span>
+                              <span className="text-emerald-400">✓ Account name contains “chicken”, “chickenandrice”, “chicken and rice”, or “chickenandrice ltd/limited”.</span>
                             ) : (
-                              <span className="text-rose-300">Account name not confirmed. Receipt must include “chicken”, “rice”, “chicken and rice”, or “chickenandriceltd”.</span>
+                              <span className="text-rose-300">Account name not confirmed. Receipt must include “chicken”, “chickenandrice”, “chicken and rice”, or “chickenandrice ltd/limited”.</span>
                             )}
                             {accountNameSnippet && (
                               <div className="mt-1">
@@ -752,6 +758,7 @@ function preprocessReceiptText(input) {
   return s;
 }
 
+/* === SHARPER AMOUNT DETECTION === */
 function detectReceiptAmount(text, orderAmount) {
   const src = String(text || '');
   const hay = src.toLowerCase();
@@ -759,12 +766,12 @@ function detectReceiptAmount(text, orderAmount) {
   const posLabels = [
     'total amount','total','amount','amount due','amount paid','amount sent','paid','debit','credit',
     'transfer amount','txn amount','transaction amount','subtotal','payment amount','amt','ngn','₦',
-    'cash received','you paid','customer paid','grand total'
+    'cash received','you paid','customer paid','grand total','payment successful','successful payment'
   ];
   const negLabels = [
     'transaction no','transaction number','transaction id','trx id','rrn','stan','reference','ref',
     'wallet','date','time','account number','recipient details','balance','session id','auth code',
-    'terminal','pos','card','pan','masked','acct','account','acct no','account no'
+    'terminal','pos','card','pan','masked','acct','account','acct no','account no','authorization'
   ];
 
   const lines = preprocessReceiptText._lines?.length ? preprocessReceiptText._lines : splitLinesWithIndex(src);
@@ -790,6 +797,7 @@ function detectReceiptAmount(text, orderAmount) {
   for (const { tok, idx, lineIndex } of tokens) {
     const n = parseMoneyTokenToNaira(tok);
     if (n == null) continue;
+
     const whole = Math.floor(Math.abs(n));
     const key = `${tok}@${idx}:${whole}`;
     if (seen.has(key)) continue;
@@ -800,65 +808,80 @@ function detectReceiptAmount(text, orderAmount) {
     const hasDecimals = /[.,]\d{2}\b/.test(tok);
 
     let score = 0;
-    if (hasCur) score += 8;
+
+    if (hasCur) score += 10;
     if (hasDecimals) score += 3;
 
-    if (inAnyWindow(idx, posWins)) score += 5;
-    if (inAnyWindow(idx, negWins)) score -= 8;
+    if (inAnyWindow(idx, posWins)) score += 7;
+    if (inAnyWindow(idx, negWins)) score -= 10;
 
-    if (posLineIdx.has(lineIndex)) score += 10;
-    if (posLineIdx.has(lineIndex - 1) || posLineIdx.has(lineIndex + 1)) score += 4;
+    if (posLineIdx.has(lineIndex)) score += 12;
+    if (posLineIdx.has(lineIndex - 1) || posLineIdx.has(lineIndex + 1)) score += 5;
 
-    if (negLineIdx.has(lineIndex)) score -= 10;
-    if (negLineIdx.has(lineIndex - 1) || negLineIdx.has(lineIndex + 1)) score -= 5;
-
-    if (!hasCur && digitsLen >= 9) score -= 10;
-    if (!hasCur && digitsLen >= 10) score -= 14;
-    if (digitsLen >= 12) score -= 10;
+    if (negLineIdx.has(lineIndex)) score -= 12;
+    if (negLineIdx.has(lineIndex - 1) || negLineIdx.has(lineIndex + 1)) score -= 6;
 
     const L = lines[lineIndex]?.lower || '';
-    if (/\b(rrn|stan|ref|reference|account|acct|terminal|pos|auth)\b/.test(L)) score -= 12;
+    if (/\b(rrn|stan|ref|reference|account|acct|terminal|pos|auth|session|card|pan)\b/.test(L)) score -= 16;
 
-    if (whole >= o) score += 2;
-    if (whole < o * 0.5) score -= 2;
+    if (!hasCur && digitsLen >= 9) score -= 12;
+    if (!hasCur && digitsLen >= 10) score -= 18;
+    if (digitsLen >= 12) score -= 12;
 
-    candidates.push({ val: whole, tok, idx, score, hasCur, lineIndex });
+    if (whole >= o) {
+      score += 4;
+      const diff = Math.abs(whole - o);
+      if (diff <= Math.max(200, Math.floor(o * 0.02))) score += 4;
+    } else {
+      if (whole < o * 0.5) score -= 3;
+    }
+
+    if (!hasCur && whole > Math.max(o * 6, 3_000_000)) score -= 10;
+
+    candidates.push({ val: whole, tok, idx, score, lineIndex });
   }
 
   if (!candidates.length) return { ok: false, bestAmount: null, snippet: '' };
 
-  const filtered = candidates.filter(c => c.hasCur || c.val <= Math.max(o * 5, 2_000_000));
-  filtered.sort((a, b) => (b.score - a.score) || (a.val - b.val));
-  const top = (filtered.length ? filtered : candidates.sort((a,b)=>(b.score-a.score)||(a.val-b.val)))[0];
-  const ok = !!top && top.val >= o;
+  candidates.sort((a, b) => {
+    const s = b.score - a.score;
+    if (s) return s;
+    const aBad = a.val < o, bBad = b.val < o;
+    if (aBad !== bBad) return aBad - bBad;
+    return Math.abs(a.val - o) - Math.abs(b.val - o);
+  });
 
+  const top = candidates[0];
+  const ok = !!top && top.val >= o;
   return { ok, bestAmount: top ? top.val : null, snippet: top ? top.tok : '' };
 }
 
+/* === STRICT WHITELISTED NAME CHECK === */
 function verifyAccountNameStrict(text) {
   const raw = String(text || '');
-  const lettersOnly = (preprocessReceiptText._lettersOnly ||
-    raw.toLowerCase().replace(/[^a-z]/g, '')
-  );
+  const normalized = raw.normalize('NFKC').replace(/&/g, 'and');
 
-  const ok =
-    lettersOnly.includes('chickenandriceltd') ||
-    lettersOnly.includes('chickenandrice') ||
-    lettersOnly.includes('chickenrice') ||
-    lettersOnly.includes('chicken') ||
-    lettersOnly.includes('rice');
+  const patterns = [
+    /\bchickenandrice\s*(ltd|limited)\b/i,
+    /\bchicken\s*and\s*rice\s*(ltd|limited)\b/i,
+    /\bchickenandrice\b/i,
+    /\bchicken\s*and\s*rice\b/i,
+    /\bchicken\b/i,
+  ];
 
-  let snippet = '';
-  try {
-    const m =
-      raw.match(/chicken[\s\-_.]*(&|and)?[\s\-_.]*rice[\s\-_.]*ltd/i) ||
-      raw.match(/chicken[\s\-_.]*(&|and)?[\s\-_.]*rice/i) ||
-      raw.match(/\bchicken\b/i) ||
-      raw.match(/\brice\b/i);
-    if (m && m[0]) snippet = m[0];
-  } catch {}
+  if (/\bprice\b/i.test(normalized)) {
+    for (const rx of patterns) {
+      const m = normalized.match(rx);
+      if (m) return { ok: true, snippet: m[0] };
+    }
+    return { ok: false, snippet: '' };
+  }
 
-  return { ok, snippet };
+  for (const rx of patterns) {
+    const m = normalized.match(rx);
+    if (m) return { ok: true, snippet: m[0] };
+  }
+  return { ok: false, snippet: '' };
 }
 
 /* ===== Money parsing helpers ===== */
@@ -1072,8 +1095,8 @@ async function ocrPdfAsImagesFast(file, { timeLeft }) {
     const doc = await pdfjsLib.getDocument({ data }).promise;
 
     const scales = [2.4, 3.0];
-    const thresholds = [undefined, 190];
-    const invertFlags = [false];
+    const thresholds = [undefined, 160, 190, 210]; // stronger for faint text
+    const invertFlags = [false, true];            // also try inverted
 
     const parts = [];
     const maxPages = Math.min(doc.numPages || 0, 5);
@@ -1160,17 +1183,33 @@ async function ocrImageFileFast(file, { timeLeft }) {
       const { c, k } = angle ? rotateCanvas(ctx.canvas, angle) : { c: ctx.canvas, k: ctx };
       const passes = [
         { grayscale: true, contrast: 1.25, brightness: 1.08, sharpen: true },
-        { grayscale: true, contrast: 1.4, brightness: 1.12, threshold: 190, sharpen: true }
+        { grayscale: true, contrast: 1.4,  brightness: 1.12, threshold: 190, sharpen: true },
+        { grayscale: true, contrast: 1.5,  brightness: 1.18, threshold: 210, sharpen: true }, // stronger
       ];
 
       for (const p of passes) {
         if (timeLeft() <= 0) break;
-        const k2 = cloneOnNewCanvas(k, c.width, c.height);
-        enhanceCanvas(k2, c.width, c.height, p);
-        const txt = await ocrBlobWithTesseract(await canvasToPngBlob(k2.canvas), Tesseract, timeLeft());
-        const score = scoreText(txt);
-        if (score > bestScore) { bestScore = score; bestText = txt; }
-        if (bestScore >= 100) break;
+
+        // normal
+        {
+          const k2 = cloneOnNewCanvas(k, c.width, c.height);
+          enhanceCanvas(k2, c.width, c.height, p);
+          const txt = await ocrBlobWithTesseract(await canvasToPngBlob(k2.canvas), Tesseract, timeLeft());
+          const score = scoreText(txt);
+          if (score > bestScore) { bestScore = score; bestText = txt; }
+          if (bestScore >= 100) break;
+        }
+
+        // inverted (helps faint/washy receipts)
+        {
+          const k3 = cloneOnNewCanvas(k, c.width, c.height);
+          enhanceCanvas(k3, c.width, c.height, p);
+          invertCanvas(k3, c.width, c.height);
+          const txtInv = await ocrBlobWithTesseract(await canvasToPngBlob(k3.canvas), Tesseract, timeLeft());
+          const scoreInv = scoreText(txtInv);
+          if (scoreInv > bestScore) { bestScore = scoreInv; bestText = txtInv; }
+          if (bestScore >= 100) break;
+        }
       }
       if (bestScore >= 100) break;
     }

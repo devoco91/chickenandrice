@@ -1,7 +1,8 @@
+// app/page.jsx
 "use client";
 
 import { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 import Navbar from "./components/Navbar/Navbar";
@@ -10,6 +11,7 @@ import Productpage from "./components/Productpage/Product";
 import Footer from "./components/Footer/Footer";
 import { setMeals } from "./store/mealsSlice";
 import LocationModal from "./components/LocationModal/LocationModal";
+import WelcomeModal from "./components/WelcomeModal/WelcomeModal";
 
 export default function Home() {
   const dispatch = useDispatch();
@@ -17,8 +19,35 @@ export default function Home() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [showModal, setShowModal] = useState(false);
+  // First-load Welcome modal
+  const [hydrated, setHydrated] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
 
+  useEffect(() => {
+    setHydrated(true);
+    try {
+      const seen = localStorage.getItem("welcomeSeen_v2");
+      if (!seen) setShowWelcome(true);
+    } catch {
+      setShowWelcome(true);
+    }
+  }, []);
+
+  const handleCloseWelcome = () => {
+    try { localStorage.setItem("welcomeSeen_v2", "1"); } catch {}
+    setShowWelcome(false);
+  };
+
+  // Add-to-cart location modal (unchanged)
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const handleRequireLocation = (mealId) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (mealId) params.set("mealId", String(mealId));
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    setShowLocationModal(true);
+  };
+
+  // Load meals (unchanged)
   useEffect(() => {
     const fetchMeals = async () => {
       try {
@@ -33,14 +62,6 @@ export default function Home() {
     fetchMeals();
   }, [dispatch]);
 
-  // Always open Location modal and attach the mealId as a query param for the modal to read.
-  const handleRequireLocation = (mealId) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (mealId) params.set("mealId", String(mealId));
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    setShowModal(true);
-  };
-
   return (
     <div className="relative">
       <Navbar />
@@ -48,8 +69,15 @@ export default function Home() {
       <Productpage onRequireLocation={handleRequireLocation} />
       <Footer />
 
-      {showModal && (
-        <LocationModal isOpen={showModal} onClose={() => setShowModal(false)} />
+      {hydrated && showWelcome && (
+        <WelcomeModal isOpen={showWelcome} onClose={handleCloseWelcome} />
+      )}
+
+      {showLocationModal && (
+        <LocationModal
+          isOpen={showLocationModal}
+          onClose={() => setShowLocationModal(false)}
+        />
       )}
     </div>
   );
