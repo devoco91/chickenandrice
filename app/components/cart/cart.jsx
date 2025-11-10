@@ -23,7 +23,7 @@ const UPLOADS_BASE =
   process.env.NEXT_PUBLIC_BACKEND_UPLOADS_BASE ||
   (RAW_API ? RAW_API.replace(/\/api$/, '') + '/uploads' : '/uploads');
 
-/* Kept as a fallback helper (not used in main renders after optimizer) */
+/* Fallback helper (not used in main renders after optimizer) */
 const getImageUrl = (val) => {
   let s = val;
   if (!s) return '/placeholder.png';
@@ -146,7 +146,7 @@ export default function CartPage() {
   const total = subtotal + deliveryFee + tax;
 
   useEffect(() => {
-    // force-packaging zeroed to avoid stale state
+    // why: keep order summary consistent (packaging not used here)
     dispatch(setOrderDetails({
       subtotal,
       packagingCost: 0,
@@ -157,18 +157,26 @@ export default function CartPage() {
     }));
   }, [subtotal, deliveryFee, tax, total, dispatch]);
 
-  // === Min selection enforcement (₦8,850 items subtotal) ===
   const belowMin = itemsSubtotal < MIN_ORDER_AMOUNT;
+
+  // helpers for bulk logic in UI
+  const isBulk = (item) =>
+    item?.isBulk === true || String(item?.category || '').toLowerCase() === 'bulk';
+  const minQty = (item) => (isBulk(item) ? 25 : 1);
 
   // Cart actions
   const handleIncrement = (id) => dispatch(incrementQuantity(id));
-  const handleDecrement = (id) => dispatch(decrementQuantity(id));
+  const handleDecrement = (item) => {
+    const canDec = item.quantity > minQty(item);
+    if (!canDec) return; // guard
+    dispatch(decrementQuantity(item._id));
+  };
   const handleRemove = (id) => dispatch(removeItemCart(id));
   const handleAddSuggestion = (item) => dispatch(addItemCart({ ...item, isDrink: true }));
 
   // CTAs
   const choosePickup = () => {
-    if (belowMin) return; // safeguard
+    if (belowMin) return;
     dispatch(setOrderDetails({
       deliveryMethod: 'pickup',
       deliveryFee: 0,
@@ -178,7 +186,7 @@ export default function CartPage() {
     router.push('/payment');
   };
   const chooseDelivery = () => {
-    if (belowMin) return; // safeguard
+    if (belowMin) return;
     router.push('/checkout');
   };
 
@@ -194,7 +202,7 @@ export default function CartPage() {
             <Link
               href="/Detailspage"
               className="inline-flex items-center gap-2 text-white px-4 py-2 rounded-xl shadow hover:opacity-90 transition"
-              style={{ backgroundColor: '#2563eb' }} /* blue */
+              style={{ backgroundColor: '#2563eb' }}
             >
               <ChevronLeft className="w-4 h-4" />
               Go back to shopping
@@ -229,35 +237,53 @@ export default function CartPage() {
           {cartItems.length > 0 && (
             <div className={`grid grid-cols-1 ${suggestedItems.length > 0 ? 'lg:grid-cols-2' : 'lg:grid-cols-1'} gap-10 mb-12 animate-fadeIn`}>
               <div className="space-y-6">
-                {cartItems.map((item) => (
-                  <div key={item._id} className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300">
-                    {item.image && (() => {
-                      const { src, srcSet, sizes } = buildImgSources(item.image, [160, 240, 320]);
-                      return (
-                        <img
-                          src={src}
-                          srcSet={srcSet}
-                          sizes={sizes}
-                          alt={item.name}
-                          className="w-24 h-24 object-cover rounded-xl"
-                          onError={(e) => (e.currentTarget.src = '/placeholder.png')}
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      );
-                    })()}
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
-                      <p className="text-red-600 font-bold text-base">₦{item.price.toLocaleString()}</p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <button onClick={() => handleDecrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Plus className="w-4 h-4 rotate-180" /></button>
-                        <span className="font-medium">{item.quantity}</span>
-                        <button onClick={() => handleIncrement(item._id)} className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"><Plus className="w-4 h-4" /></button>
+                {cartItems.map((item) => {
+                  const min = minQty(item);
+                  const canDec = item.quantity > min;
+                  return (
+                    <div key={item._id} className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-md border border-gray-100 hover:shadow-lg hover:border-red-200 transition-all duration-300">
+                      {item.image && (() => {
+                        const { src, srcSet, sizes } = buildImgSources(item.image, [160, 240, 320]);
+                        return (
+                          <img
+                            src={src}
+                            srcSet={srcSet}
+                            sizes={sizes}
+                            alt={item.name}
+                            className="w-24 h-24 object-cover rounded-xl"
+                            onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        );
+                      })()}
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg text-gray-900">{item.name}</h3>
+                        <p className="text-red-600 font-bold text-base">₦{item.price.toLocaleString()}</p>
+                        <div className="flex items-center gap-3 mt-2">
+                          <button
+                            onClick={() => handleDecrement(item)}
+                            disabled={!canDec}
+                            title={!canDec && isBulk(item) ? "Bulk orders can’t go below 25" : undefined}
+                            className={`p-2 rounded-lg transition ${canDec ? 'bg-gray-100 hover:bg-gray-200' : 'bg-gray-100 opacity-50 cursor-not-allowed'}`}
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="font-medium">{item.quantity}</span>
+                          <button
+                            onClick={() => handleIncrement(item._id)}
+                            className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
+                      <button onClick={() => handleRemove(item._id)} className="text-gray-400 hover:text-red-600 transition">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
                     </div>
-                    <button onClick={() => handleRemove(item._id)} className="text-gray-400 hover:text-red-600 transition"><Trash2 className="w-5 h-5" /></button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Drinks should remain available regardless of min rule */}
@@ -270,7 +296,6 @@ export default function CartPage() {
             <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-gray-200 p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-3">Order Summary</h2>
 
-              {/* Choice – hidden when below minimum */}
               {!belowMin ? (
                 <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button onClick={choosePickup} className="w-full rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[0.98] transition">
@@ -305,7 +330,6 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {/* Saved address actions – hidden when below minimum */}
               {!belowMin && hasSavedAddress && (
                 <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button onClick={() => router.push('/checkout')} className="w-full rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[0.98] transition">
