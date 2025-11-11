@@ -74,22 +74,22 @@ export default function WelcomeModal({ isOpen, onClose }) {
 
           <Card>
             <Paragraph>
-              Enjoy the best of Chicken and rice at unbeatable prices! Minimum order is{" "}
-              <strong>₦8,850</strong>
+              Enjoy the best of Chicken and rice at unbeatable prices! Minimum order is{" "} <strong>EIGHT THOUSAND, EIGHT HUNDRED AND FIFTY NAIRA</strong>
+               <strong> (₦8,850) ONLY.</strong>
             </Paragraph>
           </Card>
 
           <Card>
             <Paragraph>
               Bulk order comes with extra discount and you can personalize your order by chatting
-              with us on our website
+              with us on our website.<strong> MINIMUM ORDER FOR OUR PARTY PACKS IS 25.</strong>
             </Paragraph>
           </Card>
 
           <Card>
             <Paragraph>
               Our delivery is subsidized and our delivery time is as fast as possible so that your
-              meals are delivered to you fresh and hot 🔥. Pick up option is available too
+              meals are delivered to you fresh and hot 🔥. Pick up option is available too.
             </Paragraph>
           </Card>
 
@@ -97,16 +97,12 @@ export default function WelcomeModal({ isOpen, onClose }) {
           <Card>
             <Paragraph>
               <strong>Delivery window:</strong> delivery is between <strong>9:00am</strong> and{" "}
-              <strong>8:00pm</strong>. Meals ordered outside this time will be delivered from{" "}
+              <strong>7:00pm</strong>. Meals ordered outside this time will be delivered from{" "}
               <strong>9:00am the next day</strong>.
             </Paragraph>
           </Card>
 
-          <Card tone="info">
-            <Paragraph>
-              <strong>Please check if we are available at your location on the next step.</strong>
-            </Paragraph>
-          </Card>
+        
         </div>
 
         {/* footer */}
