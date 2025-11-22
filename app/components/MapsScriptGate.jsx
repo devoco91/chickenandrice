@@ -1,23 +1,32 @@
 // app/components/MapsScriptGate.jsx
-"use client";
-import { usePathname } from "next/navigation";
-import Script from "next/script";
+'use client';
 
-// Extend this list if other routes need Google Maps
-const ROUTES_NEEDING_MAPS = ["/checkout"];
+import Script from 'next/script';
+import { usePathname } from 'next/navigation';
+
+const NEEDS_MAPS = new Set([
+  '/checkout',           // adjust as needed
+  '/address',
+  '/delivery',
+]);
 
 export default function MapsScriptGate() {
-  const pathname = usePathname();
-  const needsMaps = ROUTES_NEEDING_MAPS.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
+  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+  const pathname = usePathname() || '/';
 
-  if (!needsMaps) return null;
+  // Load only on routes that need Maps
+  const shouldLoad =
+    key &&
+    ([...NEEDS_MAPS].some(p => pathname.startsWith(p)));
 
+  if (!shouldLoad) return null;
+
+  // One async loader, once
   return (
     <Script
-      src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places,geometry`}
+      id="gmaps"
       strategy="afterInteractive"
+      src={`https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async`}
     />
   );
 }

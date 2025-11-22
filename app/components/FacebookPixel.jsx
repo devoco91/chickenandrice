@@ -1,8 +1,12 @@
-// app/components/FacebookPixel.jsx
+// ========================================
+// File: app/components/FacebookPixel.jsx
+// (Single initializer + helpers; avoids multi-init)
+// ========================================
 'use client';
 
 import { useEffect } from 'react';
 
+// ---------- small helpers (safe to import elsewhere) ----------
 export function readCookie(name) {
   if (typeof document === 'undefined') return undefined;
   const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
@@ -33,17 +37,23 @@ export function genEventId() {
   return `evt_${Date.now().toString(16)}_${rnd()}${rnd()}`;
 }
 
+/**
+ * Fire an fbq event with a generated eventID (for CAPI dedupe)
+ * and return { event_id, fbp, fbc } for your server call.
+ */
 export function trackWithEventId(pixelId, event, params = {}) {
   const event_id = genEventId();
   const { fbp, fbc } = getFbpFbc();
   try {
     if (typeof window !== 'undefined' && window.fbq) {
+      // trackSingle avoids cross-pixel noise if multiple pixels exist
       window.fbq('trackSingle', pixelId, event, params, { eventID: event_id });
     }
   } catch {}
   return { event_id, fbp, fbc };
 }
 
+// ---------- component ----------
 export default function FacebookPixel({ pixelId }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -64,12 +74,9 @@ export default function FacebookPixel({ pixelId }) {
 
     if (disableLocal && isLocalhost) return;
 
+    // Prevent double init
     window.__fbPixelIds = window.__fbPixelIds || new Set();
-
-    // Detect any pre-existing fbevents.js (e.g., via GTM) to avoid loading twice
-    const hasFbeventsScript = !!document.querySelector(
-      'script[src*="connect.facebook.net"][src*="fbevents.js"]'
-    );
+    if (window.__fbPixelIds.has(PIXEL_ID)) return;
 
     if (!window.fbq) {
       const fbq = function () {
@@ -83,7 +90,7 @@ export default function FacebookPixel({ pixelId }) {
       window.fbq = fbq;
     }
 
-    if (!hasFbeventsScript && !document.getElementById('fb-pixel-sdk')) {
+    if (!document.getElementById('fb-pixel-sdk')) {
       const s = document.createElement('script');
       s.async = true;
       s.id = 'fb-pixel-sdk';
@@ -91,13 +98,11 @@ export default function FacebookPixel({ pixelId }) {
       document.head.appendChild(s);
     }
 
-    if (!window.__fbPixelIds.has(PIXEL_ID)) {
-      try {
-        window.fbq('init', PIXEL_ID);
-        window.fbq('track', 'PageView');
-        window.__fbPixelIds.add(PIXEL_ID);
-      } catch {}
-    }
+    try {
+      window.fbq('init', PIXEL_ID);
+      window.fbq('track', 'PageView');
+      window.__fbPixelIds.add(PIXEL_ID);
+    } catch {}
   }, [pixelId]);
 
   const id =
