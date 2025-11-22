@@ -1,19 +1,19 @@
 // app/checkout/page.jsx
-'use client';
+"use client";
 
-import React, { useEffect, useRef, useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import { useRouter } from 'next/navigation';
-import NavbarDark from '../components/Navbar/NavbarDark';
-import { setOrderDetails } from '../store/orderSlice';
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import { useRouter } from "next/navigation";
+import NavbarDark from "../components/Navbar/NavbarDark";
+import { setOrderDetails } from "../store/orderSlice";
 import {
   MapPin, Navigation, Loader2, Phone, User, Home as HomeIcon,
   Landmark, NotebookText, ShieldCheck, RotateCcw
-} from 'lucide-react';
+} from "lucide-react";
+import { useGoogleMaps } from "@/app/components/maps/useGoogleMaps";
 
 /** Config */
 const SHOP = { lat: 6.651608, lng: 3.323317 };
-// 6.651608, 3.323317
 const RATE_PER_KM = 300;
 
 /** Distance fallback */
@@ -25,17 +25,19 @@ const haversineKm = (a, b) => {
   return 2 * R * Math.asin(Math.sqrt(h));
 };
 
-/** Smarter GPS collector: rejects ultra-coarse fixes */
-async function getBestPositionSmart({
-  targetAcc = 25,
-  acceptAcc = 120,
-  maxPoorAccAccept = 1000,        // hard cap to avoid 50km “fixes”
-  minFixes = 2,
-  hardTimeoutMs = 60000,
-  dropVeryPoorAfterMs = 15000,
-  onUpdate = () => {},
-} = {}) {
-  if (!('geolocation' in navigator)) throw new Error('GEO_UNSUPPORTED');
+/** Smarter GPS collector (unchanged) */
+async function getBestPositionSmart(opts = {}) {
+  const {
+    targetAcc = 25,
+    acceptAcc = 120,
+    maxPoorAccAccept = 1000,
+    minFixes = 2,
+    hardTimeoutMs = 60000,
+    dropVeryPoorAfterMs = 15000,
+    onUpdate = () => {},
+  } = opts;
+
+  if (!("geolocation" in navigator)) throw new Error("GEO_UNSUPPORTED");
   const geo = navigator.geolocation;
   const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 };
 
@@ -59,22 +61,27 @@ async function getBestPositionSmart({
       if (!bestFix || acc < bestFix.coords.accuracy) bestFix = pos;
       if (!veryPoor) fixes += 1;
 
-      onUpdate({ fixes, acc, bestAcc: bestFix?.coords?.accuracy, veryPoor, age });
+      onUpdate({
+        fixes,
+        acc,
+        bestAcc: bestFix?.coords?.accuracy,
+        veryPoor,
+        age,
+      });
 
-      if (acc <= targetAcc && fixes >= minFixes) return finishOk('target', pos);
-      if (acc <= acceptAcc && fixes >= minFixes && age > 8000) return finishOk('accept', bestFix);
+      if (acc <= targetAcc && fixes >= minFixes) return finishOk("target", pos);
+      if (acc <= acceptAcc && fixes >= minFixes && age > 8000) return finishOk("accept", bestFix);
 
-      // After some time with only poor fixes, accept only if not ultra-coarse
       if (age > dropVeryPoorAfterMs && fixes === 0 && bestFix) {
         const bAcc = bestFix.coords.accuracy ?? 9999;
-        if (bAcc <= maxPoorAccAccept) return finishOk('fallback_ok', bestFix);
+        if (bAcc <= maxPoorAccAccept) return finishOk("fallback_ok", bestFix);
       }
     };
 
     const onError = (err) => {
       lastErr = err;
       onUpdate({ error: err });
-      if (err?.code === err?.PERMISSION_DENIED) return finishErr('PERMISSION_DENIED');
+      if (err?.code === err?.PERMISSION_DENIED) return finishErr("PERMISSION_DENIED");
     };
 
     geo.getCurrentPosition(onSuccess, onError, { ...options, timeout: 8000 });
@@ -83,57 +90,58 @@ async function getBestPositionSmart({
     const timer = setTimeout(() => {
       if (bestFix) {
         const bAcc = bestFix.coords?.accuracy ?? 9999;
-        if (bAcc <= maxPoorAccAccept) return finishOk('timeout_ok', bestFix);
-        return finishErr('ONLY_VERY_POOR');
+        if (bAcc <= maxPoorAccAccept) return finishOk("timeout_ok", bestFix);
+        return finishErr("ONLY_VERY_POOR");
       }
       if (lastErr) {
         const e = lastErr;
-        if (e.code === e.PERMISSION_DENIED) return finishErr('PERMISSION_DENIED');
-        if (e.code === e.POSITION_UNAVAILABLE) return finishErr('POSITION_UNAVAILABLE');
-        if (e.code === e.TIMEOUT) return finishErr('TIMEOUT');
+        if (e.code === e.PERMISSION_DENIED) return finishErr("PERMISSION_DENIED");
+        if (e.code === e.POSITION_UNAVAILABLE) return finishErr("POSITION_UNAVAILABLE");
+        if (e.code === e.TIMEOUT) return finishErr("TIMEOUT");
       }
-      return finishErr('HARD_TIMEOUT');
+      return finishErr("HARD_TIMEOUT");
     }, hardTimeoutMs);
   });
 }
 
 function mapGeoErr(err) {
-  if (!err || typeof err.code !== 'number') return 'UNKNOWN';
-  if (err.code === err.PERMISSION_DENIED) return 'PERMISSION_DENIED';
-  if (err.code === err.POSITION_UNAVAILABLE) return 'POSITION_UNAVAILABLE';
-  if (err.code === err.TIMEOUT) return 'TIMEOUT';
-  return 'UNKNOWN';
+  if (!err || typeof err.code !== "number") return "UNKNOWN";
+  if (err.code === err.PERMISSION_DENIED) return "PERMISSION_DENIED";
+  if (err.code === err.POSITION_UNAVAILABLE) return "POSITION_UNAVAILABLE";
+  if (err.code === err.TIMEOUT) return "TIMEOUT";
+  return "UNKNOWN";
 }
 
 function toProgressText(info) {
-  if (!info) return '';
+  if (!info) return "";
   if (info.error) {
     const code = mapGeoErr(info.error);
-    if (code === 'PERMISSION_DENIED') return 'Location permission denied — enable “Precise Location”.';
-    if (code === 'POSITION_UNAVAILABLE') return 'Location unavailable (GPS/Wi-Fi off or blocked).';
-    if (code === 'TIMEOUT') return 'Location timed out; still trying…';
-    return 'Location error — still trying…';
+    if (code === "PERMISSION_DENIED") return "Location permission denied — enable “Precise Location”.";
+    if (code === "POSITION_UNAVAILABLE") return "Location unavailable (GPS/Wi-Fi off or blocked).";
+    if (code === "TIMEOUT") return "Location timed out; still trying…";
+    return "Location error — still trying…";
   }
   const parts = [];
-  if (typeof info.bestAcc === 'number') parts.push(`best ±${Math.round(info.bestAcc)}m`);
-  parts.push(`${info.fixes} good fix${info.fixes === 1 ? '' : 'es'}`);
-  return `Refining… ${parts.join(' · ')}`;
+  if (typeof info.bestAcc === "number") parts.push(`best ±${Math.round(info.bestAcc)}m`);
+  parts.push(`${info.fixes} good fix${info.fixes === 1 ? "" : "es"}`);
+  return `Refining… ${parts.join(" · ")}`;
 }
 
-/** Parse address_components -> structured */
+/** Parse address_components */
 function parseAddressComponents(components = []) {
-  const get = (type) => components.find(c => c.types?.includes(type))?.long_name || '';
-  const streetNumber = get('street_number');
-  const route = get('route');
-  const city = get('locality') || get('administrative_area_level_2') || get('postal_town');
-  const state = get('administrative_area_level_1');
-  const postal = get('postal_code');
+  const get = (type) => components.find((c) => c.types?.includes(type))?.long_name || "";
+  const streetNumber = get("street_number");
+  const route = get("route");
+  const city =
+    get("locality") || get("administrative_area_level_2") || get("postal_town");
+  const state = get("administrative_area_level_1");
+  const postal = get("postal_code");
   return {
-    houseNumber: streetNumber || '',
-    street: route || '',           // keep street clean; no neighborhood here
-    city: city || '',
-    state: state || '',
-    postal: postal || '',
+    houseNumber: streetNumber || "",
+    street: route || "",
+    city: city || "",
+    state: state || "",
+    postal: postal || "",
   };
 }
 
@@ -142,19 +150,19 @@ const geocodeByLatLng = (gmaps, latLng) =>
   new Promise((resolve, reject) => {
     const geocoder = new gmaps.Geocoder();
     geocoder.geocode({ location: latLng }, (results, status) => {
-      if (status === 'OK' && results?.length) resolve(results);
-      else reject(new Error(status || 'GEOCODER_ERROR'));
+      if (status === "OK" && results?.length) resolve(results);
+      else reject(new Error(status || "GEOCODER_ERROR"));
     });
   });
 
 const getPlaceDetails = (gmaps, placeId) =>
   new Promise((resolve, reject) => {
-    const svc = new gmaps.places.PlacesService(document.createElement('div'));
+    const svc = new gmaps.places.PlacesService(document.createElement("div"));
     svc.getDetails(
-      { placeId, fields: ['formatted_address', 'geometry', 'address_components', 'name'] },
+      { placeId, fields: ["formatted_address", "geometry", "address_components", "name"] },
       (place, status) => {
         if (status === gmaps.places.PlacesServiceStatus.OK && place) resolve(place);
-        else reject(new Error(status || 'PLACES_DETAILS_ERROR'));
+        else reject(new Error(status || "PLACES_DETAILS_ERROR"));
       }
     );
   });
@@ -164,95 +172,87 @@ export default function CheckoutPage() {
   const dispatch = useDispatch();
   const cartItems = useSelector((s) => s.cart.cartItem || []);
 
+  // ✅ LOAD MAPS ONCE (fast & async)
+  const { ready } = useGoogleMaps({
+    apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+    libraries: ["places", "geometry"],
+  });
+
   const [formData, setFormData] = useState({
-    name: '', phone: '', houseNumber: '', street: '', landmark: '', notes: '',
-    location: null, city: '', state: '', postal: '',
+    name: "", phone: "", houseNumber: "", street: "", landmark: "", notes: "",
+    location: null, city: "", state: "", postal: "",
   });
   const [usingLocation, setUsingLocation] = useState(false);
   const [usedCurrentLocation, setUsedCurrentLocation] = useState(false);
-  const [geoStatus, setGeoStatus] = useState({ text: '', accuracy: null, permission: 'prompt' });
+  const [geoStatus, setGeoStatus] = useState({ text: "", accuracy: null, permission: "prompt" });
 
   const [suggestions, setSuggestions] = useState([]);
-  const [mapsReady, setMapsReady] = useState(false);
-
   const autoServiceRef = useRef(null);
-  const suggestionBoxRef = useRef(null);
+
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markerRef = useRef(null);
   const accuracyCircleRef = useRef(null);
   const searchInputRef = useRef(null);
   const searchBoxRef = useRef(null);
+  const suggestionBoxRef = useRef(null);
   const lastBestAccRef = useRef(null);
 
-  /** Load Google Maps */
+  // Build AutocompleteService when ready
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onReady = () => {
-      if (window.google?.maps) {
-        setMapsReady(true);
-        if (window.google.maps.places && !autoServiceRef.current) {
-          autoServiceRef.current = new window.google.maps.places.AutocompleteService();
-        }
-      }
-    };
-    if (window.google?.maps) { onReady(); return; }
-    const existing = document.querySelector('script[data-gmaps="true"],script[src*="maps.googleapis.com/maps/api/js"]');
-    if (existing) { existing.addEventListener('load', onReady); return () => existing.removeEventListener('load', onReady); }
-    if (window.__GMAPS_LOADING__) { window.addEventListener('__gmaps_ready__', onReady); return () => window.removeEventListener('__gmaps_ready__', onReady); }
-    window.__GMAPS_LOADING__ = true;
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places,geometry`;
-    script.async = true; script.defer = true; script.setAttribute('data-gmaps', 'true');
-    script.onload = () => { window.__GMAPS_LOADING__ = false; window.dispatchEvent(new Event('__gmaps_ready__')); onReady(); };
-    document.head.appendChild(script);
-    return () => { script.onload = null; };
-  }, []);
+    let mounted = true;
+    (async () => {
+      if (!ready) return;
+      const { AutocompleteService } = await google.maps.importLibrary("places");
+      if (!mounted) return;
+      autoServiceRef.current = new AutocompleteService();
+    })();
+    return () => { mounted = false; };
+  }, [ready]);
 
-  /** Permissions info */
+  // Permissions
   useEffect(() => {
     (async () => {
       try {
         if (!navigator.permissions) return;
-        const p = await navigator.permissions.query({ name: 'geolocation' });
+        const p = await navigator.permissions.query({ name: "geolocation" });
         setGeoStatus((g) => ({ ...g, permission: p.state }));
         p.onchange = () => setGeoStatus((g) => ({ ...g, permission: p.state }));
       } catch {}
     })();
   }, []);
 
-  /** Close suggestions */
+  // Outside click for suggestions
   useEffect(() => {
     const onDoc = (e) => {
       if (suggestionBoxRef.current && !suggestionBoxRef.current.contains(e.target)) setSuggestions([]);
     };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  /** Autocomplete typing */
+  // Typing predictions
   const handleStreetChange = (e) => {
     const value = e.target.value;
     setFormData((p) => ({ ...p, street: value }));
     if (usedCurrentLocation) return;
-    if (value.length > 2 && autoServiceRef.current && window.google?.maps?.places) {
-      const bounds = mapInstanceRef.current?.getBounds?.();
-      autoServiceRef.current.getPlacePredictions(
-        { input: value, componentRestrictions: { country: 'NG' }, bounds },
-        (preds, status) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK) setSuggestions(preds || []);
-          else setSuggestions([]);
-        }
-      );
-    } else setSuggestions([]);
+    if (!ready || !autoServiceRef.current || value.length <= 2) { setSuggestions([]); return; }
+    const bounds = mapInstanceRef.current?.getBounds?.();
+    autoServiceRef.current.getPlacePredictions(
+      { input: value, componentRestrictions: { country: "NG" }, bounds },
+      (preds, status) => {
+        const OK = google.maps.places.PlacesServiceStatus.OK;
+        setSuggestions(status === OK ? preds || [] : []);
+      }
+    );
   };
 
   const handleStreetBlur = () => {
     if (usedCurrentLocation) return;
-    if (formData.street && !formData.location && window.google?.maps) {
-      const geocoder = new window.google.maps.Geocoder();
+    if (formData.street && !formData.location && ready) {
+      const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ address: formData.street }, (results, status) => {
-        if (status === 'OK' && results?.[0]) {
+        if (status === "OK" && results?.[0]) {
           const res = results[0];
           const loc = res.geometry.location;
           const parts = parseAddressComponents(res.address_components);
@@ -271,10 +271,9 @@ export default function CheckoutPage() {
   };
 
   const handleSuggestionClick = async (prediction) => {
-    if (usedCurrentLocation) return;
-    if (!window.google?.maps) return;
+    if (usedCurrentLocation || !ready) return;
     try {
-      const place = await getPlaceDetails(window.google.maps, prediction.place_id);
+      const place = await getPlaceDetails(google.maps, prediction.place_id);
       const loc = place.geometry.location;
       const parts = parseAddressComponents(place.address_components || []);
       setFormData((p) => ({
@@ -292,11 +291,10 @@ export default function CheckoutPage() {
     }
   };
 
-  /** Apply preferred geocoder result */
   const applyGeocodeResult = (res, { lat, lng } = {}) => {
     if (!res) return;
-    const preferred = ['street_address', 'premise', 'subpremise', 'route'];
-    const pick = res.find(r => (r.types || []).some(t => preferred.includes(t))) || res[0];
+    const preferred = ["street_address", "premise", "subpremise", "route"];
+    const pick = res.find((r) => (r.types || []).some((t) => preferred.includes(t))) || res[0];
     const parts = parseAddressComponents(pick.address_components || []);
     setFormData((p) => ({
       ...p,
@@ -309,11 +307,10 @@ export default function CheckoutPage() {
     }));
   };
 
-  /** High-accuracy locate; reject ultra-coarse */
   const tryLocate = async () => {
     setUsingLocation(true);
     lastBestAccRef.current = null;
-    setGeoStatus((g) => ({ ...g, text: 'Getting precise location…', accuracy: null }));
+    setGeoStatus((g) => ({ ...g, text: "Getting precise location…", accuracy: null }));
     try {
       const { type, pos } = await getBestPositionSmart({
         targetAcc: 25,
@@ -322,9 +319,9 @@ export default function CheckoutPage() {
         minFixes: 2,
         hardTimeoutMs: 60000,
         onUpdate: (info) => {
-          lastBestAccRef.current = typeof info?.bestAcc === 'number' ? info.bestAcc : lastBestAccRef.current;
+          lastBestAccRef.current = typeof info?.bestAcc === "number" ? info.bestAcc : lastBestAccRef.current;
           const text = toProgressText(info);
-          const acc = (typeof info?.bestAcc === 'number') ? info.bestAcc : null;
+          const acc = typeof info?.bestAcc === "number" ? info.bestAcc : null;
           setGeoStatus((g) => ({ ...g, text: text || g.text, accuracy: acc ?? g.accuracy }));
         },
       });
@@ -332,35 +329,34 @@ export default function CheckoutPage() {
       const { latitude: lat, longitude: lng, accuracy } = pos.coords;
       setGeoStatus((g) => ({ ...g, text: `Location acquired (${type}, ±${Math.round(accuracy)}m).`, accuracy }));
 
-      // Only accept as “current location” when accuracy is acceptable
       if (accuracy > 1000) {
-        setGeoStatus((g) => ({ ...g, text: 'Very coarse location (±>1000m). Use search or move to improve signal.', accuracy }));
+        setGeoStatus((g) => ({ ...g, text: "Very coarse location (±>1000m). Use search or move to improve signal.", accuracy }));
         return;
       }
 
       setUsedCurrentLocation(true);
       setSuggestions([]);
-      if (window.google?.maps) {
+      if (ready) {
         try {
-          const res = await geocodeByLatLng(window.google.maps, { lat, lng });
+          const res = await geocodeByLatLng(google.maps, { lat, lng });
           applyGeocodeResult(res, { lat, lng });
         } catch {
-          setFormData((p) => ({ ...p, street: p.street || 'Using current location', location: { lat, lng } }));
+          setFormData((p) => ({ ...p, street: p.street || "Using current location", location: { lat, lng } }));
         }
       } else {
-        setFormData((p) => ({ ...p, street: p.street || 'Using current location', location: { lat, lng } }));
+        setFormData((p) => ({ ...p, street: p.street || "Using current location", location: { lat, lng } }));
       }
     } catch (e) {
-      const code = e?.message || 'UNKNOWN';
+      const code = e?.message || "UNKNOWN";
       const best = lastBestAccRef.current;
-      const maybe = typeof best === 'number' ? ` (best seen ±${Math.round(best)}m)` : '';
+      const maybe = typeof best === "number" ? ` (best seen ±${Math.round(best)}m)` : "";
       const hint =
-        code === 'ONLY_VERY_POOR' ? `Device returned only very coarse location${maybe}. Turn on Precise Location / High accuracy and try again.` :
-        code === 'PERMISSION_DENIED' ? 'Location permission denied. Enable it and turn on “Precise Location”.' :
-        code === 'POSITION_UNAVAILABLE' ? 'Location unavailable. Turn on GPS + Wi-Fi scanning and move near a window/outdoors.' :
-        code === 'TIMEOUT' ? `Timed out${maybe}. Keep the screen on and try again.` :
-        code === 'GEO_UNSUPPORTED' ? 'This device/browser does not support geolocation.' :
-        'Could not get a precise fix. Use search or drop the pin manually.';
+        code === "ONLY_VERY_POOR" ? `Device returned only very coarse location${maybe}. Turn on Precise Location / High accuracy and try again.` :
+        code === "PERMISSION_DENIED" ? "Location permission denied. Enable it and turn on “Precise Location”." :
+        code === "POSITION_UNAVAILABLE" ? "Location unavailable. Turn on GPS + Wi-Fi scanning and move near a window/outdoors." :
+        code === "TIMEOUT" ? `Timed out${maybe}. Keep the screen on and try again.` :
+        code === "GEO_UNSUPPORTED" ? "This device/browser does not support geolocation." :
+        "Could not get a precise fix. Use search or drop the pin manually.";
       setGeoStatus((g) => ({ ...g, text: hint, accuracy: best ?? null }));
     } finally {
       setUsingLocation(false);
@@ -369,22 +365,23 @@ export default function CheckoutPage() {
 
   const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
-      setGeoStatus({ text: 'Geolocation not supported by this device.', accuracy: null, permission: geoStatus.permission });
+      setGeoStatus({ text: "Geolocation not supported by this device.", accuracy: null, permission: geoStatus.permission });
       return;
     }
     await tryLocate();
   };
 
-  /** Map + SearchBox + Marker + Accuracy circle */
+  // Map + controls
   useEffect(() => {
-    if (!mapsReady || !window.google?.maps) return;
+    if (!ready) return;
+    const gmaps = google.maps;
 
     const centerLatLng = formData.location
-      ? new window.google.maps.LatLng(formData.location.lat, formData.location.lng)
-      : new window.google.maps.LatLng(SHOP.lat, SHOP.lng);
+      ? new gmaps.LatLng(formData.location.lat, formData.location.lng)
+      : new gmaps.LatLng(SHOP.lat, SHOP.lng);
 
     if (!mapInstanceRef.current) {
-      const map = new window.google.maps.Map(mapRef.current, {
+      const map = new gmaps.Map(mapRef.current, {
         center: centerLatLng,
         zoom: formData.location ? 17 : 13,
         mapTypeControl: false,
@@ -392,18 +389,18 @@ export default function CheckoutPage() {
       });
       mapInstanceRef.current = map;
 
-      // Search box (bounds-biased)
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = 'Search address or place…';
-      input.className = 'gm-searchbox-input';
-      input.style.cssText = 'box-sizing:border-box;border:1px solid #ccc;border-radius:8px;padding:8px 12px;margin:12px;min-width:260px;';
+      // Search box
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Search address or place…";
+      input.className = "gm-searchbox-input";
+      input.style.cssText = "box-sizing:border-box;border:1px solid #ccc;border-radius:8px;padding:8px 12px;margin:12px;min-width:260px;";
       searchInputRef.current = input;
-      map.controls[window.google.maps.ControlPosition.TOP_LEFT].push(input);
-      const sb = new window.google.maps.places.SearchBox(input);
+      map.controls[gmaps.ControlPosition.TOP_LEFT].push(input);
+      const sb = new gmaps.places.SearchBox(input);
       searchBoxRef.current = sb;
 
-      sb.addListener('places_changed', async () => {
+      sb.addListener("places_changed", async () => {
         const places = sb.getPlaces() || [];
         if (!places.length) return;
         const place = places[0];
@@ -412,7 +409,7 @@ export default function CheckoutPage() {
         const newLatLng = { lat: loc.lat(), lng: loc.lng() };
         try {
           if (place.place_id) {
-            const details = await getPlaceDetails(window.google.maps, place.place_id);
+            const details = await getPlaceDetails(gmaps, place.place_id);
             const parts = parseAddressComponents(details.address_components || []);
             setFormData((prev) => ({
               ...prev,
@@ -435,34 +432,34 @@ export default function CheckoutPage() {
         }
       });
 
-      map.addListener('bounds_changed', () => {
+      map.addListener("bounds_changed", () => {
         try { searchBoxRef.current?.setBounds(map.getBounds()); } catch {}
       });
 
-      // Draggable marker
-      const marker = new window.google.maps.Marker({
+      // Marker
+      const marker = new gmaps.Marker({
         position: centerLatLng,
         map,
         draggable: true,
       });
       markerRef.current = marker;
 
-      marker.addListener('dragend', async () => {
+      marker.addListener("dragend", async () => {
         const p = marker.getPosition();
         const newLatLng = { lat: p.lat(), lng: p.lng() };
         setFormData((prev) => ({ ...prev, location: newLatLng }));
         try {
-          const res = await geocodeByLatLng(window.google.maps, newLatLng);
+          const res = await geocodeByLatLng(gmaps, newLatLng);
           applyGeocodeResult(res, { lat: newLatLng.lat, lng: newLatLng.lng });
         } catch {}
       });
 
-      map.addListener('click', async (e) => {
+      map.addListener("click", async (e) => {
         const newLatLng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
         marker.setPosition(e.latLng);
         setFormData((prev) => ({ ...prev, location: newLatLng }));
         try {
-          const res = await geocodeByLatLng(window.google.maps, newLatLng);
+          const res = await geocodeByLatLng(gmaps, newLatLng);
           applyGeocodeResult(res, { lat: newLatLng.lat, lng: newLatLng.lng });
         } catch {}
       });
@@ -471,11 +468,12 @@ export default function CheckoutPage() {
       markerRef.current.setPosition(centerLatLng);
       if (formData.location) mapInstanceRef.current.setZoom(17);
     }
-  }, [mapsReady, formData.location]);
+  }, [ready, formData.location]);
 
-  /** Accuracy circle */
+  // Accuracy circle
   useEffect(() => {
-    if (!mapsReady || !window.google?.maps || !mapInstanceRef.current) return;
+    if (!ready || !mapInstanceRef.current) return;
+    const gmaps = google.maps;
     const acc = geoStatus.accuracy;
     if (!formData.location || !acc) {
       if (accuracyCircleRef.current) {
@@ -486,24 +484,24 @@ export default function CheckoutPage() {
     }
     const map = mapInstanceRef.current;
     if (!accuracyCircleRef.current) {
-      accuracyCircleRef.current = new window.google.maps.Circle({
+      accuracyCircleRef.current = new gmaps.Circle({
         map,
-        center: new window.google.maps.LatLng(formData.location.lat, formData.location.lng),
-        radius: Math.max(10, Math.min(acc, 1000)), // cap visual to 1km
+        center: new gmaps.LatLng(formData.location.lat, formData.location.lng),
+        radius: Math.max(10, Math.min(acc, 1000)),
         strokeOpacity: 0.4,
         strokeWeight: 1,
         fillOpacity: 0.1,
       });
     } else {
-      accuracyCircleRef.current.setCenter(new window.google.maps.LatLng(formData.location.lat, formData.location.lng));
+      accuracyCircleRef.current.setCenter(new gmaps.LatLng(formData.location.lat, formData.location.lng));
       accuracyCircleRef.current.setRadius(Math.max(10, Math.min(acc, 1000)));
       accuracyCircleRef.current.setMap(map);
     }
-  }, [mapsReady, geoStatus.accuracy, formData.location]);
+  }, [ready, geoStatus.accuracy, formData.location]);
 
   const enableManualEntry = () => {
     setUsedCurrentLocation(false);
-    setFormData((p) => ({ ...p, houseNumber: '', street: '', city: '', state: '', postal: '', location: null }));
+    setFormData((p) => ({ ...p, houseNumber: "", street: "", city: "", state: "", postal: "", location: null }));
     setSuggestions([]);
     if (accuracyCircleRef.current) {
       accuracyCircleRef.current.setMap(null);
@@ -511,32 +509,31 @@ export default function CheckoutPage() {
     }
   };
 
-  /** Validation */
-  const nameOk = formData.name.trim() !== '';
-  const phoneOk = formData.phone.trim() !== '';
-  const streetOk = formData.street.trim() !== '';
-  const houseOk = usedCurrentLocation ? true : formData.houseNumber.trim() !== '';
-  const cartOk = (cartItems || []).length > 0;
+  const nameOk = formData.name.trim() !== "";
+  const phoneOk = formData.phone.trim() !== "";
+  const streetOk = formData.street.trim() !== "";
+  const houseOk = usedCurrentLocation ? true : formData.houseNumber.trim() !== "";
+  const cartItemsState = cartItems || [];
+  const cartOk = cartItemsState.length > 0;
   const isFormValid = nameOk && phoneOk && streetOk && houseOk && cartOk;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  /** Submit */
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isFormValid) return;
-    if (!formData.location) { setError('Please set your exact map pin or select a place.'); return; }
+    if (!formData.location) { setError("Please set your exact map pin or select a place."); return; }
 
     setLoading(true); setError(null);
     try {
       const customer = { lat: +formData.location.lat, lng: +formData.location.lng };
 
       let distanceKm = haversineKm(SHOP, customer);
-      if (window.google?.maps?.geometry?.spherical) {
-        const meters = window.google.maps.geometry.spherical.computeDistanceBetween(
-          new window.google.maps.LatLng(SHOP.lat, SHOP.lng),
-          new window.google.maps.LatLng(customer.lat, customer.lng)
+      if (ready && google.maps.geometry?.spherical) {
+        const meters = google.maps.geometry.spherical.computeDistanceBetween(
+          new google.maps.LatLng(SHOP.lat, SHOP.lng),
+          new google.maps.LatLng(customer.lat, customer.lng)
         );
         if (meters > 0) distanceKm = meters / 1000;
       }
@@ -545,24 +542,24 @@ export default function CheckoutPage() {
       const deliveryFee = deliveryDistanceKm * RATE_PER_KM;
 
       dispatch(setOrderDetails({
-        deliveryMethod: 'delivery',
+        deliveryMethod: "delivery",
         customerName: formData.name,
         phone: formData.phone,
-        houseNumber: usedCurrentLocation ? (formData.houseNumber || '') : formData.houseNumber,
+        houseNumber: usedCurrentLocation ? (formData.houseNumber || "") : formData.houseNumber,
         street: formData.street,
         city: formData.city,
         state: formData.state,
         postal: formData.postal,
         landmark: formData.landmark,
         specialNotes: formData.notes,
-        location: { type: 'Point', coordinates: [customer.lng, customer.lat] },
+        location: { type: "Point", coordinates: [customer.lng, customer.lat] },
         deliveryDistanceKm,
         deliveryFee,
         addressSaved: true,
       }));
-      router.push('/cart');
+      router.push("/cart");
     } catch {
-      setError('Failed to compute delivery fee. Please try again.');
+      setError("Failed to compute delivery fee. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -585,11 +582,11 @@ export default function CheckoutPage() {
 
         {(geoStatus.text || usingLocation) && (
           <div className="mb-4 p-3 rounded-xl border border-blue-200 bg-blue-50 text-sm text-blue-900">
-            {usingLocation ? 'Locating… ' : null}{geoStatus.text}
+            {usingLocation ? "Locating… " : null}{geoStatus.text}
             {geoStatus.accuracy != null && <> (±{Math.round(geoStatus.accuracy)}m)</>}
-            {geoStatus.permission === 'denied' && (
+            {geoStatus.permission === "denied" && (
               <div className="mt-1 text-xs text-blue-800">
-                Enable “Precise Location” then retry. Wi-Fi **helps** accuracy but isn’t required.
+                Enable “Precise Location” then retry. Wi-Fi helps accuracy but isn’t required.
               </div>
             )}
           </div>
@@ -602,11 +599,11 @@ export default function CheckoutPage() {
           <div className="lg:col-span-2">
             <form onSubmit={handleSubmit} className="bg-white/80 backdrop-blur rounded-2xl shadow border border-gray-200 p-6 md:p-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!nameOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'}`}>
+                <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!nameOk ? "border-rose-400 bg-rose-50" : "bg-gray-50"}`}>
                   <User className="w-4 h-4 text-gray-500" />
                   <input value={formData.name} onChange={(e)=>setFormData({...formData,name:e.target.value})} placeholder="Enter Your Name" required className="w-full bg-transparent outline-none" disabled={loading} />
                 </label>
-                <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!phoneOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'}`}>
+                <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!phoneOk ? "border-rose-400 bg-rose-50" : "bg-gray-50"}`}>
                   <Phone className="w-4 h-4 text-gray-500" />
                   <input value={formData.phone} onChange={(e)=>setFormData({...formData,phone:e.target.value})} placeholder="Phone Number" required className="w-full bg-transparent outline-none" disabled={loading} />
                 </label>
@@ -634,13 +631,13 @@ export default function CheckoutPage() {
                   )}
                 </div>
                 <div className="text-xs text-gray-600">
-                  Tip: turn on **Precise/High accuracy**. Wi-Fi helps accuracy but is not required.
+                  Tip: turn on <strong>Precise/High accuracy</strong>. Wi-Fi helps accuracy but is not required.
                 </div>
               </div>
 
               {/* Address */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
-                <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!houseOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'} ${usedCurrentLocation ? 'opacity-75' : ''}`}>
+                <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!houseOk ? "border-rose-400 bg-rose-50" : "bg-gray-50"} ${usedCurrentLocation ? "opacity-75" : ""}`}>
                   <HomeIcon className="w-4 h-4 text-gray-500" />
                   <input value={formData.houseNumber} onChange={(e)=>setFormData({...formData,houseNumber:e.target.value})}
                     placeholder="House Number (e.g., 23A)" required={!usedCurrentLocation}
@@ -648,7 +645,7 @@ export default function CheckoutPage() {
                 </label>
 
                 <div className="relative" ref={suggestionBoxRef}>
-                  <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!streetOk ? 'border-rose-400 bg-rose-50' : 'bg-gray-50'} ${usedCurrentLocation ? 'opacity-75' : ''}`}>
+                  <label className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${!streetOk ? "border-rose-400 bg-rose-50" : "bg-gray-50"} ${usedCurrentLocation ? "opacity-75" : ""}`}>
                     <Landmark className="w-4 h-4 text-gray-500" />
                     <input value={formData.street} onChange={handleStreetChange} onBlur={handleStreetBlur}
                       placeholder="Street (e.g., Bode Thomas Street)" required
@@ -666,7 +663,7 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Auto-filled (read-only) */}
+              {/* Auto-filled */}
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <input value={formData.city} className="bg-gray-50 rounded-xl px-3 py-2 border outline-none" placeholder="City" disabled />
                 <input value={formData.state} className="bg-gray-50 rounded-xl px-3 py-2 border outline-none" placeholder="State" disabled />
@@ -708,8 +705,8 @@ export default function CheckoutPage() {
               )}
 
               <button type="submit" disabled={!isFormValid || loading}
-                className={`mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white shadow transition ${isFormValid && !loading ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-95 active:scale-[0.98]' : 'bg-gray-400 cursor-not-allowed'}`}>
-                {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>) : ('Save & Return to Cart')}
+                className={`mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white shadow transition ${isFormValid && !loading ? "bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-95 active:scale-[0.98]" : "bg-gray-400 cursor-not-allowed"}`}>
+                {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>) : ("Save & Return to Cart")}
               </button>
             </form>
           </div>
@@ -720,11 +717,11 @@ export default function CheckoutPage() {
               <h2 className="text-xl font-bold text-gray-900 mb-4">Heads up</h2>
               <p className="text-sm text-gray-700">Delivery fee is calculated on the Cart page based on distance.</p>
               <div className="mt-6 grid grid-cols-2 gap-2">
-                <button type="button" onClick={()=>router.push('/cart')}
+                <button type="button" onClick={()=>router.push("/cart")}
                   className="px-3 py-2 rounded-xl bg-white border text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition">
                   Back to Cart
                 </button>
-                <button type="button" onClick={()=>window.scrollTo({ top: 0, behavior: 'smooth' })}
+                <button type="button" onClick={()=>window.scrollTo({ top: 0, behavior: "smooth" })}
                   className="px-3 py-2 rounded-xl bg-gray-900 text-white hover:opacity-95 active:scale-[0.98] transition">
                   Edit Details
                 </button>

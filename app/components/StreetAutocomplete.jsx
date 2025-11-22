@@ -1,68 +1,78 @@
 // components/StreetAutocomplete.jsx
-'use client'
-import React, { useState, useRef, useEffect } from 'react'
+"use client";
+import React, { useState, useRef, useEffect } from "react";
+import { useGoogleMaps } from "@/app/components/maps/useGoogleMaps";
 
-const StreetAutocomplete = ({ value, onChange, onSelect, disabled }) => {
-  const [suggestions, setSuggestions] = useState([])
-  const [loading, setLoading] = useState(false)
-  const serviceRef = useRef(null)
-  const suggestionBoxRef = useRef(null)
+export default function StreetAutocomplete({ value, onChange, onSelect, disabled }) {
+  const { ready } = useGoogleMaps({
+    apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+    libraries: ["places"],
+  });
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const serviceRef = useRef(null);
+  const suggestionBoxRef = useRef(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.google?.maps?.places) {
-      serviceRef.current = new window.google.maps.places.AutocompleteService()
-    }
-  }, [])
+    let mounted = true;
+    (async () => {
+      if (!ready) return;
+      const { AutocompleteService } = await google.maps.importLibrary("places");
+      if (!mounted) return;
+      serviceRef.current = new AutocompleteService();
+    })();
+    return () => { mounted = false; };
+  }, [ready]);
 
-  // outside click
   useEffect(() => {
-    const handleClickOutside = (e) => {
+    const onDown = (e) => {
       if (suggestionBoxRef.current && !suggestionBoxRef.current.contains(e.target)) {
-        setSuggestions([])
+        setSuggestions([]);
       }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
 
   const handleChange = (e) => {
-    const val = e.target.value
-    onChange(val)
+    const val = e.target.value;
+    onChange(val);
 
-    if (val.length > 2 && serviceRef.current) {
-      setLoading(true)
-      serviceRef.current.getPlacePredictions(
-        { input: val, componentRestrictions: { country: 'NG' } },
-        (predictions, status) => {
-          setLoading(false)
-          if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-            setSuggestions(predictions || [])
-          } else {
-            setSuggestions([])
-          }
-        }
-      )
-    } else {
-      setSuggestions([])
+    if (!ready || !serviceRef.current || val.length <= 2) {
+      setSuggestions([]);
+      return;
     }
-  }
 
-  const handleSelect = (prediction) => {
-    const placesService = new window.google.maps.places.PlacesService(document.createElement('div'))
-    placesService.getDetails(
-      { placeId: prediction.place_id, fields: ['formatted_address', 'geometry'] },
+    setLoading(true);
+    serviceRef.current.getPlacePredictions(
+      { input: val, componentRestrictions: { country: "NG" } },
+      (preds, status) => {
+        setLoading(false);
+        const OK = google.maps.places.PlacesServiceStatus.OK;
+        setSuggestions(status === OK ? preds || [] : []);
+      }
+    );
+  };
+
+  const handleSelect = async (prediction) => {
+    const { PlacesService } = await google.maps.importLibrary("places");
+    const svc = new PlacesService(document.createElement("div"));
+    svc.getDetails(
+      { placeId: prediction.place_id, fields: ["formatted_address", "geometry"] },
       (place, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+        const OK = google.maps.places.PlacesServiceStatus.OK;
+        if (status === OK && place?.geometry?.location) {
           onSelect({
             address: place.formatted_address,
             lat: place.geometry.location.lat(),
             lng: place.geometry.location.lng(),
-          })
-          setSuggestions([])
+          });
+          setSuggestions([]);
         }
       }
-    )
-  }
+    );
+  };
 
   return (
     <div className="relative" ref={suggestionBoxRef}>
@@ -89,7 +99,5 @@ const StreetAutocomplete = ({ value, onChange, onSelect, disabled }) => {
         </ul>
       )}
     </div>
-  )
+  );
 }
-
-export default StreetAutocomplete

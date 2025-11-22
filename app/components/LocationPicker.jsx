@@ -1,36 +1,38 @@
 // src/components/LocationPicker.jsx
-import { useEffect } from "react";
+"use client";
+import { useEffect, useRef } from "react";
+import { useGoogleMaps } from "@/app/components/maps/useGoogleMaps";
 
 export default function LocationPicker({ onLocationSelect }) {
+  const { ready } = useGoogleMaps({
+    apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+    libraries: ["places"],
+  });
+  const inputRef = useRef(null);
+
   useEffect(() => {
-    if (!window.google) return;
-
-    const autocomplete = new window.google.maps.places.Autocomplete(
-      document.getElementById("autocomplete"),
-      { types: ["geocode"] }
-    );
-
-    autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-      if (place.geometry && place.geometry.location) {
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-        onLocationSelect({ lat, lng });
-      }
-    });
-  }, [onLocationSelect]);
+    if (!ready || !inputRef.current) return;
+    (async () => {
+      const { Autocomplete } = await google.maps.importLibrary("places");
+      const autocomplete = new Autocomplete(inputRef.current, {
+        types: ["geocode"],
+        fields: ["formatted_address", "geometry", "name", "place_id"],
+      });
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        const loc = place?.geometry?.location;
+        if (loc) onLocationSelect({ lat: loc.lat(), lng: loc.lng() });
+      });
+    })();
+  }, [ready, onLocationSelect]);
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by your browser");
       return;
     }
-
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        onLocationSelect({ lat: latitude, lng: longitude });
-      },
+      ({ coords }) => onLocationSelect({ lat: coords.latitude, lng: coords.longitude }),
       (error) => {
         console.error("Error getting location:", error);
         alert("Unable to retrieve your location. Please type your address.");
@@ -41,7 +43,7 @@ export default function LocationPicker({ onLocationSelect }) {
   return (
     <div className="space-y-2">
       <input
-        id="autocomplete"
+        ref={inputRef}
         type="text"
         placeholder="Enter your address"
         className="border p-2 w-full rounded"
