@@ -9,6 +9,7 @@ import LocalBusinessJsonLd from "./seo/LocalBusinessJsonLd";
 import "react-toastify/dist/ReactToastify.css";
 import { ToastContainer } from "react-toastify";
 import FacebookPixel from "./components/FacebookPixel";
+import MapsScriptGate from "./components/MapsScriptGate";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -19,8 +20,9 @@ const pixelId =
   process.env.NEXT_PUBLIC_FB_PIXEL_ID ||
   "";
 
-// Preconnects
+// Hosts we fetch from (for preconnect/dns-prefetch)
 const API_HOST = "https://chickenandrice-server.fly.dev";
+// Optional: if images sometimes come directly from Firebase Storage
 const STORAGE_HOST = "https://firebasestorage.googleapis.com";
 
 export const metadata = {
@@ -52,6 +54,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
+        {/* Speed up first connection to your API / image host */}
         <link rel="preconnect" href={API_HOST} crossOrigin="" />
         <link rel="dns-prefetch" href={API_HOST} />
         <link rel="preconnect" href={STORAGE_HOST} crossOrigin="" />
@@ -61,17 +64,19 @@ export default function RootLayout({ children }) {
         <LocalBusinessJsonLd />
 
         <ReduxProvider>
+          {/* Mount pixel only if configured */}
           {pixelId ? <FacebookPixel pixelId={pixelId} /> : null}
           {children}
         </ReduxProvider>
+
+        {/* Load Google Maps only on routes that need it (e.g., /checkout) */}
+        <MapsScriptGate />
 
         <IOSA2HSBanner />
         <InstallPWAButton className="fixed bottom-4 right-4 px-4 py-2 rounded-xl bg-gray-900 text-white shadow" />
         <PWARegister />
 
         <ToastContainer position="top-center" newestOnTop pauseOnHover closeOnClick draggable />
-
-        {/* IMPORTANT: removed global Google Maps <Script>. */}
       </body>
     </html>
   );

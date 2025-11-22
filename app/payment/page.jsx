@@ -424,7 +424,7 @@ export default function PaymentPage() {
           </div>
 
           {/* Stepper */}
-          <div className="mb-4 flex items-center gap-2 text-xs text-white">
+          <div className="mb-4 flex items.CENTER gap-2 text-xs text.white">
             <div className="flex items-center gap-2">
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-black font-bold">1</span>
               <span>Cart</span>
@@ -436,7 +436,7 @@ export default function PaymentPage() {
             </div>
             <span className="h-[1px] flex-1 bg-white" />
             <div className="flex items-center gap-2 opacity-60">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white text-white">3</span>
+              <span className="inline-flex h-6 w-6 items.CENTER justify-center rounded-full border border-white text-white">3</span>
               <span>Done</span>
             </div>
           </div>
@@ -464,7 +464,7 @@ export default function PaymentPage() {
                 <div className="mt-4 space-y-3">
                   <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Items Subtotal</span><span>{formatNGN(order.subtotal || 0)}</span></div>
                   <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Delivery Fee</span><span>{formatNGN(order.deliveryFee || 0)}</span></div>
-                  <div className="flex items-center justify-between text-sm"><span className="text-slate-300">Tax (2%)</span><span>{formatNGN(order.tax || 0)}</span></div>
+                  <div className="flex items.CENTER justify-between text-sm"><span className="text-slate-300">Tax (2%)</span><span>{formatNGN(order.tax || 0)}</span></div>
                   <hr className="my-3 border-white" />
                   <div className="flex items-center justify-between"><span className="text-slate-300">Total Due</span><span className="text-2xl font-semibold">{formatNGN(total)}</span></div>
                 </div>
@@ -496,7 +496,7 @@ export default function PaymentPage() {
                       <label htmlFor="ref" className="text-sm text-slate-200">Payment Reference</label>
                       <div className="mt-1 flex items-center gap-2">
                         <input id="ref" value={paymentRef.current} readOnly className="w-full rounded-lg border border-white bg-black px-3 py-2 text-slate-100 outline-none" />
-                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg-black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
+                        <button type="button" onClick={() => handleCopy('ref', paymentRef.current)} className="inline-flex items-center gap-2 rounded-lg border border-white bg.black px-3 py-2 text-sm hover:bg-slate-800 active:scale-95">
                           {copiedKey === 'ref' ? (<><Check className="h-4 w-4" /> Copied</>) : (<><ClipboardCopy className="h-4 w-4" /> Copy</>)}
                         </button>
                       </div>
@@ -641,7 +641,7 @@ export default function PaymentPage() {
                   <div className="flex items-start gap-3 rounded-xl border border-amber-500 bg-amber-900/30 p-3 text-amber-100">
                     <Info className="mt-0.5 h-4 w-4" />
                     <div>
-                      <p className="font-medium">Don’t forget the reference</p>
+                      <p className="font.medium">Don’t forget the reference</p>
                       <p className="text-sm">
                         Please include <span className="font-semibold">{paymentRef.current}</span> in the transfer narration/description so we can match your payment instantly.
                       </p>
@@ -1021,6 +1021,7 @@ async function extractTextFromFileFast(file) {
       if (!pdfjsLib) return { text: '', method: 'pdf-ocr' };
 
       try {
+        the
         const data = await file.arrayBuffer();
         const doc = await pdfjsLib.getDocument({ data, disableCombineTextItems: false }).promise;
         let text = '';

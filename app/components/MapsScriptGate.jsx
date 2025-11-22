@@ -1,8 +1,9 @@
 // app/components/MapsScriptGate.jsx
 "use client";
 import { usePathname } from "next/navigation";
-import { useGoogleMaps } from "./maps/useGoogleMaps";
+import Script from "next/script";
 
+// Extend this list if other routes need Google Maps
 const ROUTES_NEEDING_MAPS = ["/checkout"];
 
 export default function MapsScriptGate() {
@@ -11,10 +12,12 @@ export default function MapsScriptGate() {
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
 
-  useGoogleMaps({
-    apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
-    libraries: needsMaps ? ["places"] : [],
-  });
+  if (!needsMaps) return null;
 
-  return null;
+  return (
+    <Script
+      src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places,geometry`}
+      strategy="afterInteractive"
+    />
+  );
 }
