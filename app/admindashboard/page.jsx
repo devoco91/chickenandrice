@@ -9,7 +9,9 @@ import React, {
   Fragment,
   useTransition,
 } from "react";
-import { API_BASE } from "../utils/apiBase";
+// CHANGED: use direct backend API instead of env/utils
+const API_BASE = "https://fastfolderbackend.fly.dev/api";
+
 import {
   ResponsiveContainer,
   LineChart,
