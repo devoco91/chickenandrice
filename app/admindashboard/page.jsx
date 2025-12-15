@@ -48,7 +48,6 @@ const Skeleton = ({ className = "" }) => (
 const compactNaira = (v) => {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return "₦0";
-  // Intl numberformat compacts but not with currency well; keep simple
   if (Math.abs(n) >= 1_000_000_000) return `₦${(n / 1_000_000_000).toFixed(1)}B`;
   if (Math.abs(n) >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `₦${(n / 1_000).toFixed(0)}k`;
@@ -92,6 +91,9 @@ export default function AdminDashboard() {
     total: true,
   });
 
+  // NEW: payments chart type toggle (bar | pie)
+  const [paymentsChartType, setPaymentsChartType] = useState("bar");
+
   // Auto-refresh toggle (persisted)
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   useEffect(() => {
@@ -106,6 +108,8 @@ export default function AdminDashboard() {
       if (df) setDateFrom(df);
       const dt = localStorage.getItem("admindashboard:dateTo");
       if (dt) setDateTo(dt);
+      const pct = localStorage.getItem("admindashboard:paymentsChartType");
+      if (pct) setPaymentsChartType(pct);
     } catch {}
   }, []);
   useEffect(() => {
@@ -115,8 +119,9 @@ export default function AdminDashboard() {
       localStorage.setItem("admindashboard:typeFilter", filter);
       localStorage.setItem("admindashboard:dateFrom", dateFrom);
       localStorage.setItem("admindashboard:dateTo", dateTo);
+      localStorage.setItem("admindashboard:paymentsChartType", paymentsChartType);
     } catch {}
-  }, [autoRefreshEnabled, paymentFilter, filter, dateFrom, dateTo]);
+  }, [autoRefreshEnabled, paymentFilter, filter, dateFrom, dateTo, paymentsChartType]);
 
   // Top products controls
   const [rankMetric, setRankMetric] = useState("units");
@@ -352,14 +357,14 @@ export default function AdminDashboard() {
   const shopOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "instore").length;
   const chowdeckOrders = orders.filter((o) => (o?.orderType || "").toLowerCase() === "chowdeck").length;
 
-  // Weekly totals
+  // Weekly totals (Mon–Sun) — resets every Monday at 00:00
   useEffect(() => {
     let online = 0;
     let instore = 0;
     let chowdeck = 0;
     for (const o of orders) {
       const d = safeDate(o?.createdAt);
-      if (d && d >= startOfWeek) {
+      if (d && d >= startOfWeekMonday) {
         const t = Number(o?.total || 0);
         const type = (o?.orderType || "").toLowerCase();
         if (type === "online") online += t;
@@ -371,7 +376,7 @@ export default function AdminDashboard() {
     setWeeklyShopTotal(instore);
     setWeeklyChowdeckTotal(chowdeck);
     setWeeklyCombinedTotal(online + instore + chowdeck);
-  }, [orders, startOfWeek]);
+  }, [orders, startOfWeekMonday]); // why: weekly summary must be Monday–Sunday
 
   // Daily totals
   useEffect(() => {
@@ -735,6 +740,41 @@ export default function AdminDashboard() {
     });
   }, [orders, startOfToday]);
 
+  // === NEW: data for payments bar/pie ===
+  const paymentBarData = useMemo(
+    () => [
+      { name: "Cash", value: cashToday || 0 },
+      { name: "Transfer", value: transferToday || 0 },
+      { name: "Card", value: cardToday || 0 },
+    ],
+    [cashToday, transferToday, cardToday]
+  );
+
+  // === NEW: weekly payments (Mon–Sun) stacked series ===
+  const weeklyPaymentsSeries = useMemo(() => {
+    const start = new Date(startOfWeekMonday);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7); // next Monday 00:00
+
+    const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const arr = labels.map((label, idx) => ({ idx, label, cash: 0, transfer: 0, card: 0 }));
+
+    for (const o of orders) {
+      const d = safeDate(o?.createdAt);
+      if (!d || d < start || d >= end) continue;
+      const dayIndex = (d.getDay() + 6) % 7; // 0=Mon … 6=Sun
+      const pm = String(o?.paymentMode || "").toLowerCase();
+      const norm = pm === "upi" ? "transfer" : pm;
+      const t = Number(o?.total || 0);
+      const row = arr[dayIndex];
+      if (!row) continue;
+      if (norm === "cash") row.cash += t;
+      else if (norm === "card") row.card += t;
+      else if (norm === "transfer") row.transfer += t;
+    }
+    return arr;
+  }, [orders, startOfWeekMonday]);
+
   // Style helper
   const styleMode = (variant) => {
     const isPremium = summaryStyle === "premium";
@@ -1072,6 +1112,111 @@ export default function AdminDashboard() {
             </div>
           </Card>
 
+          {/* NEW: Today’s Payments with toggle (Bar | Pie) + sparkline */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <SectionTitle>Today’s Payments (Cash / Transfer / Card)</SectionTitle>
+              <div className="bg-gray-100 rounded-xl p-1 flex text-xs font-semibold">
+                <button
+                  onClick={() => setPaymentsChartType("bar")}
+                  className={`px-3 py-1 rounded-lg ${paymentsChartType === "bar" ? "bg-white shadow" : "opacity-70"}`}
+                  title="Bar chart"
+                >
+                  Bar
+                </button>
+                <button
+                  onClick={() => setPaymentsChartType("pie")}
+                  className={`px-3 py-1 rounded-lg ${paymentsChartType === "pie" ? "bg-white shadow" : "opacity-70"}`}
+                  title="Pie chart"
+                >
+                  Pie
+                </button>
+              </div>
+            </div>
+
+            <div className="h-64">
+              {loading && orders.length === 0 ? (
+                <Skeleton className="h-full w-full" />
+              ) : paymentsChartType === "bar" ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={paymentBarData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis tickFormatter={compactNaira} />
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Legend />
+                    <defs>
+                      {/* why: keep brand colors consistent */}
+                      <linearGradient id="barCash" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10B981" />
+                        <stop offset="100%" stopColor="#047857" />
+                      </linearGradient>
+                      <linearGradient id="barTransfer" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#F59E0B" />
+                        <stop offset="100%" stopColor="#B45309" />
+                      </linearGradient>
+                      <linearGradient id="barCard" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366F1" />
+                        <stop offset="100%" stopColor="#4338CA" />
+                      </linearGradient>
+                    </defs>
+                    <Bar dataKey="value" name="Amount" radius={[8, 8, 0, 0]}>
+                      {paymentBarData.map((entry, index) => {
+                        const fill =
+                          entry.name === "Cash"
+                            ? "url(#barCash)"
+                            : entry.name === "Transfer"
+                            ? "url(#barTransfer)"
+                            : "url(#barCard)";
+                        return <Cell key={`cell-${index}`} fill={fill} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Legend />
+                    <Pie dataKey="value" nameKey="name" data={paymentBarData} outerRadius={100} label>
+                      {paymentBarData.map((entry, idx) => (
+                        <Cell
+                          key={`pay-slice-${idx}`}
+                          fill={
+                            entry.name === "Cash"
+                              ? "#10B981"
+                              : entry.name === "Transfer"
+                              ? "#F59E0B"
+                              : "#6366F1"
+                          }
+                        />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Tiny hourly lines (auto-resets daily) */}
+            <div className="mt-4 h-28">
+              {loading && orders.length === 0 ? (
+                <Skeleton className="h-full w-full" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={paymentSpark} margin={{ top: 0, right: 12, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="label" hide />
+                    <YAxis tickFormatter={compactNaira} hide />
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Legend />
+                    <Line type="monotone" dataKey="cash" name="Cash" stroke="#10B981" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="transfer" name="Transfer" stroke="#F59E0B" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="card" name="Card" stroke="#6366F1" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </Card>
+
           {/* Daily */}
           <Card className="p-4 lg:col-span-2">
             <div className="flex items-center justify-between">
@@ -1117,6 +1262,29 @@ export default function AdminDashboard() {
                     )}
                     <Brush height={16} travellerWidth={8} />
                   </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </Card>
+
+          {/* NEW: Weekly Payments (Mon–Sun) */}
+          <Card className="p-4 lg:col-span-3">
+            <SectionTitle>Weekly Payments (Mon–Sun)</SectionTitle>
+            <div className="h-72">
+              {loading && orders.length === 0 ? (
+                <Skeleton className="h-full w-full" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyPaymentsSeries} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" />
+                    <YAxis tickFormatter={compactNaira} />
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Legend />
+                    <Bar dataKey="cash" name="Cash" stackId="a" fill="#10B981" radius={[6,6,0,0]} />
+                    <Bar dataKey="transfer" name="Transfer" stackId="a" fill="#F59E0B" radius={[6,6,0,0]} />
+                    <Bar dataKey="card" name="Card" stackId="a" fill="#6366F1" radius={[6,6,0,0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
