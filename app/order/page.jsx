@@ -62,7 +62,9 @@ export default function OrderPage() {
       } catch (err) {
         if (err.name !== "AbortError") {
           console.error(err);
-          setFood([]); setProtein([]); setDrink([]);
+          setFood([]);
+          setProtein([]);
+          setDrink([]);
         }
       } finally {
         setTodaysSales(getTodaysSales());
@@ -116,13 +118,27 @@ export default function OrderPage() {
   const filteredData = (data) => {
     if (!search.trim()) return data;
     const q = search.toLowerCase();
-    return data.filter((item) => String(item?.name || "").toLowerCase().includes(q));
+    return data.filter((item) =>
+      String(item?.name || "").toLowerCase().includes(q)
+    );
   };
 
   const colorTone = {
-    purple: { title: "text-purple-700", chip: "bg-purple-50 text-purple-700", btn: "from-purple-600 to-fuchsia-600" },
-    red: { title: "text-red-700", chip: "bg-red-50 text-red-700", btn: "from-rose-600 to-red-600" },
-    blue: { title: "text-blue-700", chip: "bg-blue-50 text-blue-700", btn: "from-blue-600 to-indigo-600" },
+    purple: {
+      title: "text-purple-700",
+      chip: "bg-purple-50 text-purple-700",
+      btn: "from-purple-600 to-fuchsia-600",
+    },
+    red: {
+      title: "text-red-700",
+      chip: "bg-red-50 text-red-700",
+      btn: "from-rose-600 to-red-600",
+    },
+    blue: {
+      title: "text-blue-700",
+      chip: "bg-blue-50 text-blue-700",
+      btn: "from-blue-600 to-indigo-600",
+    },
   };
 
   const money = (n) =>
@@ -136,7 +152,9 @@ export default function OrderPage() {
     const tone = colorTone[palette] || colorTone.purple;
     return (
       <section>
-        <h2 className={`text-2xl font-extrabold mb-4 ${tone.title}`}>{label}</h2>
+        <h2 className={`text-2xl font-extrabold mb-4 ${tone.title}`}>
+          {label}
+        </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {filteredData(data).map((item) => {
             const count = getItemCount(item._id, category);
@@ -159,18 +177,26 @@ export default function OrderPage() {
                     <span className="text-sm font-bold text-gray-700">
                       {money(item.price || 0)}
                     </span>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tone.chip}`}>
+                    <span
+                      className={`text-xs font-bold px-2.5 py-1 rounded-full ${tone.chip}`}
+                    >
                       {count}
                     </span>
                     <button
                       onClick={() =>
                         setOpenItem((prev) =>
-                          prev === keyFor(item._id, category) ? null : keyFor(item._id, category)
+                          prev === keyFor(item._id, category)
+                            ? null
+                            : keyFor(item._id, category)
                         )
                       }
                       className="p-1.5 rounded-lg hover:bg-gray-100 transition"
                     >
-                      {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      {isOpen ? (
+                        <ChevronUp size={18} />
+                      ) : (
+                        <ChevronDown size={18} />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -188,10 +214,16 @@ export default function OrderPage() {
                           <span className="text-sm text-gray-600">
                             {count}{" "}
                             {category === "food"
-                              ? count === 1 ? "Plate" : "Plates"
+                              ? count === 1
+                                ? "Plate"
+                                : "Plates"
                               : category === "protein"
-                              ? count === 1 ? "Piece" : "Pieces"
-                              : count === 1 ? "Drink" : "Drinks"}
+                              ? count === 1
+                                ? "Piece"
+                                : "Pieces"
+                              : count === 1
+                              ? "Drink"
+                              : "Drinks"}
                           </span>
                           <div className="flex items-center gap-2">
                             <button
@@ -237,7 +269,9 @@ export default function OrderPage() {
 
   // ---- Payment breakdown (cash / card / transfer) ----
   const { cashToday, cardToday, transferToday } = useMemo(() => {
-    let cash = 0, card = 0, transfer = 0;
+    let cash = 0,
+      card = 0,
+      transfer = 0;
     cart.forEach((item) => {
       const count = item.category === "food" ? item.portion : item.quantity;
       const subtotal = (item.price || 0) * count;
@@ -268,7 +302,10 @@ export default function OrderPage() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Failed to send email");
 
-        setToast({ type: "success", message: "✅ Sales report sent successfully!" });
+        setToast({
+          type: "success",
+          message: "✅ Sales report sent successfully!",
+        });
         setTodaysSales(resetTodaysSales());
         setShowModal(false);
         setPassword("");
@@ -286,14 +323,18 @@ export default function OrderPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50 p-6 md:p-10 pb-28">
-      <h1 className="text-3xl md:text-4xl font-extrabold mb-4 text-gray-900">Cashier Order Page</h1>
+      <h1 className="text-3xl md:text-4xl font-extrabold mb-4 text-gray-900">
+        Cashier Order Page
+      </h1>
 
       {/* ADDED: Chowdeck toggle button at the very top */}
       <div className="mb-4">
         <button
           onClick={() => setIsChowdeck((v) => !v)}
           className={`px-3 py-2 rounded-xl border shadow-sm ${
-            isChowdeck ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-900 border-gray-300"
+            isChowdeck
+              ? "bg-emerald-600 text-white border-emerald-600"
+              : "bg-white text-gray-900 border-gray-300"
           }`}
           title="Toggle Chowdeck mode (orders will save as chowdeck)"
         >
@@ -302,15 +343,17 @@ export default function OrderPage() {
       </div>
       {/* END ADDED */}
 
-      {/* Today’s Sales */}
+      {/* Today’s Sales (hidden, logic preserved) */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="mb-8 flex justify-between items-center bg-gradient-to-r from-green-500 to-emerald-600 p-5 rounded-2xl shadow-lg text-white"
       >
-        <p className="text-xl md:text-2xl font-extrabold">
-          {/* Today’s Sales: {money(todaysSales)} */}
-        </p>
+        {false && (
+          <p className="text-xl md:text-2xl font-extrabold">
+            Today’s Sales: {money(todaysSales)}
+          </p>
+        )}
         <button
           onClick={() => setShowModal(true)}
           className="px-4 py-2 bg-red-600 text-white font-semibold rounded-xl shadow hover:bg-red-700 active:scale-95"
@@ -333,7 +376,12 @@ export default function OrderPage() {
 
       <div className="space-y-12">
         <SectionCard label="Food 🍲" data={food} category="food" palette="purple" />
-        <SectionCard label="Protein 🍖" data={protein} category="protein" palette="red" />
+        <SectionCard
+          label="Protein 🍖"
+          data={protein}
+          category="protein"
+          palette="red"
+        />
         <SectionCard label="Drink 🥤" data={drink} category="drink" palette="blue" />
       </div>
 
@@ -372,12 +420,20 @@ export default function OrderPage() {
               placeholder="Enter password"
             />
 
-            {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+            {error && (
+              <p className="text-red-600 text-sm mb-3">{error}</p>
+            )}
 
             <div className="text-sm text-gray-700 mb-3 space-y-1">
-              <p><strong>Cash:</strong> {money(cashToday)}</p>
-              <p><strong>Card:</strong> {money(cardToday)}</p>
-              <p><strong>Transfer:</strong> {money(transferToday)}</p>
+              <p>
+                <strong>Cash:</strong> {money(cashToday)}
+              </p>
+              <p>
+                <strong>Card:</strong> {money(cardToday)}
+              </p>
+              <p>
+                <strong>Transfer:</strong> {money(transferToday)}
+              </p>
             </div>
 
             <div className="flex justify-end gap-3">
