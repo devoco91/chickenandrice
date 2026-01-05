@@ -309,7 +309,7 @@ export default function OrderPage() {
         className="mb-8 flex justify-between items-center bg-gradient-to-r from-green-500 to-emerald-600 p-5 rounded-2xl shadow-lg text-white"
       >
         <p className="text-xl md:text-2xl font-extrabold">
-          Today’s Sales: {money(todaysSales)}
+          {/* Today’s Sales: {money(todaysSales)} */}
         </p>
         <button
           onClick={() => setShowModal(true)}
