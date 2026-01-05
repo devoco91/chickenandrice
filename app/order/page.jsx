@@ -376,7 +376,7 @@ export default function OrderPage() {
 
             <div className="text-sm text-gray-700 mb-3 space-y-1">
                  
-              <p><strong>Today’s Sales:</strong> {money(todaysSales)}</p>
+              {/* <p><strong>Today’s Sales:</strong> {money(todaysSales)}</p> */}
               <p><strong>Cash:</strong> {money(cashToday)}</p>
               <p><strong>Card:</strong> {money(cardToday)}</p>
               <p><strong>Transfer:</strong> {money(transferToday)}</p>
